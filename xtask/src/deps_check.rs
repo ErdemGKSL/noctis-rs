@@ -38,6 +38,18 @@
 //! `render` feature turns on; and among the `noctis-image` sources
 //! (`src/**/*.rs`, test files exempt) only `src/remote/fetch.rs` names the
 //! hyper-util legacy client.
+//!
+//! The `keyed-map` rule (AD-25) keeps framework memory bounded per guild: in
+//! the sources (`src/**/*.rs`) of every internal crate except
+//! `noctis-testkit` (test infrastructure), no line may declare a map or set
+//! (`HashMap`, `BTreeMap`, `HashSet`, `BTreeSet`, `DashMap`, `IndexMap`,
+//! `IndexSet`, `Cache`, `LruCache`) whose key is, or a tuple starting with, a
+//! Discord `Id<GuildMarker>`, `Id<UserMarker>`, `Id<ChannelMarker>`,
+//! `Id<MessageMarker>` or `Id<InteractionMarker>`, unless the line carries a
+//! `// keyed-map: <why it is bounded>` marker. Comment lines, files named
+//! `tests.rs` and files under a `tests` directory are exempt. Known limit:
+//! maps keyed by raw `u64` ids, or whose key type spans lines, are not
+//! detected.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -121,6 +133,59 @@ fn calls_session_store(line: &str) -> bool {
             SESSION_STORE_OPS.iter().any(|op| rest.starts_with(op))
         })
     })
+}
+
+/// The map and set types the `keyed-map` rule looks at, with their `<`.
+const KEYED_MAP_OPENERS: [&str; 9] = [
+    "HashMap<",
+    "BTreeMap<",
+    "HashSet<",
+    "BTreeSet<",
+    "DashMap<",
+    "IndexMap<",
+    "IndexSet<",
+    "Cache<",
+    "LruCache<",
+];
+/// The Discord id markers whose maps grow with guilds, users, channels,
+/// messages or interactions (AD-25).
+const KEYED_MAP_MARKERS: [&str; 5] = [
+    "GuildMarker",
+    "UserMarker",
+    "ChannelMarker",
+    "MessageMarker",
+    "InteractionMarker",
+];
+/// The line marker that states a keyed map's bound.
+const KEYED_MAP_MARKER: &str = "// keyed-map: ";
+
+/// Whether `line` declares a map keyed by a Discord id without a
+/// `// keyed-map: <why>` marker (comment lines never do).
+fn keys_by_discord_id(line: &str) -> bool {
+    if line.trim_start().starts_with("//") {
+        return false;
+    }
+    let marked = line
+        .match_indices(KEYED_MAP_MARKER)
+        .any(|(at, _)| !line[at + KEYED_MAP_MARKER.len()..].trim().is_empty());
+    if marked {
+        return false;
+    }
+    KEYED_MAP_OPENERS.iter().any(|opener| {
+        line.match_indices(opener).any(|(at, _)| {
+            let key = line[at + opener.len()..].trim_start_matches([' ', '(']);
+            key.strip_prefix("Id<").is_some_and(|rest| {
+                let id_type = rest.find('>').map_or(rest, |end| &rest[..end]);
+                KEYED_MAP_MARKERS.iter().any(|m| id_type.ends_with(m))
+            })
+        })
+    })
+}
+
+/// Whether the `keyed-map` rule scans `krate`'s sources: every internal
+/// crate except the testkit.
+fn scans_keyed_maps(krate: &str) -> bool {
+    is_internal(krate) && krate != TESTKIT
 }
 
 /// The internal crates the spine's Invariants graph draws.
@@ -311,6 +376,8 @@ pub(crate) struct Workspace {
     /// `noctis-image` source lines (other than the `AssetFetcher`'s) that
     /// name the legacy client.
     legacy_client_sites: Vec<SourceSite>,
+    /// Lines that key a framework map by a Discord id without a bound.
+    keyed_map_sites: Vec<SourceSite>,
 }
 
 impl Workspace {
@@ -358,6 +425,18 @@ impl Workspace {
                 scan_legacy_client_sites(p.name.as_str(), &src, root)
             })
             .collect();
+        let keyed_map_sites = packages
+            .iter()
+            .filter(|p| scans_keyed_maps(p.name.as_str()))
+            .flat_map(|p| {
+                let src = p
+                    .manifest_path
+                    .parent()
+                    .map(|dir| dir.as_std_path().join("src"))
+                    .unwrap_or_default();
+                keyed_map_sites(p.name.as_str(), &src, root)
+            })
+            .collect();
         let crates = packages
             .iter()
             .map(|p| Member {
@@ -389,6 +468,7 @@ impl Workspace {
             client_sites,
             session_sites,
             legacy_client_sites,
+            keyed_map_sites,
         }
     }
 
@@ -430,6 +510,7 @@ pub(crate) enum Rule {
     HttpClient,
     SessionStore,
     AssetHttp,
+    KeyedMap,
 }
 
 impl Rule {
@@ -447,6 +528,7 @@ impl Rule {
             Self::HttpClient => "http-client",
             Self::SessionStore => "session-store",
             Self::AssetHttp => "asset-http",
+            Self::KeyedMap => "keyed-map",
         }
     }
 }
@@ -518,6 +600,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
     check_http_client(ws, &mut out);
     check_session_store(ws, &mut out);
     check_asset_http(ws, &mut out);
+    check_keyed_map(ws, &mut out);
     for member in &ws.crates {
         if !is_internal(&member.name) {
             check_non_internal(member, facade, &mut out);
@@ -589,6 +672,22 @@ fn check_session_store(ws: &Workspace, out: &mut BTreeSet<Violation>) {
             &site.krate,
             format!(
                 "{} calls the SessionStore; only noctis-gateway reads and writes sessions (AD-21)",
+                site.location
+            ),
+        ));
+    }
+}
+
+/// No scanned source keys a framework map by a Discord id without a stated
+/// bound (AD-25).
+fn check_keyed_map(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for site in &ws.keyed_map_sites {
+        out.insert(Violation::krate(
+            Rule::KeyedMap,
+            &site.krate,
+            format!(
+                "{} keys a framework map by a Discord id; bound it (AD-25) or mark the line \
+                 `// keyed-map: <why it is bounded>`",
                 site.location
             ),
         ));
@@ -700,6 +799,21 @@ fn scan_session_sites(krate: &str, src: &Path, root: &Path) -> Vec<SourceSite> {
             .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "tests.rs")
     });
     scan_lines(krate, files, root, calls_session_store)
+}
+
+/// Every line of `src/**/*.rs` under `src` that keys a map by a Discord id
+/// without a `keyed-map` marker, skipping test files (named `tests.rs`, or
+/// under a `tests` directory). A missing directory has no sites.
+fn keyed_map_sites(krate: &str, src: &Path, root: &Path) -> Vec<SourceSite> {
+    let mut files = Vec::new();
+    collect_rs_files(src, &mut files);
+    files.retain(|file| {
+        let relative = file.strip_prefix(src).unwrap_or(file);
+        !relative
+            .components()
+            .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "tests.rs")
+    });
+    scan_lines(krate, files, root, keys_by_discord_id)
 }
 
 /// Every line of `files` for which `hit` holds, as `path:line` relative to
@@ -1156,6 +1270,7 @@ mod tests {
             client_sites: Vec::new(),
             session_sites: Vec::new(),
             legacy_client_sites: Vec::new(),
+            keyed_map_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -1182,6 +1297,7 @@ mod tests {
             }],
             session_sites: Vec::new(),
             legacy_client_sites: Vec::new(),
+            keyed_map_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -1198,6 +1314,7 @@ mod tests {
             client_sites: Vec::new(),
             session_sites: Vec::new(),
             legacy_client_sites: Vec::new(),
+            keyed_map_sites: Vec::new(),
         };
         check(&ws)
             .into_iter()
@@ -1362,6 +1479,7 @@ mod tests {
                 location: "crates/noctis-core/src/app.rs:7".to_owned(),
             }],
             legacy_client_sites: Vec::new(),
+            keyed_map_sites: Vec::new(),
         };
         let found: Vec<String> = check(&ws)
             .into_iter()
@@ -1408,6 +1526,7 @@ mod tests {
             client_sites: Vec::new(),
             session_sites: Vec::new(),
             legacy_client_sites,
+            keyed_map_sites: Vec::new(),
         };
         check(&ws)
             .into_iter()
@@ -1572,6 +1691,85 @@ mod tests {
         assert_eq!(
             locations,
             ["src/lib.rs:2", "src/nested/mod.rs:1", "src/nested/mod.rs:2"]
+        );
+    }
+
+    const K1: &str = "    guilds: RwLock<HashMap<Id<GuildMarker>, Locale>>,";
+
+    /// K1-K8: the `keyed-map` predicate.
+    #[test]
+    fn keyed_map_predicate() {
+        for line in [
+            K1,
+            "BTreeMap<Id<UserMarker>, X>",
+            "HashSet<Id<ChannelMarker>>",
+            "DashMap<Id<MessageMarker>, X>",
+            "moka::sync::Cache<Id<InteractionMarker>, X>",
+            "HashMap<(Id<GuildMarker>, Id<UserMarker>), X>",
+            "HashMap< Id<GuildMarker>, X>",
+            "HashMap<Id<twilight_model::id::marker::GuildMarker>, X>",
+            &format!("{K1} // keyed-map:"),
+            &format!("{K1} // keyed-map:   "),
+        ] {
+            assert!(keys_by_discord_id(line), "{line}");
+        }
+        for line in [
+            "HashMap<Id<RoleMarker>, X>",
+            "HashMap<&'static str, X>",
+            "HashMap<String, Id<GuildMarker>>",
+            "Vec<Id<GuildMarker>>",
+            "HashMap<u64, X>",
+            &format!("{K1} // keyed-map: bounded by guild membership"),
+            "/// HashMap<Id<GuildMarker>, _>",
+            "    // HashMap<Id<UserMarker>, _>",
+        ] {
+            assert!(!keys_by_discord_id(line), "{line}");
+        }
+    }
+
+    /// K9-K10: test files and the testkit are exempt; a hit elsewhere is one
+    /// violation naming its workspace-relative location.
+    #[test]
+    fn keyed_map_sites_are_found() {
+        let root = std::env::temp_dir().join(format!("deps-check-keyed-{}", std::process::id()));
+        let src = root.join("crates/noctis-core/src");
+        std::fs::create_dir_all(src.join("foo")).unwrap();
+        std::fs::create_dir_all(src.join("tests")).unwrap();
+        std::fs::write(src.join("x.rs"), format!("fn a() {{}}\n{K1}\n")).unwrap();
+        std::fs::write(src.join("foo/tests.rs"), K1).unwrap();
+        std::fs::write(src.join("tests/x.rs"), K1).unwrap();
+        let sites = keyed_map_sites("noctis-core", &src, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(
+            sites,
+            [SourceSite {
+                krate: "noctis-core".to_owned(),
+                location: "crates/noctis-core/src/x.rs:2".to_owned(),
+            }]
+        );
+        assert!(!scans_keyed_maps(TESTKIT));
+        assert!(!scans_keyed_maps("xtask"));
+        assert!(scans_keyed_maps("noctis-core") && scans_keyed_maps(FACADE));
+
+        let ws = Workspace {
+            crates: Vec::new(),
+            client_sites: Vec::new(),
+            session_sites: Vec::new(),
+            legacy_client_sites: Vec::new(),
+            keyed_map_sites: sites,
+        };
+        let found: Vec<String> = check(&ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::KeyedMap)
+            .map(|v| v.to_string())
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "deps-check: noctis-core: crates/noctis-core/src/x.rs:2 keys a framework map by a \
+                 Discord id; bound it (AD-25) or mark the line `// keyed-map: <why it is \
+                 bounded>` [keyed-map]"
+            ]
         );
     }
 }

@@ -1,18 +1,26 @@
 name: Main
 
-# Stub: the filling stories add triggers.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # Stories 10.11, 12.6 and 14.3: benches against budgets.toml.
+  # Benches against crates/noctis-core/benches/budgets.toml. Stories 10.11
+  # and 14.3 add their benches; gating starts in Story 14.3 (until then each
+  # bench reports only, in the step summary).
   benches:
+    name: Benches
     runs-on: ubuntu-latest
     steps:
-      - run: echo "benches land in Stories 10.11, 12.6 and 14.3"
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # Story 12.6: memory per idle guild (NFR-1).
+      - run: cargo bench -p noctis-core --bench memory_per_guild
 
   # Story 10.11: build and test against the latest takumi.
   latest-takumi:

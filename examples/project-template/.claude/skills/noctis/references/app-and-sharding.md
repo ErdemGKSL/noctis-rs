@@ -569,6 +569,15 @@ Checklist:
 
 Handlers do not change.
 
+Sizing memory: an idle guild costs about 30 bytes of framework memory (its locale
+record; the budget is 1 KiB) plus about 9740 bytes of Discord cache with the default
+`DiscordCacheConfig` (`GUILD | CHANNEL | ROLE`, measured with 2 roles and 3 channels per
+guild; real guilds with more channels and roles cost more). Multiply by the guilds a
+process's Shard Range holds. `.discord_cache(DiscordCacheConfig::none())` drops the
+Discord cache share entirely (then `ctx.cache()` getters return `CacheError::Disabled`).
+The numbers come from Noctis's `memory_per_guild` bench over 10 000 idle guilds; in a
+Noctis checkout, `cargo bench -p noctis-core --bench memory_per_guild` reproduces them.
+
 ### Session resume
 
 Only the gateway reads and writes the `SessionStore`. Each Shard's entry lives under

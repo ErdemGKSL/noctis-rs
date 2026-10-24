@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+autobenches = false
 
 [dependencies]
 arc-swap.workspace = true
@@ -40,9 +41,16 @@ twilight-model.workspace = true
 
 [dev-dependencies]
 metrics-util = { workspace = true, features = ["debugging"] }
+noctis = { workspace = true, features = ["testkit"] }
 rcgen = { workspace = true, features = ["crypto", "ring"] }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "test-util"] }
+toml.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
+
+[[bench]]
+name = "memory_per_guild"
+path = "benches/memory_per_guild/main.rs"
+harness = false
 
 [lints]
 workspace = true

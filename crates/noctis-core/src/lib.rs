@@ -226,6 +226,7 @@ pub mod gateway {
 mod boot_flags;
 mod gateway_url;
 mod guard;
+mod guild_record;
 mod handler;
 mod kind;
 mod kv;

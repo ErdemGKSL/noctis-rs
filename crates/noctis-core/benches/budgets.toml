@@ -1,0 +1,18 @@
+# Noctis performance budgets (AD-25, AD-28). One top-level table per bench.
+# `gate = false` reports only; Story 14.3 confirms the numbers (PRD Q3) and turns gating on.
+
+[memory_per_guild]
+nfr = "NFR-1"
+guilds = 10000
+gate = false
+
+[memory_per_guild.framework_bytes_per_guild]
+max = 1024
+note = "NFR-1 initial goal: at most 1 KiB of framework memory per idle guild, excluding the Discord cache"
+
+[memory_per_guild.discord_cache_bytes_per_guild]
+note = "reported only: NFR-1 sets no Discord cache target; default configuration GUILD | CHANNEL | ROLE (no members, no messages)"
+
+[memory_per_guild.render_cache_bytes]
+max = 67108864
+note = "MemoryRenderCache::DEFAULT_LIMITS byte budget (64 MiB); idle guilds render nothing"

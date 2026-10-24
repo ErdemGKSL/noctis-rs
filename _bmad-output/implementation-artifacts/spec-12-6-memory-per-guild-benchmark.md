@@ -198,3 +198,25 @@ keyed-map (`xtask/src/deps_check.rs` tests, predicate and scan):
 - `tools/story-loop/bg.sh cargo test --release --workspace` -- pass.
 - `cargo run --release -p xtask -- deps-check`, `-- tw-grammar --check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- pass.
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace`; `bash .github/scripts/check-build-config.sh` -- pass.
+
+## Auto Run Result
+
+`cargo bench -p noctis-core --bench memory_per_guild` (2026-10-24, exit 0, about 27 s, no `dhat-heap.json` written; a rerun printed 29.0 and 9731.4 for the per-guild rows):
+
+```text
+## Memory per idle guild (NFR-1)
+
+10000 idle guilds through FakeGateway; Discord cache: GUILD | CHANNEL | ROLE (no members, no messages); gate: off (reporting until Story 14.3)
+
+| Metric | Measured | Budget | Status |
+|---|---|---|---|
+| Framework bytes per guild | 28.5 | <= 1024 | ok |
+| Discord cache bytes per guild | 9731.8 | - | reported |
+| Discord cache bytes (total) | 97318118 | - | reported |
+| Renderer cache bytes | 0 | <= 67108864 | ok |
+
+Notes:
+- Framework bytes per guild: NFR-1 initial goal: at most 1 KiB of framework memory per idle guild, excluding the Discord cache
+- Discord cache bytes per guild: reported only: NFR-1 sets no Discord cache target; default configuration GUILD | CHANNEL | ROLE (no members, no messages)
+- Renderer cache bytes: MemoryRenderCache::DEFAULT_LIMITS byte budget (64 MiB); idle guilds render nothing
+```

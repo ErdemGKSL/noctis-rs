@@ -1263,6 +1263,23 @@ list in CI.
     same `budgets.toml`.
   - The testkit ships `assert_memory_flat`, which runs N interactions and fails if
     framework memory grows with N (NFR-2).
+- **Amended (2026-10-24, Story 12.6):** the memory bench is `memory_per_guild`
+  (`noctis-core/benches/memory_per_guild/`, `harness = false`, dhat counting
+  allocator). One process runs four Apps against `FakeGateway` (warm-up, empty
+  baseline, 10k idle guilds with `DiscordCacheConfig::none()`, 10k with the default
+  cache) and reads each run's settled live-heap delta: framework bytes per guild =
+  (`none` − baseline) / guilds, Discord cache bytes = default − `none`, Renderer
+  cache bytes = the App's `MemoryRenderCache` weigher bytes. `benches/budgets.toml`
+  holds one top-level table per bench (each bench reads only its own); a table has
+  `nfr`, `guilds` and `gate` (`false` reports only, Story 14.3 turns gating on) and
+  one sub-table per metric with an optional `max` and a required `note`, unknown keys
+  rejected. The per-guild framework state is the crate-private, `Copy`
+  `GuildRecord` (today the guild locale; the Module bitset joins it), statically
+  bounded to 64 bytes, in one `GuildRecords` map bounded by guild membership. The
+  `deps-check` rule `keyed-map` rejects any framework map or set keyed by a guild,
+  user, channel, message or interaction `Id` unless its line states the bound as
+  `// keyed-map: <why it is bounded>` (test files and `noctis-testkit` exempt; raw
+  `u64` keys are not detected).
 
 ### AD-26 — Declarative, tescord-like authoring surface
 - **Binds:** `noctis-macros`, `noctis-core`, facade, Usage Skill; FR-7, FR-8,

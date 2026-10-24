@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 80 of 100" src="https://img.shields.io/badge/stories-80%20%2F%20100-3B2F8F">
+  <img alt="Stories done: 81 of 100" src="https://img.shields.io/badge/stories-81%20%2F%20100-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,12 +25,12 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–9 and 11 are done
+> **Noctis is under active development and not yet published.** Epics 1–9, 11 and 12 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
-> attachments and webhooks, localization). Epics 10 (generated images and GIFs),
-> 12 (clusters and scale), 13 (module operations) and 15 (opt-in extras) are in progress,
+> attachments and webhooks, localization, clusters and scale). Epics 10 (generated images
+> and GIFs), 13 (module operations) and 15 (opt-in extras) are in progress,
 > and Epic 14 (launch readiness) is next. Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -247,7 +247,7 @@ done. Live per-story status is in
 | 9 | Attachments, webhooks and advanced component surfaces | P1 | ✅ Done |
 | 10 | Generated images and GIFs | P1 | 🔨 In progress (8 / 11) |
 | 11 | Localization | P1 | ✅ Done |
-| 12 | Clusters and scale | P1 | 🔨 In progress (4 / 6) |
+| 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | 🔨 In progress (1 / 5) |
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | 🔨 In progress (2 / 4) |
@@ -331,11 +331,15 @@ done. Live per-story status is in
     optional `LocaleResolver`.
   - Localized command names and descriptions sent by Publish.
   - Runtime locale overlays through the `LocaleSource` port, validated at startup.
-- **Clusters and scale (in progress).**
+- **Clusters and scale.**
   - Shard Ranges for multi-process Clusters with a shared identify queue.
   - Session resume through the `SessionStore`, and resumable shutdown (`--no-resume`
     to start fresh).
   - Shared HTTP rate limiting through the proxy, with typed `RateLimited` errors.
+  - A configurable Discord cache (resources, backend, or off) read with `ctx.cache()`,
+    with default intents derived from the handlers and cached resources.
+  - A memory-per-guild bench over 10 000 idle guilds that reports framework, Discord
+    cache and Renderer cache memory against `budgets.toml`.
 - **Module trees.** Module ids are tree paths (`profile/badges`), validated for grammar
   and uniqueness at `App::build`.
 - **Opt-in extras (in progress).**

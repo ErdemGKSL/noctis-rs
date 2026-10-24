@@ -18,7 +18,6 @@
 //! The App's [`LocaleResolver`] then sees the result and may replace it, and
 //! a before-Middleware may override it again (`BeforeCtx::set_locale`).
 
-use std::collections::HashMap;
 use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -30,6 +29,7 @@ use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{GuildMarker, UserMarker};
 
+use crate::guild_record::{GuildRecord, GuildRecords};
 use crate::middleware::Invocation;
 
 /// The two locales of one run (FR-43): the User Locale, for ephemeral
@@ -200,10 +200,10 @@ pub(crate) struct AppLocales {
     available: LocaleSet,
     default: Locale,
     resolver: Option<Arc<dyn LocaleResolver>>,
-    /// The `preferred_locale` of every guild the gateway announced, fed
-    /// by `GUILD_CREATE`, `GUILD_UPDATE` and `GUILD_DELETE` (bounded by
-    /// the App's guild membership: interactions never insert).
-    guilds: RwLock<HashMap<Id<GuildMarker>, Locale>>,
+    /// The [`GuildRecord`] (`preferred_locale`) of every guild the gateway
+    /// announced, fed by `GUILD_CREATE`, `GUILD_UPDATE` and `GUILD_DELETE`
+    /// (bounded by the App's guild membership: interactions never insert).
+    guilds: RwLock<GuildRecords>,
 }
 
 impl AppLocales {
@@ -225,7 +225,7 @@ impl AppLocales {
             available,
             default,
             resolver,
-            guilds: RwLock::new(HashMap::new()),
+            guilds: RwLock::new(GuildRecords::new()),
         }
     }
 
@@ -279,17 +279,19 @@ impl AppLocales {
         }
     }
 
-    fn guilds_read(&self) -> std::sync::RwLockReadGuard<'_, HashMap<Id<GuildMarker>, Locale>> {
+    fn guilds_read(&self) -> std::sync::RwLockReadGuard<'_, GuildRecords> {
         self.guilds.read().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn guilds_write(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<Id<GuildMarker>, Locale>> {
+    fn guilds_write(&self) -> std::sync::RwLockWriteGuard<'_, GuildRecords> {
         self.guilds.write().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The recorded locale of `guild_id`, if any.
     pub(crate) fn guild(&self, guild_id: Option<Id<GuildMarker>>) -> Option<Locale> {
-        self.guilds_read().get(&guild_id?).copied()
+        self.guilds_read()
+            .get(&guild_id?)
+            .map(|record| record.locale)
     }
 
     /// How many guilds have a record.
@@ -303,7 +305,7 @@ impl AppLocales {
     fn set_guild(&self, guild_id: Id<GuildMarker>, preferred: &str) {
         match preferred.parse::<Locale>() {
             Ok(locale) => {
-                self.guilds_write().insert(guild_id, locale);
+                self.guilds_write().insert(guild_id, GuildRecord { locale });
             }
             Err(_) => {
                 self.guilds_write().remove(&guild_id);
@@ -336,11 +338,16 @@ impl AppLocales {
         let (Some(guild_id), Some(locale)) = (guild_id, locale) else {
             return;
         };
-        if self.guilds_read().get(&guild_id) == Some(&locale) {
+        if self
+            .guilds_read()
+            .get(&guild_id)
+            .map(|record| record.locale)
+            == Some(locale)
+        {
             return;
         }
-        if let Some(slot) = self.guilds_write().get_mut(&guild_id) {
-            *slot = locale;
+        if let Some(record) = self.guilds_write().get_mut(&guild_id) {
+            record.locale = locale;
         }
     }
 }
