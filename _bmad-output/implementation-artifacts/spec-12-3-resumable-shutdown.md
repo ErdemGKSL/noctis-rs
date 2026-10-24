@@ -2,7 +2,8 @@
 title: 'Story 12.3: Resumable shutdown'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7d8f16f1d9141989d3696b3e9654817bb4e385df'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
