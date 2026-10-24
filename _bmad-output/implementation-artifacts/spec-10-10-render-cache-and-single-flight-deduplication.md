@@ -2,7 +2,8 @@
 title: 'Story 10.10: Render cache and single-flight deduplication'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '4cab7fd8ec79cc64076d4940ed9bf1694ca8d6b4'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
