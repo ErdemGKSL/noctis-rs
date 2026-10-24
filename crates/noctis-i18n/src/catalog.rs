@@ -174,9 +174,9 @@ impl Catalog {
     /// `locale` for a content key once overlays apply, else the locale's
     /// file, its sibling's, then the default locale's.
     fn template(&self, locale: Locale, key: &str) -> Option<&'static str> {
-        if let Some(text) = self.content_row(key).and_then(|i| {
-            self.__overlay_row(locale)
-                .and_then(|row| row.get(i as usize).copied())
+        if let Some(text) = self.__overlay_row(locale).and_then(|row| {
+            self.content_row(key)
+                .and_then(|i| row.get(i as usize).copied())
         }) {
             return Some(text);
         }
@@ -1081,6 +1081,15 @@ mod tests {
             text(&second, Locale::Tr, "greet.hello").as_deref(),
             Some("Selam")
         );
+        // A load with an invalid pair reports only its violation, without
+        // `AlreadyInstalled` for the different valid pair.
+        assert_eq!(
+            second.install_overlays(&[ov(
+                Locale::Tr,
+                &[("greet.hello", "Merhabalar"), ("shop.left", "kaldı")],
+            )]),
+            Err(vec![placeholders("shop.left", &["n"], &[])])
+        );
         // Matrix 26: no overlays leaves the slot alone, and it is process-wide.
         let third = strings(&[C]);
         assert_eq!(
@@ -1091,6 +1100,91 @@ mod tests {
             text(&third, Locale::Tr, "greet.hello").as_deref(),
             Some("Selam")
         );
+    }
+
+    /// Story 11.5 Matrix 24, 25
+    #[test]
+    fn overlays_route_to_their_owner_catalog() {
+        const A_EN_US: Entries = &[("a.hello", "Hello A")];
+        const A_PLACEHOLDERS: &[(&str, &[&str])] = &[("a.hello", &[])];
+        const A_CONTENT: &[&str] = &["a.hello"];
+        const B_EN_US: Entries = &[("b.hello", "Hello B")];
+        const B_PLACEHOLDERS: &[(&str, &[&str])] = &[("b.hello", &[])];
+        const B_CONTENT: &[&str] = &["b.hello"];
+        macro_rules! slot_catalog {
+            ($name:ident, $origin:literal, $files:expr, $ph:expr, $content:expr) => {
+                static $name: Catalog = {
+                    static SLOT: OverlaySlot = OverlaySlot::new();
+                    Catalog::__new($origin, Locale::EnUs, $files, $ph)
+                        .__with_overlay(&SLOT, $content)
+                };
+            };
+        }
+        slot_catalog!(
+            A1,
+            "a/locales",
+            &[(Locale::EnUs, A_EN_US)],
+            A_PLACEHOLDERS,
+            A_CONTENT
+        );
+        slot_catalog!(
+            B1,
+            "b/locales",
+            &[(Locale::EnUs, B_EN_US)],
+            B_PLACEHOLDERS,
+            B_CONTENT
+        );
+        // (a) One load routes each key to its own catalog's slot.
+        let app = strings(&[A1, B1]);
+        assert_eq!(
+            app.install_overlays(&[ov(
+                Locale::Tr,
+                &[("a.hello", "Selam A"), ("b.hello", "Selam B")]
+            )]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "a.hello").as_deref(),
+            Some("Selam A")
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "b.hello").as_deref(),
+            Some("Selam B")
+        );
+        assert_eq!(A1.__overlay_row(Locale::Tr), Some(&["Selam A"][..]));
+        assert_eq!(B1.__overlay_row(Locale::Tr), Some(&["Selam B"][..]));
+        // (b) All or nothing: A taken, B fresh and valid, B stays empty.
+        slot_catalog!(
+            A2,
+            "a/locales",
+            &[(Locale::EnUs, A_EN_US)],
+            A_PLACEHOLDERS,
+            A_CONTENT
+        );
+        slot_catalog!(
+            B2,
+            "b/locales",
+            &[(Locale::EnUs, B_EN_US)],
+            B_PLACEHOLDERS,
+            B_CONTENT
+        );
+        let first = strings(&[A2]);
+        assert_eq!(
+            first.install_overlays(&[ov(Locale::Tr, &[("a.hello", "Selam A")])]),
+            Ok(())
+        );
+        let both = strings(&[A2, B2]);
+        assert_eq!(
+            both.install_overlays(&[ov(
+                Locale::Tr,
+                &[("a.hello", "Merhaba A"), ("b.hello", "Selam B")]
+            )]),
+            Err(vec![OverlayViolation::AlreadyInstalled {
+                origin: "a/locales"
+            }])
+        );
+        assert_eq!(B2.__overlay_row(Locale::Tr), None);
+        assert_eq!(A2.__overlay_row(Locale::Tr), Some(&["Selam A"][..]));
     }
 
     /// Story 11.5 Matrix 28, 29

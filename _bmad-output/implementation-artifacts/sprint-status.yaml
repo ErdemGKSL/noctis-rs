@@ -142,7 +142,7 @@ development_status:
   11-2-module-scoped-locale-catalogs: done
   11-3-user-and-guild-locale-resolution: done
   11-4-command-localization-in-publish: done
-  11-5-runtime-locale-overlays-through-localesource: in-progress
+  11-5-runtime-locale-overlays-through-localesource: done
   epic-11-retrospective: optional
 
   epic-12: in-progress

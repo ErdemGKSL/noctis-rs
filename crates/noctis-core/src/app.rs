@@ -736,11 +736,12 @@ impl App {
     /// process-wide, so `Text::Key`s, `reply_text` and `Strings::of(..)`
     /// render them (Publish keeps the compiled command texts). Then, with
     /// [`publisher`](AppBuilder::publisher), it runs the startup Publish,
-    /// reads `GET /gateway/bot` with the App's HTTP client, plans the shard total (the fixed
-    /// [`shard_total`](AppBuilder::shard_total) or Discord's recommendation)
-    /// and the identify buckets (`max_concurrency`), and starts one task per
-    /// shard of the [`shard_range`](AppBuilder::shard_range) (every shard
-    /// `0..total` without one; a range not aligned to `max_concurrency` logs a
+    /// reads `GET /gateway/bot` with the App's HTTP client, plans the shard
+    /// total (the fixed [`shard_total`](AppBuilder::shard_total) or Discord's
+    /// recommendation) and the identify buckets (`max_concurrency`), and
+    /// starts one task per shard of the
+    /// [`shard_range`](AppBuilder::shard_range) (every shard `0..total`
+    /// without one; a range not aligned to `max_concurrency` logs a
     /// warning). Each shard identifies through the `IdentifyQueue` port in
     /// bucket `shard_id % max_concurrency` (GW-01). Shard tasks push every
     /// parsed item into the lanes without waiting: interactions into the

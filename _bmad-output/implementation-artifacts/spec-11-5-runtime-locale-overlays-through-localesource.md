@@ -2,7 +2,7 @@
 title: 'Story 11.5: Runtime Locale overlays through LocaleSource'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '026add6663535ea7d1ee03a5e4e803bfa8b555af'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -15,7 +15,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/macros.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The `catalogs` field of the "locale overlays installed" startup log is not discriminated by any test.
+    evidence: |-
+      valid_overlays_install_and_log (crates/noctis-core/src/app/tests.rs) uses one catalog, one locale and one value, so values=1 and catalogs=1 coincide; computing catalogs as the locale count or the value count would also pass. Settle with a core-level test over two catalogs and several values.
+    location: >-
+      crates/noctis-core/src/app.rs:962-971
+    severity: low
 ---
 
 <intent-contract>
@@ -152,6 +159,41 @@ Catalog `C` = `bot/locales`, default en-US, files en-US `{greet.hello: "Hello", 
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 31 findings — high 0, medium 0, low 20, false 11, maybe-false 0
+- findings:
+  - `[low]` `[patch]` blind: `Catalog::template` runs the `content_row` binary search before the cheap `__overlay_row` check — real per-lookup cost for every non-overlay process; patch reorders the two checks.
+  - `[low]` `[reject]` blind: `AlreadyInstalled` check and install are not atomic, so two Apps starting concurrently with different overlays can silently mix — real but needs concurrent multi-App startup with different overlays on one catalog (not everyday use; accepted in the memlog), and the fix adds a post-install compare branch.
+  - `[low]` `[reject]` blind: `LocaleSource::load` has no deadline, a hanging adapter blocks startup — the adapter is the operator's own code and owns its I/O timeouts; a framework timeout needs a new duration policy the spec does not ask for; shutdown still escapes (Matrix 27).
+  - `[low]` `[reject]` blind: a duplicated key is only reported as `DuplicateKey` and `AlreadyInstalled` only for fully valid loads, so users meet violations in rounds — the duplicate rule is spec rule 1 ("no other check runs for that key"); co-reporting `AlreadyInstalled` needs a second App in one process with an invalid load, and comparing a valid subset would produce spurious conflicts.
+  - `[low]` `[reject]` blind: `i18n_overlays.rs` has no `Text::Key` / `DefaultText::Key` case — `reply_text` and `Text::Key` resolve through the same `AppStrings::translate`, which the unit Matrix covers; the spec's e2e task lists exactly the cases present.
+  - `[low]` `[reject]` blind: no end-to-end second-App `AlreadyInstalled` or Module+App catalog test through real startup — `AlreadyInstalled` is unit-tested (Matrix 25); the multi-catalog part is covered by the vgap patch below; an extra e2e layer adds no new mechanism.
+  - `[false]` `[reject]` blind: `locale as usize` vs `Locale::ALL` order is not tied — `noctis-rules/src/locale.rs` generates the enum variants and `ALL` from the same `macro_rules!` repetition, in the same order, so they cannot diverge without rewriting that macro.
+  - `[low]` `[reject]` blind: generated `row()` falls back silently on a `try_from` length mismatch — the form is the spec's exact emit snippet; `CONTENT` and `K` come from the same `model.content`, so the mismatch is unreachable from `i18n!` output.
+  - `[low]` `[reject]` blind: `build_rows` ends with `.unwrap_or("")` — `i18n!` guarantees every content key is in the default file, so the fallback is unreachable from macro output (only hand-built hidden-API test catalogs could hit it).
+  - `[false]` `[reject]` blind: `App` keeps strings twice (`shared.strings` and `strings`) and they can drift — the spec's Code Map mandates the concrete `Arc` on `App` plus the same `Arc` coerced into `AppShared`; both are set once in `build()` and nothing replaces either.
+  - `[low]` `[reject]` blind: `LocaleOverlayError::Invalid` documented "Never empty" though publicly constructible — same convention as `BuildError` ("Never empty"), describes what the framework returns; changing only this one would make the two errors inconsistent.
+  - `[low]` `[patch]` blind: `App::run` rustdoc line at `app.rs:714` is 93 columns in an ~80-column paragraph — cosmetic; patch rewraps.
+  - `[false]` `[reject]` blind: `docs/discord-rules.md` repeats the same parenthetical in CMD-01, CMD-05, OPT-09 and LOC-02 — the spec's Code Map and Tasks require exactly those four parentheticals to change to that text.
+  - `[low]` `[reject]` blind: no test takes `Strings::of(Tr)` before `TestApp::build` — Matrix 29 is covered at its spec-assigned level (`get_stays_compiled_and_rows_appear_after_install` asserts `__overlay_row` is `None` before and `Some` after install, which is what `row()` reads).
+  - `[low]` `[reject]` edge: two `i18n!` invocations sharing one origin are deduplicated by `AppStrings::new`, so the second invocation's slot never fills — needs two `i18n!` calls over the same dir in one process (the skill says invoke once); the fix changes the pre-existing origin dedup design (11.4), not a trivial correction.
+  - `[low]` `[reject]` edge: `load` can stall forever — same root as the blind timeout finding; rejected with it.
+  - `[low]` `[reject]` edge: concurrent install race lets the loser get `Ok` — same root as the blind atomicity finding; rejected with it.
+  - `[low]` `[reject]` edge: `build_rows` `.unwrap_or("")` masks a missing key — same root as the blind `unwrap_or` finding; rejected with it.
+  - `[low]` `[reject]` edge: `AlreadyInstalled` computed only after full validation — same root as the blind validation-order finding; rejected with it.
+  - `[low]` `[reject]` edge: the "locale overlays installed" info logs on an equal re-install that changed nothing — log-only wording on a second-App path; fixing it needs `install_overlays` to report what it installed (signature change of a hidden API).
+  - `[low]` `[patch]` vgap: multi-catalog install routing and all-or-nothing on `AlreadyInstalled` untested (pre-verified) — patch adds a two-slot-catalog unit test in `catalog.rs`.
+  - `[low]` `[patch]` vgap: the "`AlreadyInstalled` only after full validation" decision has no test (pre-verified) — patch extends `overlays_install_once_per_process` with an invalid-plus-different load.
+  - `[low]` `[defer]` vgap: the `catalogs` count of the startup info log is not discriminated by any test (pre-verified, filed disposition defer) — log-only; recorded in `deferred`.
+  - `[false]` `[reject]` intent D1: restart-only, no live reload — the spec deliberately settles it ("No reload or periodic refresh"); a restart is not a redeploy, so "without a redeploy" holds.
+  - `[false]` `[reject]` intent D2: a new language cannot be added from the source alone — deliberately settled (Design Notes "Which locales": resolution never picks a locale without a file, so such an overlay could never show).
+  - `[false]` `[reject]` intent D3: reserved set wider than AC (`ctxcmd.*`, `noctis.*`) — deliberately settled (Design Notes; `ctxcmd.*` is published per AD-16, `noctis.*` keeps "content keys only").
+  - `[false]` `[reject]` intent D4: all-or-nothing instead of per-pair rejection — deliberately settled ("No graceful degradation", Design Notes "Fail fast").
+  - `[false]` `[reject]` intent D5: a source outage stops the bot — deliberately settled (Matrix 23, "Fail fast").
+  - `[false]` `[reject]` intent D6: load at run, not build — deliberately settled (Design Notes "Startup, not build()": the port is async, and loading before the startup Publish keeps bad overlays from Discord).
+  - `[false]` `[reject]` intent D7: overlays process-wide, not per App — deliberately settled (Design Notes "process-wide slot", Never "no per-App overlay copy"); the concurrent-race part is the rejected atomicity finding above.
+  - `[false]` `[reject]` intent D8: template code not updated — the new API is additive and optional, the template's code compiles and stays current without change; its `AGENTS.md`, the skill, the snapshot and the hash are updated as the policy requires.
+
 ## Design Notes
 
 These decisions are logged in the architecture memlog.
@@ -178,3 +220,12 @@ These decisions are logged in the architecture memlog.
 - `cargo deny check` -- expected: ok.
 - `cargo +1.91 check --release --workspace` -- expected: ok.
 - `test ! -d target/debug` -- expected: no debug profile.
+
+## Auto Run Result
+
+- Summary: runtime locale overlays through the `LocaleSource` port. `App::run` loads overlays once at startup (before the startup Publish), validates them all-or-nothing (duplicate keys, unknown/reserved keys `ctxcmd.*`/`noctis.*`, placeholder mismatches, locales without a compiled file) and installs them into a process-wide slot per `i18n!` catalog; `Strings::get` stays compiled while generated `row()` reads the overlay row. Failures stop startup with `LocaleOverlayError` (fail fast, no reload).
+- Files changed: `crates/noctis-i18n/src/overlay.rs` (new: validation and install), `crates/noctis-i18n/src/catalog.rs` (overlay rows, install once per process, tests), `crates/noctis-macros/src/i18n/emit.rs` (overlay-aware row emit), `crates/noctis-ports/src/locale.rs` (port docs), `crates/noctis-core/src/{app.rs,app/tests.rs,error.rs,lib.rs,locale.rs}` (startup load, error type, tests), `crates/noctis-testkit/src/app.rs`, `crates/noctis/src/lib.rs` (re-exports), `crates/noctis/tests/i18n_overlays.rs` + fixtures (e2e), `docs/discord-rules.md` (CMD-01, CMD-05, OPT-09, LOC-02), project-template `AGENTS.md` and noctis skill (`i18n.md`, `adapters.md`, `app-and-sharding.md`, API hash), `xtask/public-api.txt` (re-blessed), CI yml, architecture memlog.
+- Review findings: 31 total (high 0, medium 0, low 20, false 11). Patched 4 (all low): reorder overlay check before the `content_row` binary search in `Catalog::template`; rewrap `App::run` rustdoc; add two-slot-catalog multi-catalog install/all-or-nothing test; extend `overlays_install_once_per_process` with invalid-plus-different load. Deferred 1: startup log `catalogs` count untested (log-only). Rejected 26 with recorded reasons (install atomicity race, no load deadline, validation-round ordering, unreachable `unwrap_or`/`try_from` fallbacks, origin dedup, log wording, and 11 false/deliberately-settled intent items D1-D8 and others); see Review Triage Log.
+- Follow-up review recommended: false (patched by verdict: high 0, medium 0, low 4).
+- Verification: all local gates via `tools/story-loop/gates.sh` green; CI paused by the maintainer.
+- Residual risks: concurrent startup of two Apps with different overlays on one catalog may mix (accepted); a hanging `LocaleSource::load` blocks startup (adapter owns timeouts); two `i18n!` invocations on one origin share a slot.
