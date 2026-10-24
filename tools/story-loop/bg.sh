@@ -13,7 +13,8 @@ J=$root/target/story-loop/bg/$key
 mkdir -p "$root/target/story-loop/bg"
 exec 8>>"$root/target/story-loop/bg/.lock"; flock 8
 # A finished run is reused only for a caller that was cut off (within 30 min, same tree); otherwise run again.
-if [ -f "$J/status" ] && [ -n "$(find "$J/status" -mmin +30)" ]; then rm -rf "$J"; fi
+# A run already consumed by a caller is never reused either.
+if [ -f "$J/consumed" ] || { [ -f "$J/status" ] && [ -n "$(find "$J/status" -mmin +30)" ]; }; then rm -rf "$J"; fi
 if [ ! -d "$J" ]; then
   mkdir -p "$J"; : > "$J/log"
   (cd "$dir" && setsid nohup bash -c '"$@" > "$0/log" 2>&1 < /dev/null; echo $? > "$0/status.tmp"; mv "$0/status.tmp" "$0/status"' "$J" "$@" &) 
@@ -25,6 +26,7 @@ tail -c +1 -f "$J/log" & tp=$!
 while [ ! -f "$J/status" ]; do sleep 1; done
 sleep 1; kill "$tp" 2>/dev/null; wait "$tp" 2>/dev/null
 st=$(cat "$J/status")
-# Consume the result: the next identical call (e.g. after a fix that left the tree identical) runs again.
-mv "$J" "$J.done.$$" 2>/dev/null && rm -rf "$J.done.$$"
+# Consume the result: the next identical call (e.g. after a fix that left the tree identical) runs again. Only mark it
+# (the next fresh call removes it under the lock), so another caller attached to the same run can still read the status.
+: > "$J/consumed"
 exit "$st"
