@@ -2,7 +2,8 @@
 title: 'Story 10.6: Animated Templates'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'fe4cb718a86eb6a7d9a29e9f0b42df203abf2501'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
