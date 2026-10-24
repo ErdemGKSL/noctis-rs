@@ -1783,6 +1783,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-websockets",
+ "tracing",
  "tracing-subscriber",
  "twilight-gateway",
  "twilight-model",

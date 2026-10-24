@@ -2,16 +2,51 @@
 title: 'Story 15.3: Presence and gateway commands'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'be794b889665817a72a69f2eb8bb57380a475517'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-15-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-12-3-resumable-shutdown.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      bg.sh: two callers attached to one job race on consuming the result; the second spins forever or exits with an empty status.
+    evidence: |-
+      The first finisher runs `mv "$J" ...; rm -rf`, so a second attacher's `while [ ! -f "$J/status" ]` never ends, or `cat` after the move yields "" and `exit ""` reports success. An empty `tree` (index copy failed) also drops the working tree from the cache key. Came in with main commit 2defad7 (story-loop tooling), not Story 15.3.
+    location: >-
+      tools/story-loop/bg.sh:25-29
+    severity: medium
+  - summary: >-
+      bg.sh: a detached job killed before writing its status makes every caller and rerun hang.
+    evidence: |-
+      No pid is recorded; the wait loop only checks for "$J/status", so an OOM-killed or container-restarted job leaves callers waiting forever. Pre-existing tooling from main commit 2defad7.
+    location: >-
+      tools/story-loop/bg.sh:26
+    severity: medium
+  - summary: >-
+      epic-last.py: a skipped [Maintainer-gated] story keeps an epic from ever reaching "last open story", so cargo hack never runs; failed git fetch/show is swallowed.
+    evidence: |-
+      `open_` counts every non-done story, including maintainer-gated ones the unattended loop skips; the remote read failure only falls back silently to local status. Pre-existing tooling from main commit 2defad7.
+    location: >-
+      tools/story-loop/epic-last.py
+    severity: medium
+  - summary: >-
+      gates.sh: an epic-last.py crash (exit != 0/1) is indistinguishable from "not last", silently skipping cargo hack.
+    evidence: |-
+      `python3 epic-last.py && run hack ...` treats any non-zero exit as "skip". Pre-existing tooling from main commit 2defad7.
+    location: >-
+      tools/story-loop/gates.sh:27
+    severity: low
+  - summary: >-
+      AGENTS.md now allows debug builds and gates.sh dropped the target/debug check, contradicting binding maintainer-decisions.md section 6 ("Release builds only").
+    evidence: |-
+      Main commit 2defad7 (maintainer, 2026-10-24) relaxed AGENTS.md and removed FAIL:debug-dir, but maintainer-decisions.md section 6 was not updated, so the policy documents contradict each other. Fix edits agent-context files; not caused by Story 15.3.
+    location: >-
+      AGENTS.md; tools/story-loop/gates.sh; _bmad-output/planning-artifacts/maintainer-decisions.md
+    severity: medium
 ---
 
 <intent-contract>
@@ -143,6 +178,44 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 34 findings — high 0, medium 10, low 10, false 14, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) pending member requests are not failed on shard end / close_all; caller gets `Timeout` after 10 s — matches the spec's D4 idle-timeout contract; only delays a rare shutdown-time request, and the fix adds close-watch/select branches.
+  - `[low]` `[reject]` (blind) `set_presence` is not strictly all-or-none: a shard task ending between `is_closed` and `send` yields `ShardClosed` after earlier shards sent — a narrow race on a shard that died anyway; a fix needs either a silent drop (spec Never) or new machinery.
+  - `[low]` `[patch]` (blind) every intercepted `MemberChunk` is deep-cloned under the global `Pending` mutex even when no handler wants it — spec says "cloned when both"; patch: build the answer before locking and move the event when the sink does not want it.
+  - `[low]` `[reject]` (blind) `all()` buffers the whole member list with no bound or stream — inherent to the result D4 deliberately returns; a cap or stream is new public surface.
+  - `[false]` `[reject]` (blind) `chunk_count == 0` makes the request time out — Discord always sends at least one chunk (chunk_count >= 1); an impossible input ends in a typed `Timeout`, not a hang.
+  - `[low]` `[reject]` (blind) `GatewayHandle::attach`/`detach` are `pub` `#[doc(hidden)]` and bot code could detach the App's handle — needs deliberate use of a hidden, skill-forbidden API; a sealed-token gate adds complexity.
+  - `[false]` `[reject]` (blind) the post-READY presence restore bypasses the GW-04 window — the spec states Noctis's own re-send does not count; twilight's limiter paces it, no disconnect.
+  - `[medium]` `[patch]` (blind) no end-to-end test calls `ctx.gateway()` from a running handler (plus other e2e gaps) — grouped with the vgap ctx finding; patch adds a handler-driven presence set test.
+  - `[false]` `[reject]` (blind) `shared_identify_queue.stderr` hunk unrelated — the `port_setters!` source already had `,` at baseline (app.rs:2327); the snapshot was stale and now matches.
+  - `[medium]` `[defer]` (blind) `bg.sh` attach race and empty-tree cache key — real, but from main commit 2defad7 (story-loop tooling), not this story; deferred.
+  - `[medium]` `[defer]` (blind) `epic-last.py` never fires for epics with skipped maintainer-gated stories; fetch failures swallowed — pre-existing tooling; deferred.
+  - `[medium]` `[defer]` (blind) debug-build policy relaxed in AGENTS.md and the debug-dir gate removed — from maintainer commit 2defad7; fix edits agent-context files; deferred (grouped with intent D6).
+  - `[false]` `[reject]` (blind) attach after `Gateway::start` lets first-event handlers see `NotRunning` — no `.await` between `Gateway::start` and `Attached::new`; no dispatch can arrive before connect+IDENTIFY+READY.
+  - `[low]` `[reject]` (edge) `set_presence` second loop can return `ShardClosed` after earlier shards sent — same race as the blind all-or-none finding; rejected with it.
+  - `[false]` `[reject]` (edge) presence slot written before a failing `send` — a failed send means the shard task's receiver is gone; that slot is never read again.
+  - `[low]` `[reject]` (edge) pending request waits 10 s on close_all/shard end — same as the first blind finding.
+  - `[low]` `[reject]` (edge) op 8 queued during a >10 s reconnect times out and is sent later — the spec's D4 names exactly this case as `Timeout`; the late answer is treated as foreign; guarding it needs identify-state tracking.
+  - `[false]` `[reject]` (edge) first chunk with `chunk_count` 0 — unreachable from Discord; ends in a typed `Timeout`.
+  - `[false]` `[reject]` (edge) later chunk with a different `chunk_count` — Discord sends one consistent count per request; not shown reachable.
+  - `[medium]` `[defer]` (edge) `bg.sh` second attacher loops forever — grouped with the blind bg.sh finding; pre-existing tooling.
+  - `[medium]` `[defer]` (edge) `bg.sh` dead detached job hangs every caller — pre-existing tooling; deferred.
+  - `[low]` `[defer]` (edge) `gates.sh` treats an `epic-last.py` crash as "not last" — pre-existing tooling; deferred.
+  - `[low]` `[reject]` (edge, claim) `set` all-or-none claim broken — same race as above; rejected with it.
+  - `[false]` `[reject]` (edge, claim) idle timer restarts on ignored duplicate chunks — the spec times out "since the last chunk", and a duplicate is a chunk; Discord does not stream duplicates.
+  - `[medium]` `[patch]` (vgap) `ctx.gateway()` on every handler context is never exercised against a running App — patch: handler-driven `ctx.gateway().presence().set(..)` test asserting `Ok` and an op 3 frame.
+  - `[medium]` `[patch]` (vgap) `Gateway::start`'s close-watch and intents wiring of `Commands` is only tested on a fixture — patch: started-Gateway `NotRunning` after `close_all` (no op 3) and App-level `MissingIntent` for `all()` (no op 8).
+  - `[false]` `[reject]` (intent D1) budget 110 instead of 120 — the spec's decision D2 deliberately settles it (twilight's heartbeat reserve).
+  - `[false]` `[reject]` (intent D2) GW-04 tested only at unit level — the spec assigns B1-B5 to paused-time unit tests; the budget logic is fully covered there.
+  - `[false]` `[reject]` (intent D3) `app.presence()` only usable via a handle taken before `run` — `App::presence(&self)` returns a handle sharing the attached slot, live during run, as the spec defines.
+  - `[medium]` `[patch]` (intent D4) `ctx.gateway()` never exercised from a handler — grouped with the vgap ctx finding.
+  - `[false]` `[reject]` (intent D5) no generic gateway-command facility — the spec forbids raw JSON send and settles a closed op 3 + op 8 API.
+  - `[medium]` `[defer]` (intent D6) workflow-policy changes contradict maintainer-decisions §6 — from maintainer commit 2defad7, not this story; fix edits agent-context files; deferred.
+  - `[false]` `[reject]` (intent D7) unrelated stderr churn — the snapshot was stale against the baseline source; the change is a correct re-bless.
+  - `[false]` `[reject]` (intent D8) behaviour beyond the AC — each item is a logged spec decision (D2, D4, D7, P11) the spec deliberately settled.
+
 ## Design Notes
 
 Decisions (log each as a `(decision)` line in the architecture memlog):
@@ -177,3 +250,12 @@ valid!(50 51 /* … */ 250);
 - `cargo run --release -p xtask -- tw-grammar --check` and `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- unchanged, pass
 - `cargo deny check` -- ok; `cargo +1.91 check --release --workspace` -- ok (MSRV; `diagnostic::on_unimplemented` is stable since 1.78)
 - `cargo hack` is not run (not the last story of Epic 15).
+
+## Auto Run Result
+
+- **Summary:** Story 15.3 adds runtime presence updates (op 3: `app.presence().set(..)` / `.set_shard(..)`, restored after READY) and on-demand Request Guild Members (op 8: `ctx.gateway().request_guild_members(..)`, nonce-correlated, 10 s idle timeout) in `noctis-gateway`, a per-shard GW-04 budget of 110 commands/60 s with typed `GatewayError`, compile-time GW-06 (`LargeThreshold` 50..=250) and GW-07 (member-request id cap) checks, and an initial identify presence.
+- **Files changed:** `crates/noctis-gateway/src/{presence.rs,command.rs,shard.rs,gateway.rs,lib.rs}` (presence/command API, budget, chunk collection); `crates/noctis/src/lib.rs` (re-exports, `App::presence`, `ctx.gateway()`); `crates/noctis-testkit/tests/presence_commands.rs` + other testkit tests (e2e coverage); `crates/noctis/tests/ui/gw/GW-06*`, `GW-07*` (compile_fail fixtures); `docs/discord-rules.md`, `xtask/rules-pending.toml` (rules GW-04/06/07 enforced); `xtask/public-api.txt` (re-blessed); `examples/project-template/` (code, AGENTS.md, noctis skill + API hash); `tools/story-loop/*` (maintainer tooling carried on main).
+- **Review findings:** 34 total (high 0, medium 10, low 10, false 14). Patched: 4 medium (handler-driven `ctx.gateway()` presence test; started-Gateway `NotRunning` after `close_all`; App-level `MissingIntent` for `all()`; grouped e2e gaps) and 1 low (MemberChunk no longer deep-cloned under the `Pending` mutex when the sink does not want it). Deferred: 6 (bg.sh attach race/hang, epic-last.py with gated stories, gates.sh crash handling, debug-build policy wording — all pre-existing maintainer tooling from 2defad7). Rejected: 23 with recorded reasons (D4 timeout contract, narrow shard-death race in all-or-none `set`, unbounded `all()` inherent to D4, hidden attach/detach API, unreachable `chunk_count` 0, stale stderr snapshot, spec decisions D1-D7).
+- **Follow-up review recommended:** true — patched counts: high 0, medium 4, low 1. Named risk: the new end-to-end tests (handler-driven presence, close-watch `NotRunning`, App-level `MissingIntent`) and the clone-free chunk routing were added by review patches and have not had an independent review pass.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests incl. UI and testkit `presence_commands`, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); `cargo hack` not run (not the last story of Epic 15); CI paused by the maintainer.
+- **Residual risks:** `set_presence` is not strictly all-or-none if a shard dies mid-call; requests pending at shutdown wait up to 10 s before `Timeout`; `all()` buffers the full member list unbounded; deferred story-loop tooling issues remain.

@@ -174,9 +174,9 @@ development_status:
   14-9-maintainer-gated-publish-noctis-0-1-0: backlog
   epic-14-retrospective: optional
 
-  epic-15: backlog
+  epic-15: in-progress
   15-1-renderer-seam: backlog
   15-2-multiple-apps-per-process: backlog
-  15-3-presence-and-gateway-commands: in-progress
+  15-3-presence-and-gateway-commands: done
   15-4-prefix-commands: backlog
   epic-15-retrospective: optional

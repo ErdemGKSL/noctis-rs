@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 use futures_util::{SinkExt, StreamExt};
 use noctis_core::{App, Runtime};
 use noctis_gateway::{
-    CloseMode, EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink, ShardEvent,
+    CloseMode, EventTypeFlags, Gateway, GatewayError, GatewayOptions, Inbound, InboundSink,
+    Presence, ShardEvent,
 };
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_testkit::fake::{
@@ -166,6 +167,28 @@ async fn close_resumable() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(gw.connections().len(), connections, "no reconnect");
     assert_eq!(identifies(&gw), 2);
+}
+
+/// Story 15.3 P10: `Gateway::start` wires its handle to the close signal;
+/// after `close_all` a presence update is refused and sends no op 3.
+#[tokio::test(flavor = "multi_thread")]
+async fn handle_is_not_running_after_close_all() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let (mut gateway, mut events) = Gateway::start(
+        options(gw.url(), 1, Duration::from_secs(5)),
+        Arc::new(Counting::default()),
+    )
+    .unwrap();
+    all_ready(&mut events, 1).await;
+    gateway.close_all(CloseMode::Resumable);
+    assert_eq!(
+        gateway.handle().presence().set(Presence::idle()),
+        Err(GatewayError::NotRunning)
+    );
+    tokio::time::timeout(WAIT, gateway.closed()).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(gw.frames().iter().all(|f| f.op() != Some(3)));
 }
 
 /// Matrix 10: a fresh close sends 1000.

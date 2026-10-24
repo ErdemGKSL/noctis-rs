@@ -362,14 +362,22 @@ pub(crate) enum Answer {
 }
 
 impl Answer {
-    /// The answer an intercepted event carries, if any.
-    fn of(event: &Event) -> Option<Self> {
+    /// The answer an intercepted event carries, if any, cloned out of it.
+    pub(crate) fn of(event: &Event) -> Option<Self> {
         match event {
             Event::MemberChunk(chunk) => Some(Self::Chunk(chunk.clone())),
             Event::RateLimited(limited) => Some(Self::RateLimited {
                 retry_after: retry_after(limited.retry_after),
             }),
             _ => None,
+        }
+    }
+
+    /// The answer an intercepted event carries, if any, moved out of it.
+    pub(crate) fn from_event(event: Event) -> Option<Self> {
+        match event {
+            Event::MemberChunk(chunk) => Some(Self::Chunk(chunk)),
+            other => Self::of(&other),
         }
     }
 }
@@ -406,14 +414,19 @@ impl Pending {
         self.waiters.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The sender of the request waiting on `nonce`, if one waits; the lock
+    /// is released before the caller builds or sends its answer.
+    pub(crate) fn waiter(&self, nonce: &str) -> Option<mpsc::UnboundedSender<Answer>> {
+        self.waiters().get(nonce).cloned()
+    }
+
     /// Forwards `event`'s answer to the request waiting on `nonce`; `false`
     /// when none waits (a foreign nonce).
-    pub(crate) fn deliver(&self, nonce: &str, event: &Event) -> bool {
-        let waiters = self.waiters();
-        let Some(waiter) = waiters.get(nonce) else {
-            return false;
-        };
-        Answer::of(event).is_some_and(|answer| waiter.send(answer).is_ok())
+    #[cfg(test)]
+    fn deliver(&self, nonce: &str, event: &Event) -> bool {
+        self.waiter(nonce).is_some_and(|waiter| {
+            Answer::of(event).is_some_and(|answer| waiter.send(answer).is_ok())
+        })
     }
 
     /// Registers a waiter for `nonce`.

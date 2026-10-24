@@ -60,6 +60,21 @@ impl OnChunk {
     }
 }
 
+/// Sets the presence from inside a handler and records the result.
+#[derive(EventHandler)]
+struct SetPresenceOnChunk;
+
+impl SetPresenceOnChunk {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, _chunk: MemberChunk) -> HandlerResult<()> {
+        let result = ctx.gateway().presence().set(Presence::dnd());
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.0.lock().unwrap().push(format!("set:{result:?}"));
+        }
+        Ok(())
+    }
+}
+
 /// A running App against both fakes.
 struct Running {
     gw: FakeGateway,
@@ -503,5 +518,46 @@ async fn member_requests_go_to_the_owning_shard() {
     assert_eq!(requests.len(), 1);
     assert_eq!(running.shard_of(requests[0].connection), Some(1));
     task.abort();
+    running.stop().await;
+}
+
+/// P7 through a handler: `EventCtx::gateway` reaches the running App's
+/// shards.
+#[tokio::test(flavor = "multi_thread")]
+async fn handler_ctx_sets_the_presence() {
+    let running = Running::start(1, 0..1, |b| {
+        b.module(Module::new("presence").add::<SetPresenceOnChunk>());
+    })
+    .await;
+    running
+        .gw
+        .dispatch("GUILD_MEMBERS_CHUNK", chunk(5, "x", 0, 1, &[member(1)]));
+    let deadline = Instant::now() + WAIT;
+    while running.probe.lines().is_empty() {
+        assert!(Instant::now() < deadline, "the handler did not run");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(running.probe.lines(), ["set:Ok(())"]);
+    let frames = running.wait_frames(1, |f| f.op() == Some(3)).await;
+    assert_eq!(frames[0].json().unwrap()["d"]["status"], json!("dnd"));
+    running.stop().await;
+}
+
+/// D7: requesting every member without `GUILD_MEMBERS` is refused and
+/// sends no op 8.
+#[tokio::test(flavor = "multi_thread")]
+async fn all_members_needs_the_guild_members_intent() {
+    let running = Running::start(1, 0..1, |_| {}).await;
+    assert_eq!(
+        running
+            .gateway
+            .request_guild_members(MemberRequest::all(Id::new(5)))
+            .await,
+        Err(GatewayError::MissingIntent {
+            intent: "GUILD_MEMBERS"
+        })
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(running.ops(8).is_empty());
     running.stop().await;
 }

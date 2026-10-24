@@ -22,7 +22,7 @@ use twilight_model::gateway::payload::incoming::rate_limited::RateLimitMetadata;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
-use crate::command::{Pending, ShardInbox, answer_nonce, last_presence};
+use crate::command::{Answer, Pending, ShardInbox, answer_nonce, last_presence};
 use crate::gateway::CloseMode;
 use crate::inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 use crate::queue::PortQueue;
@@ -271,7 +271,8 @@ pub(crate) struct Lane {
 
 /// Hands one parsed item on: a member chunk or `RATE_LIMITED` answering a
 /// pending request goes to its waiter, and to the sink only when a handler
-/// wants its type (cloned when both); anything else goes to the sink.
+/// wants its type (cloned when both, moved otherwise); anything else goes to
+/// the sink.
 fn route(inbound: Inbound, lane: &Lane) {
     let InboundKind::Event(event) = &inbound.kind else {
         lane.sink.push(inbound);
@@ -285,21 +286,50 @@ fn route(inbound: Inbound, lane: &Lane) {
             return;
         }
     };
-    let delivered = answer_nonce(event).is_some_and(|nonce| lane.pending.deliver(nonce, event));
-    if !delivered && let Event::RateLimited(limited) = &**event {
-        let guild = match &limited.meta {
-            RateLimitMetadata::RequestGuildMembers { guild_id, .. } => Some(guild_id.get()),
-            _ => None,
-        };
+    let wanted = lane.wanted.contains(flag);
+    let limited = match &**event {
+        Event::RateLimited(limited) => Some((
+            match &limited.meta {
+                RateLimitMetadata::RequestGuildMembers { guild_id, .. } => Some(guild_id.get()),
+                _ => None,
+            },
+            limited.retry_after,
+        )),
+        _ => None,
+    };
+    let waiter = answer_nonce(event).and_then(|nonce| lane.pending.waiter(nonce));
+    let delivered = match waiter {
+        Some(waiter) if wanted => {
+            let delivered = Answer::of(event).is_some_and(|answer| waiter.send(answer).is_ok());
+            lane.sink.push(inbound);
+            delivered
+        }
+        Some(waiter) => match inbound.kind {
+            InboundKind::Event(event) => {
+                Answer::from_event(*event).is_some_and(|answer| waiter.send(answer).is_ok())
+            }
+            InboundKind::Interaction(..) => false,
+        },
+        None => {
+            if wanted {
+                lane.sink.push(inbound);
+            }
+            false
+        }
+    };
+    warn_undelivered(delivered, limited);
+}
+
+/// Warns about a `RATE_LIMITED` (`limited`: its guild and `retry_after`)
+/// that reached no pending request.
+fn warn_undelivered(delivered: bool, limited: Option<(Option<u64>, f32)>) {
+    if let (false, Some((guild, retry_after))) = (delivered, limited) {
         tracing::warn!(
             target: "noctis::gateway",
             guild,
-            retry_after = limited.retry_after,
+            retry_after,
             "gateway command rate limited (RATE_LIMITED) with no pending request"
         );
-    }
-    if lane.wanted.contains(flag) {
-        lane.sink.push(inbound);
     }
 }
 
