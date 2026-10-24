@@ -2,7 +2,8 @@
 title: 'Story 10.9: Emoji rendering'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '012de2288f5eba6af9fc04d0f03250c3c2bf2fd7'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

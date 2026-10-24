@@ -132,7 +132,7 @@ development_status:
   10-6-animated-templates: done
   10-7-fonts-and-static-assets: done
   10-8-remote-image-fetching-through-the-assetfetcher: done
-  10-9-emoji-rendering: backlog
+  10-9-emoji-rendering: in-progress
   10-10-render-cache-and-single-flight-deduplication: backlog
   10-11-pixel-snapshots-and-the-reference-card-benchmark: backlog
   epic-10-retrospective: optional
