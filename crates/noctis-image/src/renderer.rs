@@ -2,8 +2,9 @@
 //! images and remote-image fetcher, drawing with the process-scoped
 //! [`FontRegistry`], rendering stills and animations within its per-job
 //! caps ([`RenderCaps`]), fitted to the size budget (`crate::budget`), on
-//! the process-scoped [`RenderPool`]. A Template with `#[asset]` fields has
-//! its remote images resolved before its job is admitted.
+//! the process-scoped [`RenderPool`]. A Template with `#[asset]` fields, or
+//! whose data text holds Discord custom emoji (IMG-04), has its remote
+//! images resolved before its job is admitted.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -28,9 +29,9 @@ use crate::caps::RenderCaps;
 use crate::fonts::FontRegistry;
 use crate::lower::lower;
 use crate::pool::{Lane, RenderPool, Requester};
-use crate::remote::{AssetFetcher, Declared, Resolved};
+use crate::remote::{AssetFetcher, Declared, RemoteImage, Resolved};
 use crate::tw::Theme;
-use crate::{ClassCheck, ClassCheckMode, ViewFn};
+use crate::{ClassCheck, ClassCheckMode, ViewFn, emoji};
 
 /// The registered Templates: id → (version, view).
 type Views = HashMap<&'static str, (u32, ViewFn)>;
@@ -243,27 +244,43 @@ impl TakumiRenderer {
     }
 
     /// The deduplicated remote images `job` declares, checked against the
-    /// per-job count before anything is fetched; `None` for a Template
-    /// without `#[asset]` fields.
-    fn declared(
-        &self,
-        view: ViewFn,
-        job: &RenderJob,
-    ) -> Result<Option<Vec<Declared>>, RenderError> {
-        let Some(assets) = view.assets() else {
+    /// per-job count before anything is fetched, plus the custom emoji its
+    /// data text holds (IMG-04: postcard strings are contiguous UTF-8, so a
+    /// byte scan finds every token in every string field). `None` for a
+    /// Template without `#[asset]` fields whose data holds no emoji.
+    fn declared(&self, view: ViewFn, job: &RenderJob) -> Result<Option<Plan>, RenderError> {
+        let assets = view.assets();
+        let emoji = emoji::scan(&job.data);
+        if assets.is_none() && emoji.is_empty() {
             return Ok(None);
+        }
+        let declared = match assets {
+            Some(assets) => assets(&job.data)?,
+            None => Vec::new(),
         };
-        let declared = assets(&job.data)?;
-        self.shared.remote.plan(job.template_id, declared).map(Some)
+        let mut fetch = self.shared.remote.plan(job.template_id, declared)?;
+        let over = self
+            .shared
+            .remote
+            .plan_emoji(job.template_id, &emoji, &mut fetch);
+        Ok(Some(Plan { fetch, over }))
     }
+}
+
+/// The remote images of one job: those to fetch, and the custom emoji over
+/// the per-job cap, which draw the fallback.
+struct Plan {
+    fetch: Vec<Declared>,
+    over: Vec<RemoteImage>,
 }
 
 impl Renderer for TakumiRenderer {
     /// Looks the Template up and checks the caps. A Template without
-    /// `#[asset]` fields is admitted to the pool before the future is
-    /// returned, so admission order is call order. One with `#[asset]`
-    /// fields first resolves its remote images (concurrently, through the
-    /// App's `AssetFetcher` and `AssetStore`) and is admitted after them.
+    /// `#[asset]` fields whose data holds no custom emoji is admitted to the
+    /// pool before the future is returned, so admission order is call
+    /// order. Any other first resolves its remote images and custom emoji
+    /// (concurrently, through the App's `AssetFetcher` and `AssetStore`)
+    /// and is admitted after them.
     /// Dropping the future gives the job up: pending fetches are aborted, a
     /// queued job is skipped, a running one stops before its next frame or
     /// encode attempt.
@@ -282,13 +299,14 @@ impl Renderer for TakumiRenderer {
                         .map_err(|_| RenderError::failed("render pool dropped the job"))?
                 })
             }
-            Ok((view, Some(plan))) => Box::pin(async move {
+            Ok((view, Some(Plan { fetch, over }))) => Box::pin(async move {
                 let store = self.shared.store.get().map(|store| &**store);
-                let resolved = self
+                let mut resolved = self
                     .shared
                     .remote
-                    .resolve(store, job.template_id, plan, job.animation.is_some())
+                    .resolve(store, job.template_id, fetch, job.animation.is_some())
                     .await?;
+                resolved.fall_back(over);
                 self.submit(view, job, resolved)?
                     .await
                     .map_err(|_| RenderError::failed("render pool dropped the job"))?
@@ -297,10 +315,19 @@ impl Renderer for TakumiRenderer {
     }
 
     /// Fails with [`RenderError::NoFont`] (IMG-01) when `templates` is not
-    /// empty but no font is registered: their text would draw nothing.
+    /// empty but no text font is registered: their text would draw nothing.
+    /// Without the emoji font (`image-emoji` off), registering Templates
+    /// logs one IMG-04 warning per call.
     fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError> {
         if !templates.is_empty() && self.shared.fonts.is_empty() {
             return Err(RenderError::NoFont);
+        }
+        if !templates.is_empty() && !self.shared.fonts.has_emoji() {
+            tracing::warn!(
+                target: "noctis::image",
+                "[IMG-04] the `image-emoji` feature is off: Unicode emoji in Template text render \
+                 as boxes"
+            );
         }
         let mut views = Views::with_capacity(templates.len());
         for descriptor in templates {

@@ -337,6 +337,7 @@ impl Plugin for ImagePlugin {
             .resource_or_init::<FontRegistry>(FontsConfig {
                 fonts: fonts.clone(),
                 bundled: cfg!(feature = "default-font"),
+                emoji: cfg!(feature = "emoji"),
             }) {
             Ok(registry) => registry,
             Err(conflict) => {

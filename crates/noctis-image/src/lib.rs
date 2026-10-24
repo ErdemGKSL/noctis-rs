@@ -1,5 +1,7 @@
 //! Image Templates for Noctis.
 //!
+//! - `emoji` (takumi-free, always built, hidden): the Discord custom emoji
+//!   token matcher (IMG-04), shared by the Renderer and `view!`.
 //! - [`tw`] (takumi-free, always built): the strict Tailwind v4 class grammar
 //!   and the Theme file parser, which the macros run at compile time.
 //! - Behind `render`:
@@ -33,6 +35,8 @@
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
 
+#[doc(hidden)]
+pub mod emoji;
 pub mod tw;
 
 #[cfg(feature = "render")]

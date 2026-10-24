@@ -272,3 +272,57 @@ fn postcard_round_trip(image: &RemoteImage) -> RemoteImage {
     let job = noctis_ports::encode_value(1, image).unwrap();
     noctis_ports::decode_value(1, &job).unwrap().unwrap()
 }
+
+#[test]
+fn img_04_custom_emoji_urls_keys_and_display() {
+    let id = 123_456_789_012_345_678;
+    let still = RemoteImage::custom_emoji(Id::new(id), false);
+    let animated = RemoteImage::custom_emoji(Id::new(id), true);
+    assert_eq!(
+        RemoteImage::custom_emoji(Id::new(1), false).to_string(),
+        "emoji/1"
+    );
+    assert_eq!(format!("{still:?}"), format!("RemoteImage(emoji/{id})"));
+    assert_eq!(
+        target(&still, true),
+        Target {
+            url: format!("{CDN}/emojis/{id}.webp?size=128"),
+            key: format!("img:v1:emoji:{id}:128:s"),
+        }
+    );
+    assert_eq!(
+        target(&animated, true),
+        Target {
+            url: format!("{CDN}/emojis/{id}.webp?size=128&animated=true"),
+            key: format!("img:v1:emoji:{id}:128:a"),
+        }
+    );
+    // A still job never requests the animated frames.
+    assert_eq!(target(&animated, false), target(&still, false));
+    assert_eq!(postcard_round_trip(&animated), animated);
+}
+
+#[test]
+fn img_04_decoded_emoji_id_zero_is_invalid() {
+    let forged = RemoteImage {
+        source: Source::Emoji {
+            id: 0,
+            animated: false,
+        },
+    };
+    assert_eq!(
+        forged.target(CDN, false),
+        Err("emoji id 0 is invalid".to_owned())
+    );
+}
+
+#[test]
+fn img_04_emoji_is_the_last_source_variant() {
+    // Postcard encodes the variant index: the emoji variant was appended, so
+    // the placeholder keeps index 4 and the emoji takes 5.
+    let placeholder = noctis_ports::encode_value(1, &RemoteImage::placeholder()).unwrap();
+    assert_eq!(&placeholder[1..], [4]);
+    let emoji =
+        noctis_ports::encode_value(1, &RemoteImage::custom_emoji(Id::new(1), true)).unwrap();
+    assert_eq!(&emoji[1..], [5, 1, 1]);
+}

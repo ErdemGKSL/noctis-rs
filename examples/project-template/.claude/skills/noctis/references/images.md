@@ -10,7 +10,7 @@ cache, attaching to messages. Doctrine: UD-2 (images are read-only). FR-32..37, 
 ```toml
 noctis = { version = "0.1", features = ["image", "default-font"] }
 # "image-gif"   → GIF/APNG output (animated WebP needs only "image")
-# "image-emoji" → bundles Twemoji (colour emoji in Templates)
+# "image-emoji" → bundles Twemoji (colour Unicode emoji in Templates; implies "image")
 ```
 
 `image` is off by default; it adds ~100 crates and needs a **C compiler**: the WebP
@@ -311,8 +311,23 @@ builder.image(
 - An `<img>` whose image the App did not register (or registered with other bytes)
   fails the render with `RenderError::UnknownImage { id, image }`.
 
-**Emoji** [planned, Story 10.9]: without an emoji font emoji render as boxes; Discord
-custom emoji (`<:name:id>`) will render as fetched images.
+**Unicode emoji** (`[IMG-04]`). With the `image-emoji` feature, Noctis bundles the
+Twemoji Mozilla COLRv0 font (twemoji-colr-font 15.0.3) and registers it as a
+**last-resort** emoji font, after every `ImageConfig::font` and the bundled Inter. Emoji
+(`😀`, `👍🏽`, flags, ZWJ sequences) then draw in colour with no Template change; your
+own fonts keep priority (a glyph your font has, such as `©` or `™`, draws from it), and
+plain digits, `#` and `*` keep the text font. Without the feature, Unicode emoji draw as
+boxes, and an App that registers a Template logs one warning at build (target
+`noctis::image`): ``[IMG-04] the `image-emoji` feature is off: Unicode emoji in Template
+text render as boxes``. The emoji font is not a text font: with `image-emoji` but no
+`default-font` and no `.font(..)`, `App::build` still fails with `[IMG-01] no font is
+registered`. Any COLRv0 colour font you register with `ImageConfig::font` works too
+(takumi draws COLRv0 only: no CBDT/sbix bitmaps, no COLRv1, so not Noto Color Emoji).
+**Attribution:** the emoji graphics are Twemoji, Copyright Twitter, Inc and other
+contributors, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/); the
+font build is Mozilla twemoji-colr (OFL-1.1). A bot that posts rendered images
+containing Twemoji should credit them, e.g. in its about/help text: "Emoji graphics by
+Twemoji (CC-BY 4.0)". Discord custom emoji are §7 "Custom emoji".
 
 ## 7. Remote images
 
@@ -453,6 +468,61 @@ let card = ProfileCard {
 - **Testing.** In unit tests, `RemoteImage::placeholder()` keeps a Template renderable
   without network; for end-to-end tests point `RemoteConfig::discord_cdn("http://127.0.0.1:<port>")`
   at a local server.
+
+### Custom emoji
+
+Discord custom emoji tokens in Template **data** render as fetched images, automatically,
+with or without `image-emoji` (`[IMG-04]`):
+
+```rust
+#[derive(Template, Serialize, Deserialize)]
+#[template(id = "quote.card", version = 1, size = (800, 200), format = Png)]
+pub struct QuoteCard { pub text: String }          // e.g. msg.content, unchanged
+
+impl TemplateView for QuoteCard {
+    fn view(&self, _frame: Frame) -> Node {
+        view! { <p tw="text-3xl text-white">{&self.text}</p> }   // "gg <:pepe:123456789012345678>"
+    }
+}
+```
+
+- **Grammar.** Discord's markdown form, ASCII only: `<:name:id>` (static) or
+  `<a:name:id>` (animated); `name` is 2..=32 of `[A-Za-z0-9_]`, `id` is 17..=20 digits
+  (a non-zero `u64`). Anything else stays literal text (`<:p:1>`, `<A:x:..>`, `< :x:..>`).
+  Mentions, timestamps and `\` escapes are not parsed.
+- **Found automatically.** Before the render, Noctis scans the Template's serialized
+  data: every token in **any** `String` field (also nested, in `Vec`s and `Option`s) is
+  found, deduplicated by `(id, animated)` (the name is ignored), and fetched through the
+  same fetcher as `#[asset]` images (allow-list, timeout, byte and pixel caps,
+  concurrency, `AssetStore` cache) from `<cdn>/emojis/<id>.webp?size=128`, plus
+  `&animated=true` for an `<a:..>` emoji in an animated job (it then animates). Cache
+  key: `img:v1:emoji:<id>:128:<a|s>`. Nothing is annotated.
+- **Drawn inline.** A text node holding a token draws as an inline run: the text around
+  it, and each emoji as a `1.375em` square image (Discord's inline size) on the same
+  line, vertically aligned like Discord. The markup itself is never drawn. Size the text
+  with `text-*` classes as usual; the emoji follows the font size.
+- **Cap.** `RemoteConfig::max_emoji(n)` (0..=128, default 32; out of range is the plugin
+  violation ``[IMG-04] remote max_emoji <v> is out of range: use 0..=128``): the first
+  `n` distinct emoji of a job are fetched; the rest draw the fallback with one warning
+  (`<n> custom emoji over the per-job cap of <max> draw the fallback`). `max_emoji(0)`
+  fetches none. Emoji never count against `max_per_job` and never fail a render, so user
+  text cannot break a card.
+- **Failures** (404, timeout, GIF body, not decodable, ..) draw the fallback inline with
+  the usual warning naming `emoji/<id>`.
+- **Admission.** A Template whose data holds a token is admitted to the queue after its
+  fetches, like one with `#[asset]` fields; data without a token keeps call-order
+  admission.
+- **Literal text is a compile error.** `view! { <p>"hi <:pepe:123456789012345678>"</p> }`
+  fails with ``[IMG-04] custom emoji in literal `view!` text are never fetched: put the
+  text in a Template field, or declare `#[asset] e: RemoteImage`
+  (`RemoteImage::custom_emoji(id, animated)`) and draw `<img src={&self.e} />` ``.
+- **Text the view builds itself** (`format!("<:x:{id}>")` with an id that is not in the
+  data) is never fetched: drawing it fails with `RenderError::UndeclaredImage { id, image:
+  "emoji/<id>" }`. Transforming data text (`to_uppercase()`, trimming) is fine: the
+  lookup uses only the id and the `a` flag.
+- **An emoji as an image.** `RemoteImage::custom_emoji(id: Id<EmojiMarker>, animated)`
+  in an `#[asset]` field, drawn with `<img src={&self.emoji} tw="w-16 h-16" />`, e.g. a
+  big reaction emoji. Its display (in logs and errors) is `emoji/<id>`.
 
 ## 8. Rendering
 

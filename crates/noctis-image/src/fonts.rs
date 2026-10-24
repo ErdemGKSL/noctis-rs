@@ -8,6 +8,14 @@
 //! bundled last-resort `"Inter"` (`default-font`). A font limited with
 //! [`Font::unicode_range`] serves only those codepoints, so mixed-script text
 //! needs no Template change.
+//!
+//! With the `emoji` feature, the bundled Twemoji Mozilla `COLRv0` font
+//! (IMG-04; OFL-1.1 font, CC-BY-4.0 Twemoji graphics, see `NOTICE`) is
+//! registered after Inter as a last resort under the family `"Twemoji"`.
+//! It is never part of the chain: takumi sends emoji-presentation runs to
+//! color fonts first and text runs to non-color fonts first, so author fonts
+//! and text-presentation digits keep priority. It is not a text font, so it
+//! alone never satisfies [`FontRegistry::is_empty`].
 
 use std::fmt;
 use std::ops::RangeInclusive;
@@ -27,6 +35,15 @@ pub(crate) const DEFAULT_FAMILY: &str = "Inter";
 /// The bundled font: Inter 4.1, variable, WOFF2 (OFL-1.1; see `NOTICE`).
 #[cfg(feature = "default-font")]
 pub(crate) static DEFAULT_FONT: &[u8] = include_bytes!("../fonts/InterVariable.woff2");
+
+/// The family the bundled emoji font is registered under.
+#[cfg(feature = "emoji")]
+pub(crate) const EMOJI_FAMILY: &str = "Twemoji";
+
+/// The bundled emoji font: Twemoji Mozilla (twemoji-colr-font 15.0.3),
+/// `COLRv0`, WOFF2 (OFL-1.1 font, CC-BY-4.0 graphics; see `NOTICE`).
+#[cfg(feature = "emoji")]
+static EMOJI_FONT: &[u8] = include_bytes!("../fonts/TwemojiMozilla.woff2");
 
 /// A font's bytes: borrowed for the whole process, or shared.
 #[derive(Clone)]
@@ -222,12 +239,14 @@ pub(crate) fn validate(fonts: &[Font]) -> Vec<String> {
 }
 
 /// The frozen configuration of the [`FontRegistry`]: the fonts in priority
-/// order, and whether the bundled font is registered (`default-font`).
-/// Equality is order-sensitive, because order is priority.
+/// order, whether the bundled font is registered (`default-font`) and
+/// whether the bundled emoji font is (`emoji`). Equality is order-sensitive,
+/// because order is priority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FontsConfig {
     pub(crate) fonts: Vec<Font>,
     pub(crate) bundled: bool,
+    pub(crate) emoji: bool,
 }
 
 /// The process-scoped font registry: every Renderer of one Runtime draws
@@ -240,6 +259,8 @@ pub(crate) struct FontRegistry {
     /// `None` when empty.
     chain: Option<FontFamily>,
     bundled: bool,
+    /// Whether the bundled emoji font is registered.
+    emoji: bool,
     /// The first load error (reported at install, since
     /// [`Resource::init`](noctis_core::Resource::init) is infallible).
     error: Option<String>,
@@ -272,12 +293,14 @@ impl noctis_core::Resource for FontRegistry {
             break;
         }
         let bundled = config.bundled && error.is_none() && register_bundled(&mut fonts, &mut error);
+        let emoji = config.emoji && error.is_none() && register_emoji(&mut fonts, &mut error);
         let chain = (!families.is_empty()).then(|| FontFamily::from_names(families.clone()));
         Self {
             fonts,
             families,
             chain,
             bundled,
+            emoji,
             error,
         }
     }
@@ -313,15 +336,56 @@ fn register_bundled(_: &mut Fonts, _: &mut Option<String>) -> bool {
     false
 }
 
+/// Registers the bundled emoji font as a last resort, after the bundled
+/// text font; whether it registered.
+#[cfg(feature = "emoji")]
+fn register_emoji(fonts: &mut Fonts, error: &mut Option<String>) -> bool {
+    let resource = FontResource::new(FontSource::from_static(EMOJI_FONT))
+        .override_info(FontOverride {
+            family_name: Some(Arc::from(EMOJI_FAMILY)),
+            ..FontOverride::default()
+        })
+        .last_resort();
+    match fonts.register(resource) {
+        Ok(registered) if !registered.is_empty() => true,
+        Ok(_) => {
+            *error = Some(
+                "[IMG-04] the bundled emoji font could not be loaded: it contains no font face"
+                    .to_owned(),
+            );
+            false
+        }
+        Err(err) => {
+            *error = Some(format!(
+                "[IMG-04] the bundled emoji font could not be loaded: {err}"
+            ));
+            false
+        }
+    }
+}
+
+/// Without `emoji` there is no emoji font to bundle.
+#[cfg(not(feature = "emoji"))]
+fn register_emoji(_: &mut Fonts, _: &mut Option<String>) -> bool {
+    false
+}
+
 impl FontRegistry {
     /// The first font that could not be loaded, as an `[IMG-01]` message.
     pub(crate) fn build_error(&self) -> Option<&str> {
         self.error.as_deref()
     }
 
-    /// Whether no font at all is registered: no family and no bundled font.
+    /// Whether no text font is registered: no family and no bundled font.
+    /// The emoji font does not count, so emoji alone is still
+    /// `RenderError::NoFont`.
     pub(crate) fn is_empty(&self) -> bool {
         self.families().is_empty() && !self.bundled
+    }
+
+    /// Whether the bundled emoji font is registered (IMG-04).
+    pub(crate) fn has_emoji(&self) -> bool {
+        self.emoji
     }
 
     /// The registered author families in priority order (the bundled one
@@ -346,6 +410,7 @@ impl fmt::Debug for FontRegistry {
         f.debug_struct("FontRegistry")
             .field("families", &self.families)
             .field("bundled", &self.bundled)
+            .field("emoji", &self.emoji)
             .field("error", &self.error)
             .finish_non_exhaustive()
     }

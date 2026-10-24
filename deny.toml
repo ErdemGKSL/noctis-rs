@@ -35,8 +35,10 @@ allow = [
 exceptions = [
     { crate = "xxhash-rust", allow = ["BSL-1.0"] },
     { crate = "jpeg-encoder", allow = ["IJG"] },
-    # noctis-image ships the bundled Inter font (`default-font`); see its NOTICE.
-    { crate = "noctis-image", allow = ["OFL-1.1"] },
+    # noctis-image ships the bundled Inter font (`default-font`, OFL-1.1) and
+    # the Twemoji Mozilla emoji font (`emoji`: OFL-1.1 font, CC-BY-4.0 Twemoji
+    # graphics); see its NOTICE.
+    { crate = "noctis-image", allow = ["OFL-1.1", "CC-BY-4.0"] },
 ]
 # The allowlist and exceptions are policy for crates later stories add.
 unused-allowed-license = "allow"

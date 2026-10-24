@@ -204,3 +204,55 @@ pub(crate) fn animated_webp() -> Vec<u8> {
     .unwrap();
     out
 }
+
+/// Every log line of the current thread while the guard lives.
+#[derive(Clone, Default)]
+pub(crate) struct Lines(Arc<Mutex<Vec<u8>>>);
+
+impl Lines {
+    pub(crate) fn warnings(&self) -> Vec<String> {
+        String::from_utf8(self.0.lock().unwrap().clone())
+            .unwrap()
+            .lines()
+            .filter(|line| line.contains("WARN") && line.contains("noctis::image"))
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+impl std::io::Write for Lines {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// A thread-local capturing subscriber. A second registered dispatcher
+/// keeps tracing-core from caching a callsite's interest from whichever
+/// subscriber saw it first (as in noctis-testkit's `capture_lines`).
+pub(crate) fn capture_lines() -> (Lines, impl Sized) {
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let lines = Lines::default();
+    let second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
+    let guard = tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with_ansi(false)
+        .with_writer(lines.clone())
+        .finish()
+        .set_default();
+    tracing::callsite::rebuild_interest_cache();
+    (lines, (guard, second))
+}

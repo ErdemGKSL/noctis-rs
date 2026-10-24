@@ -18,6 +18,7 @@ const TIMEOUT: RangeInclusive<Duration> = Duration::from_millis(100)..=Duration:
 const MAX_BYTES: RangeInclusive<u64> = 1024..=67_108_864;
 const CONCURRENCY: RangeInclusive<usize> = 1..=256;
 const MAX_PER_JOB: RangeInclusive<usize> = 1..=64;
+const MAX_EMOJI: RangeInclusive<usize> = 0..=128;
 const MAX_PIXELS: RangeInclusive<u64> = 1..=16_777_216;
 const CACHE_TTL: RangeInclusive<Duration> = Duration::from_secs(1)..=Duration::from_hours(30 * 24);
 
@@ -38,6 +39,10 @@ const CACHE_TTL: RangeInclusive<Duration> = Duration::from_secs(1)..=Duration::f
 /// - `max_per_job` (1..=64, default 16): the distinct remote images one job
 ///   may declare; more is `RenderError::OverCap` with
 ///   `RenderCap::RemoteImages`.
+/// - `max_emoji` (0..=128, default 32; IMG-04): the distinct custom emoji
+///   fetched for one job's text. Further emoji draw the fallback with one
+///   warning; emoji never count against `max_per_job` and never fail a
+///   render.
 /// - `max_pixels` (1..=16777216, default 4194304): the largest image,
 ///   checked from its header before it is decoded.
 /// - `cache_ttl` (1 s..=30 days, default 1 day): how long fetched bytes stay
@@ -46,7 +51,7 @@ const CACHE_TTL: RangeInclusive<Duration> = Duration::from_secs(1)..=Duration::f
 ///   that cannot be used draws.
 ///
 /// Out-of-range values and invalid origins fail `App::build` with
-/// `[IMG-03]` plugin violations.
+/// `[IMG-03]` (`[IMG-04]` for `max_emoji`) plugin violations.
 ///
 /// ```
 /// use std::time::Duration;
@@ -59,6 +64,7 @@ const CACHE_TTL: RangeInclusive<Duration> = Duration::from_secs(1)..=Duration::f
 ///     .max_bytes(4 * 1024 * 1024)
 ///     .concurrency(4)
 ///     .max_per_job(8)
+///     .max_emoji(16)
 ///     .cache_ttl(Duration::from_secs(3600));
 /// assert_ne!(config, RemoteConfig::default());
 /// ```
@@ -70,6 +76,7 @@ pub struct RemoteConfig {
     max_bytes: u64,
     concurrency: usize,
     max_per_job: usize,
+    max_emoji: usize,
     max_pixels: u64,
     cache_ttl: Duration,
     fallback: Option<StaticImage>,
@@ -77,8 +84,8 @@ pub struct RemoteConfig {
 
 impl RemoteConfig {
     /// The defaults: the Discord CDN allow-list, a 5 s timeout, 8 MiB,
-    /// 8 at once, 16 per job, 4 MP, a 1 day cache TTL and the built-in
-    /// fallback.
+    /// 8 at once, 16 per job, 32 custom emoji per job, 4 MP, a 1 day cache
+    /// TTL and the built-in fallback.
     pub fn new() -> Self {
         Self {
             origins: Vec::new(),
@@ -87,6 +94,7 @@ impl RemoteConfig {
             max_bytes: 8_388_608,
             concurrency: 8,
             max_per_job: 16,
+            max_emoji: 32,
             max_pixels: 4_194_304,
             cache_ttl: Duration::from_hours(24),
             fallback: None,
@@ -139,6 +147,15 @@ impl RemoteConfig {
         self
     }
 
+    /// The distinct custom emoji fetched for one job's text (0..=128,
+    /// default 32; IMG-04). The rest draw the fallback with one warning; 0
+    /// fetches none.
+    #[must_use]
+    pub fn max_emoji(mut self, emoji: usize) -> Self {
+        self.max_emoji = emoji;
+        self
+    }
+
     /// The largest image in pixels (1..=16777216, default 4194304).
     #[must_use]
     pub fn max_pixels(mut self, pixels: u64) -> Self {
@@ -163,7 +180,8 @@ impl RemoteConfig {
         self
     }
 
-    /// Every `[IMG-03]` problem: invalid origins and out-of-range values.
+    /// Every `[IMG-03]` problem (invalid origins and out-of-range values),
+    /// and the `[IMG-04]` `max_emoji` range.
     pub(crate) fn validate(&self) -> Vec<String> {
         let mut problems = Vec::new();
         for origin in self.origins.iter().chain([&self.discord_cdn]) {
@@ -216,6 +234,12 @@ impl RemoteConfig {
             &self.cache_ttl,
             "1s..=2592000s (30 days)",
         );
+        if !MAX_EMOJI.contains(&self.max_emoji) {
+            problems.push(format!(
+                "[IMG-04] remote max_emoji {} is out of range: use 0..=128",
+                self.max_emoji
+            ));
+        }
         problems
     }
 
@@ -256,6 +280,10 @@ impl RemoteConfig {
 
     pub(crate) fn max_per_job_value(&self) -> usize {
         self.max_per_job
+    }
+
+    pub(crate) fn max_emoji_value(&self) -> usize {
+        self.max_emoji
     }
 
     pub(crate) fn max_pixels_value(&self) -> u64 {

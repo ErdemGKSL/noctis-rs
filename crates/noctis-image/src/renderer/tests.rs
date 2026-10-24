@@ -194,6 +194,7 @@ fn test_fonts(fonts: Vec<Font>) -> Arc<FontRegistry> {
         .resource_or_init::<FontRegistry>(FontsConfig {
             fonts,
             bundled: false,
+            emoji: false,
         })
         .unwrap()
 }
@@ -1508,4 +1509,5 @@ fn img_01_register_without_font_fails() {
     );
 }
 
+mod emoji;
 mod remote;

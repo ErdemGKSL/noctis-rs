@@ -4,8 +4,9 @@ description = "Image rendering for Noctis. Internal; use `noctis`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-# The package ships the bundled Inter font files (see NOTICE).
-license = "(MIT OR Apache-2.0) AND OFL-1.1"
+# The package ships the bundled Inter and Twemoji Mozilla font files (see
+# NOTICE).
+license = "(MIT OR Apache-2.0) AND OFL-1.1 AND CC-BY-4.0"
 repository.workspace = true
 
 [features]
@@ -38,6 +39,11 @@ gif = ["render"]
 # Bundles Inter 4.1 (OFL-1.1, see NOTICE) as the last-resort family "Inter"
 # (the facade's `default-font`).
 default-font = ["render"]
+# Bundles the Twemoji Mozilla COLRv0 font (twemoji-colr-font 15.0.3: OFL-1.1
+# font, CC-BY-4.0 graphics by Twemoji, Copyright Twitter, Inc and other
+# contributors; see NOTICE) as a last-resort emoji font (the facade's
+# `image-emoji`).
+emoji = ["render"]
 
 [dependencies]
 # `tw` and `tw::theme` (takumi-free, ungated): the theme parser and its digest.

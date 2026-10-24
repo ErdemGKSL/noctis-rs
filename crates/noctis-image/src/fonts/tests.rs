@@ -138,6 +138,7 @@ fn registry(fonts: Vec<Font>) -> FontRegistry {
     FontRegistry::init(&FontsConfig {
         fonts,
         bundled: false,
+        emoji: false,
     })
 }
 
@@ -249,6 +250,7 @@ fn img_01_bundled_font_is_a_last_resort_outside_the_chain() {
     let registry = FontRegistry::init(&FontsConfig {
         fonts: Vec::new(),
         bundled: true,
+        emoji: false,
     });
     assert_eq!(registry.build_error(), None);
     assert!(!registry.is_empty());
@@ -267,6 +269,7 @@ fn img_01_equality_is_by_digest_family_ranges_and_order() {
     let config = |fonts: Vec<Font>| FontsConfig {
         fonts,
         bundled: false,
+        emoji: false,
     };
     assert_eq!(
         config(vec![a.clone(), b.clone()]),
@@ -293,11 +296,49 @@ fn img_01_debug_never_prints_bytes() {
         "{:?}",
         FontsConfig {
             fonts: vec![font],
-            bundled: true
+            bundled: true,
+            emoji: false,
         }
     );
     assert!(
         !config.contains("secret") && !config.contains("115, 101"),
         "{config}"
     );
+}
+
+#[cfg(feature = "emoji")]
+#[test]
+fn img_04_emoji_font_is_a_last_resort_outside_the_chain() {
+    let registry = FontRegistry::init(&FontsConfig {
+        fonts: vec![Font::from_static(JP400)],
+        bundled: false,
+        emoji: true,
+    });
+    assert_eq!(registry.build_error(), None);
+    assert!(registry.has_emoji());
+    assert!(!registry.families().iter().any(|f| f == EMOJI_FAMILY));
+    assert_eq!(registry.families().len(), 1);
+}
+
+#[cfg(feature = "emoji")]
+#[test]
+fn img_04_emoji_font_alone_is_no_text_font() {
+    let registry = FontRegistry::init(&FontsConfig {
+        fonts: Vec::new(),
+        bundled: false,
+        emoji: true,
+    });
+    assert!(registry.has_emoji());
+    assert!(registry.is_empty());
+    assert!(registry.chain().is_none());
+}
+
+#[test]
+fn img_04_emoji_off_registers_no_emoji_font() {
+    let registry = FontRegistry::init(&FontsConfig {
+        fonts: vec![Font::from_static(JP400)],
+        bundled: false,
+        emoji: false,
+    });
+    assert!(!registry.has_emoji());
 }

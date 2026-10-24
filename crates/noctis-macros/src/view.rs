@@ -286,12 +286,30 @@ fn braced_expr(input: ParseStream<'_>) -> syn::Result<Expr> {
     Ok(expr)
 }
 
+/// IMG-04: a custom emoji token in literal text would never be fetched (only
+/// Template data is scanned), so it is a compile error.
+fn reject_custom_emoji(lit: &LitStr) -> syn::Result<()> {
+    use noctis_image::emoji::{self, Piece};
+
+    if emoji::split(&lit.value()).any(|piece| matches!(piece, Piece::Emoji(_))) {
+        return Err(syn::Error::new(
+            lit.span(),
+            "[IMG-04] custom emoji in literal `view!` text are never fetched: put the text in a \
+             Template field, or declare `#[asset] e: RemoteImage` \
+             (`RemoteImage::custom_emoji(id, animated)`) and draw `<img src={&self.e} />`",
+        ));
+    }
+    Ok(())
+}
+
 fn parse_child(input: ParseStream<'_>) -> syn::Result<Child> {
     if input.peek(Token![<]) {
         return Ok(Child::Element(parse_element(input)?));
     }
     if input.peek(LitStr) {
-        return Ok(Child::Text(input.parse()?));
+        let lit: LitStr = input.parse()?;
+        reject_custom_emoji(&lit)?;
+        return Ok(Child::Text(lit));
     }
     if input.peek(token::Brace) {
         return Ok(Child::Expr(braced_expr(input)?));
@@ -565,6 +583,18 @@ mod tests {
             remote.starts_with(":: noctis :: __private :: image :: img (& self . avatar ,"),
             "{remote}"
         );
+    }
+
+    #[test]
+    fn img_04_literal_custom_emoji_is_rejected() {
+        assert_eq!(
+            err(quote!(<p>"hi <:pepe:123456789012345678>"</p>)),
+            "[IMG-04] custom emoji in literal `view!` text are never fetched: put the text in a \
+             Template field, or declare `#[asset] e: RemoteImage` \
+             (`RemoteImage::custom_emoji(id, animated)`) and draw `<img src={&self.e} />`"
+        );
+        // Not a token: the name is one character and the id is short.
+        assert!(syn::parse2::<View>(quote!(<p>"<:p:1>"</p>)).is_ok());
     }
 
     #[test]

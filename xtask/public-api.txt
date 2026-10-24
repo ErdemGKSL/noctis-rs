@@ -3132,6 +3132,7 @@ pub fn noctis::image::RemoteConfig::concurrency(self, usize) -> Self
 pub fn noctis::image::RemoteConfig::discord_cdn(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn noctis::image::RemoteConfig::fallback(self, noctis::image::StaticImage) -> Self
 pub fn noctis::image::RemoteConfig::max_bytes(self, u64) -> Self
+pub fn noctis::image::RemoteConfig::max_emoji(self, usize) -> Self
 pub fn noctis::image::RemoteConfig::max_per_job(self, usize) -> Self
 pub fn noctis::image::RemoteConfig::max_pixels(self, u64) -> Self
 pub fn noctis::image::RemoteConfig::new() -> Self
@@ -3149,6 +3150,7 @@ impl core::marker::StructuralPartialEq for noctis::image::RemoteConfig
 pub struct noctis::image::RemoteImage
 impl noctis::image::RemoteImage
 pub fn noctis::image::RemoteImage::avatar(&twilight_model::user::User, u16) -> Self
+pub fn noctis::image::RemoteImage::custom_emoji(twilight_model::id::Id<twilight_model::id::marker::EmojiMarker>, bool) -> Self
 pub fn noctis::image::RemoteImage::guild_icon(&twilight_model::guild::Guild, u16) -> Self
 pub fn noctis::image::RemoteImage::placeholder() -> Self
 pub fn noctis::image::RemoteImage::url(&str) -> core::result::Result<Self, noctis::image::RemoteUrlError>
@@ -5578,6 +5580,7 @@ pub const noctis::rules::RuleId::GW_07: noctis::rules::RuleId
 pub const noctis::rules::RuleId::IMG_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::IMG_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::IMG_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::IMG_04: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_03: noctis::rules::RuleId

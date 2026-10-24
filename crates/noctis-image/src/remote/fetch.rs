@@ -6,7 +6,13 @@
 //! sniffed (PNG, JPEG or WebP) and decoded on tokio's blocking pool, all
 //! under one per-App semaphore permit; fetched bytes are cached in the App's
 //! `AssetStore`.
+//!
+//! Custom emoji found in a job's text (IMG-04) are planned on top of the
+//! `#[asset]` images, under their own cap (`max_emoji`): they never count
+//! against `max_per_job`, are never required, and those over the cap draw
+//! the fallback.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -28,9 +34,11 @@ use noctis_ports::{AssetStore, RenderCap, RenderError};
 use takumi::prelude::ImageSource;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout_at};
+use twilight_model::id::Id;
 
 use super::{Declared, Origin, ParsedUrl, RemoteConfig, RemoteImage};
 use crate::assets::{self, sniff};
+use crate::emoji::CustomEmoji;
 
 /// The `user-agent` of every request; nothing personal goes in a header.
 const USER_AGENT_VALUE: &str = concat!("noctis/", env!("CARGO_PKG_VERSION"));
@@ -49,6 +57,7 @@ pub(crate) struct AssetFetcher {
     max_bytes: u64,
     max_pixels: u64,
     max_per_job: usize,
+    max_emoji: usize,
     cache_ttl: Duration,
     permits: Arc<Semaphore>,
     fallback: ImageSource,
@@ -70,6 +79,7 @@ impl fmt::Debug for AssetFetcher {
             .field("max_bytes", &self.max_bytes)
             .field("max_pixels", &self.max_pixels)
             .field("max_per_job", &self.max_per_job)
+            .field("max_emoji", &self.max_emoji)
             .finish_non_exhaustive()
     }
 }
@@ -136,6 +146,7 @@ impl AssetFetcher {
             max_bytes: config.max_bytes_value(),
             max_pixels: config.max_pixels_value(),
             max_per_job: config.max_per_job_value(),
+            max_emoji: config.max_emoji_value(),
             cache_ttl: config.cache_ttl_value(),
             permits: Arc::new(Semaphore::new(config.concurrency_value())),
             fallback,
@@ -182,6 +193,47 @@ impl AssetFetcher {
             });
         }
         Ok(unique)
+    }
+
+    /// Adds the custom `emoji` of a job's text to `plan` (IMG-04): the first
+    /// `max_emoji` not already planned are fetched as optional images of
+    /// the field `text`; the rest are returned, to draw the fallback
+    /// ([`Resolved::fall_back`]), with one warning. Emoji never count
+    /// against `max_per_job`.
+    pub(crate) fn plan_emoji(
+        &self,
+        template: &str,
+        emoji: &[CustomEmoji],
+        plan: &mut Vec<Declared>,
+    ) -> Vec<RemoteImage> {
+        let mut over = Vec::new();
+        let mut taken = 0;
+        for e in emoji {
+            let image = RemoteImage::custom_emoji(Id::from(e.id), e.animated);
+            if plan.iter().any(|item| item.image == image) {
+                continue;
+            }
+            if taken < self.max_emoji {
+                taken += 1;
+                plan.push(Declared {
+                    field: Cow::Borrowed("text"),
+                    required: false,
+                    image,
+                });
+            } else {
+                over.push(image);
+            }
+        }
+        if !over.is_empty() {
+            tracing::warn!(
+                target: "noctis::image",
+                template,
+                "{} custom emoji over the per-job cap of {} draw the fallback",
+                over.len(),
+                self.max_emoji
+            );
+        }
+        over
     }
 
     /// Resolves every image of `plan` concurrently for a job of `template`
@@ -420,6 +472,14 @@ impl Resolved {
         Self {
             images: images.into_iter().collect(),
             fallback,
+        }
+    }
+
+    /// Makes each of `images` draw the fallback (custom emoji over the
+    /// per-job cap).
+    pub(crate) fn fall_back(&mut self, images: Vec<RemoteImage>) {
+        for image in images {
+            self.images.insert(image, self.fallback.clone());
         }
     }
 

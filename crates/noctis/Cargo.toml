@@ -19,8 +19,12 @@ image = ["dep:noctis-image", "noctis-image/render", "noctis-macros/image"]
 # GIF/APNG output for rendered images (implies `image`); without it a Template
 # declaring `Gif`/`Apng` is a compile error.
 image-gif = ["image", "noctis-image/gif"]
-# Twemoji colour emoji in image Templates.
-image-emoji = []
+# Twemoji colour emoji in image Templates (implies `image`): bundles the
+# Twemoji Mozilla COLRv0 font as a last-resort emoji font. Emoji graphics:
+# Twemoji, Copyright Twitter, Inc and other contributors, CC-BY-4.0
+# (https://creativecommons.org/licenses/by/4.0/); font build: Mozilla
+# twemoji-colr (twemoji-colr-font 15.0.3), OFL-1.1. See noctis-image's NOTICE.
+image-emoji = ["image", "noctis-image/emoji"]
 # Bundles Inter 4.1 (OFL-1.1) as the last-resort font of image Templates
 # (implies `image`).
 default-font = ["image", "noctis-image/default-font"]

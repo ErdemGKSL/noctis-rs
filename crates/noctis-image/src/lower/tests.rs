@@ -1,6 +1,7 @@
 //! Lowering a Noctis tree into takumi nodes.
 
 use takumi::prelude::{ImageSource, NodeKind};
+use twilight_model::id::Id;
 
 use super::*;
 use crate::remote::Resolved;
@@ -83,9 +84,9 @@ fn style_lowers_to_declarations() {
         "width: 42.5%; height: 10px; gap: 4px; background-color: #00ff00; color: #0a0b0c; \
          border-color: #5865f2; opacity: 0.5; translate: -3px 4px; rotate: -720deg;"
     );
-    let parsed = inline_style(&style).unwrap().unwrap();
+    let parsed = inline_style("", &style).unwrap().unwrap();
     assert!(!parsed.declarations.is_empty());
-    assert!(inline_style(&Style::new()).unwrap().is_none());
+    assert!(inline_style("", &Style::new()).unwrap().is_none());
     assert!(plain(&div(Classes::default()).style(style)).is_ok());
     // Styles apply to text nodes too.
     assert!(plain(&Node::text("t").style(Style::new().color_rgb(1))).is_ok());
@@ -187,4 +188,83 @@ fn img_03_undeclared_remote_image_is_an_error() {
         }
         other => panic!("expected UndeclaredImage, got {other:?}"),
     }
+}
+
+const EMOJI_ID: u64 = 123_456_789_012_345_678;
+
+fn emoji_remote() -> Resolved {
+    let pepe = RemoteImage::custom_emoji(Id::new(EMOJI_ID), false);
+    Resolved::with(
+        vec![(
+            pepe,
+            ImageSource::from_bytes(png_of([0, 0, 255, 255])).unwrap(),
+        )],
+        ImageSource::from_bytes(png()).unwrap(),
+    )
+}
+
+#[test]
+fn img_04_text_without_tokens_stays_one_text_node() {
+    for text in ["plain", "<:p:1>", "a < b > c"] {
+        let lowered = lower(
+            &Node::text(text),
+            &StaticImages::default(),
+            &emoji_remote(),
+            "t",
+        )
+        .unwrap();
+        assert_eq!(
+            lowered.to_html(),
+            takumi::prelude::Node::text(text).to_html(),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn img_04_custom_emoji_split_into_inline_runs_and_images() {
+    let node = text(
+        format!("ab <:pepe:{EMOJI_ID}> cd"),
+        Classes::dynamic("text-lg"),
+    )
+    .style(Style::new().color_rgb(0x00_FF00));
+    let lowered = lower(&node, &StaticImages::default(), &emoji_remote(), "t").unwrap();
+    let NodeKind::Container { children } = &lowered.kind else {
+        panic!("{:?}", lowered.kind);
+    };
+    assert_eq!(children.len(), 3);
+    assert!(matches!(&children[0].kind, NodeKind::Text(t) if t.text == "ab "));
+    assert!(matches!(&children[1].kind, NodeKind::Image(_)));
+    assert!(matches!(&children[2].kind, NodeKind::Text(t) if t.text == " cd"));
+    let html = lowered.to_html();
+    assert!(!html.contains("pepe"), "{html}");
+    let NodeKind::Image(data) = &children[1].kind else {
+        unreachable!()
+    };
+    let expected = takumi::prelude::Node::container([
+        takumi::prelude::Node::text("ab "),
+        takumi::prelude::Node::image(data.clone())
+            .with_style(takumi::prelude::Style::from_str(EMOJI_STYLE).unwrap()),
+        takumi::prelude::Node::text(" cd"),
+    ])
+    .with_tw(TailwindValues::from_str("text-lg").unwrap())
+    .with_style(takumi::prelude::Style::from_str("display: inline; color: #00ff00").unwrap());
+    assert_eq!(html, expected.to_html());
+}
+
+#[test]
+fn img_04_undeclared_custom_emoji_is_an_error() {
+    let id = 98_765_432_109_876_543_u64;
+    let node = Node::text(format!("<:x1:{id}>"));
+    match lower(&node, &StaticImages::default(), &emoji_remote(), "card") {
+        Err(RenderError::UndeclaredImage { id: t, image }) => {
+            assert_eq!((t.as_str(), image), ("card", format!("emoji/{id}")));
+        }
+        other => panic!("expected UndeclaredImage, got {other:?}"),
+    }
+    // The animated flag is part of the lookup; the name is not.
+    let animated = Node::text(format!("<a:pepe:{EMOJI_ID}>"));
+    assert!(lower(&animated, &StaticImages::default(), &emoji_remote(), "card").is_err());
+    let renamed = Node::text(format!("<:PEPE:{EMOJI_ID}>"));
+    assert!(lower(&renamed, &StaticImages::default(), &emoji_remote(), "card").is_ok());
 }

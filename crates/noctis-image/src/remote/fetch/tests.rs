@@ -2,14 +2,14 @@
 //! caps, statuses, redirects, timeouts, bodies, the allow-list, the cache,
 //! concurrency and cancellation.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant as StdInstant};
 
 use noctis_ports::PortError;
 use noctis_ports::memory::MemoryAssetStore;
 
 use super::*;
-use crate::remote::test_server::{Reply, Server, png};
+use crate::remote::test_server::{Reply, Server, capture_lines, png};
 
 const RED: [u8; 4] = [255, 0, 0, 255];
 
@@ -281,58 +281,6 @@ async fn img_03_resolve_draws_the_fallback_or_fails_required() {
     );
 }
 
-/// Every log line of the current thread while the guard lives.
-#[derive(Clone, Default)]
-struct Lines(Arc<Mutex<Vec<u8>>>);
-
-impl Lines {
-    fn warnings(&self) -> Vec<String> {
-        String::from_utf8(self.0.lock().unwrap().clone())
-            .unwrap()
-            .lines()
-            .filter(|line| line.contains("WARN") && line.contains("noctis::image"))
-            .map(str::to_owned)
-            .collect()
-    }
-}
-
-impl std::io::Write for Lines {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
-    type Writer = Self;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-/// A thread-local capturing subscriber. A second registered dispatcher
-/// keeps tracing-core from caching a callsite's interest from whichever
-/// subscriber saw it first (as in noctis-testkit's `capture_lines`).
-fn capture_lines() -> (Lines, impl Sized) {
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    let lines = Lines::default();
-    let second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
-    let guard = tracing_subscriber::fmt()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
-        .with_ansi(false)
-        .with_writer(lines.clone())
-        .finish()
-        .set_default();
-    tracing::callsite::rebuild_interest_cache();
-    (lines, (guard, second))
-}
-
 #[tokio::test(flavor = "current_thread")]
 async fn img_03_each_fallback_logs_one_warning() {
     let (lines, _guard) = capture_lines();
@@ -568,4 +516,57 @@ fn img_03_the_builtin_fallback_is_one_slate_pixel() {
     };
     assert_eq!((buffer.width(), buffer.height()), (1, 1));
     assert_eq!(buffer.pixel(0, 0), [0x47, 0x55, 0x69, 0xFF]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn img_04_a_decoded_emoji_id_zero_draws_the_fallback() {
+    let server = Server::start(|_| Reply::Ok(png(1, 1, [255, 0, 0, 255]))).await;
+    let fetcher = fetcher(&server);
+    let (lines, _guard) = capture_lines();
+    let forged = RemoteImage {
+        source: super::super::Source::Emoji {
+            id: 0,
+            animated: false,
+        },
+    };
+    let resolved = fetcher
+        .resolve(
+            None,
+            "card",
+            vec![declared("text", false, forged.clone())],
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(resolved.get(&forged).is_some());
+    assert_eq!(server.requests().len(), 0);
+    let warnings = lines.warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:#?}");
+    assert!(
+        warnings[0].contains("emoji id 0 is invalid"),
+        "{}",
+        warnings[0]
+    );
+    assert!(warnings[0].contains("image=emoji/0"), "{}", warnings[0]);
+}
+
+#[test]
+fn img_04_plan_emoji_skips_declared_ones_and_caps_the_rest() {
+    use std::num::NonZeroU64;
+
+    use crate::emoji::CustomEmoji;
+
+    let fetcher = AssetFetcher::new(&RemoteConfig::new().max_emoji(1)).unwrap();
+    let e = |id: u64| CustomEmoji {
+        id: NonZeroU64::new(id).unwrap(),
+        animated: false,
+    };
+    let declared_emoji = RemoteImage::custom_emoji(Id::new(7), false);
+    let mut plan = vec![declared("e", true, declared_emoji)];
+    let over = fetcher.plan_emoji("card", &[e(7), e(8), e(9)], &mut plan);
+    assert_eq!(plan.len(), 2);
+    assert!(plan[0].required, "the declared field keeps its own entry");
+    assert_eq!(plan[1].field, "text");
+    assert!(!plan[1].required);
+    assert_eq!(over, [RemoteImage::custom_emoji(Id::new(9), false)]);
 }

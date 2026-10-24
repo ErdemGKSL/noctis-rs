@@ -45,5 +45,5 @@ fn rule_ids_match_the_catalog() {
          {missing:?}; in RuleId but not in the catalog: {extra:?}"
     );
     assert_eq!(code, catalog, "RuleId::ALL is not in catalog row order");
-    assert_eq!(code.len(), 131);
+    assert_eq!(code.len(), 132);
 }

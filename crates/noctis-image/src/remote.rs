@@ -6,6 +6,11 @@
 //! decoded back by the Renderer: every value read from a job is untrusted,
 //! and the URL grammar, the size normalization and the allow-list are
 //! applied again when it is resolved (never only in the constructors).
+//!
+//! Discord custom emoji (IMG-04) are `RemoteImage`s too: the Renderer finds
+//! every `<:name:id>` / `<a:name:id>` token in a job's data and resolves it
+//! as [`RemoteImage::custom_emoji`], under its own per-job cap
+//! ([`RemoteConfig::max_emoji`]).
 
 mod config;
 mod declare;
@@ -20,6 +25,8 @@ use std::net::Ipv6Addr;
 
 use serde::{Deserialize, Serialize};
 use twilight_model::guild::Guild;
+use twilight_model::id::Id;
+use twilight_model::id::marker::EmojiMarker;
 use twilight_model::user::User;
 use twilight_model::util::ImageHash;
 
@@ -36,9 +43,13 @@ const MIN_SIZE: u16 = 16;
 const MAX_SIZE: u16 = 4096;
 /// The number of Discord default avatars.
 const DEFAULT_AVATARS: u8 = 6;
+/// The CDN size custom emoji are fetched at: Discord's largest emoji
+/// resolution.
+pub(crate) const EMOJI_SIZE: u16 = 128;
 
 /// A remote image for an `#[asset]` field of a Template (IMG-03): a user's
-/// avatar, a guild's icon, an allow-listed URL or the placeholder.
+/// avatar, a guild's icon, a custom emoji (IMG-04), an allow-listed URL or
+/// the placeholder.
 ///
 /// The App's `AssetFetcher` fetches every declared image before the render
 /// (or reads it from the `AssetStore`); an image that cannot be used draws
@@ -47,8 +58,8 @@ const DEFAULT_AVATARS: u8 = 6;
 /// `#[asset(required)]`. Draw it with `<img src={&self.avatar} />`.
 ///
 /// `Debug` and `Display` print the display form only (`avatar/<user>/<hash>@<size>`,
-/// `icon/<guild>/<hash>@<size>`, `default-avatar/<i>`, `<origin><path>`
-/// without the query, or `placeholder`).
+/// `icon/<guild>/<hash>@<size>`, `default-avatar/<i>`, `emoji/<id>`,
+/// `<origin><path>` without the query, or `placeholder`).
 ///
 /// ```
 /// use noctis_image::RemoteImage;
@@ -85,6 +96,12 @@ enum Source {
     },
     Url(String),
     Placeholder,
+    // Appended last: postcard encodes the variant index, so earlier indices
+    // must never move.
+    Emoji {
+        id: u64,
+        animated: bool,
+    },
 }
 
 /// Why [`RemoteImage::url`] rejected a URL (IMG-03).
@@ -197,6 +214,22 @@ impl RemoteImage {
         })
     }
 
+    /// The Discord custom emoji `id` (IMG-04), from
+    /// `<cdn>/emojis/<id>.webp?size=128`. An `animated` emoji (`<a:name:id>`)
+    /// animates in an animated Template. The cache key is
+    /// `img:v1:emoji:<id>:128:<a|s>`.
+    ///
+    /// Emoji in Template data text are found and fetched automatically;
+    /// declare one in an `#[asset]` field only to draw it with `<img>`.
+    pub fn custom_emoji(id: Id<EmojiMarker>, animated: bool) -> Self {
+        Self {
+            source: Source::Emoji {
+                id: id.get(),
+                animated,
+            },
+        }
+    }
+
     /// The placeholder: always draws the fallback, with no fetch and no log,
     /// even in a required field.
     pub fn placeholder() -> Self {
@@ -272,6 +305,19 @@ impl RemoteImage {
                     url: canonical,
                 }
             }
+            Source::Emoji {
+                id,
+                animated: emoji_animated,
+            } => {
+                if *id == 0 {
+                    return Err("emoji id 0 is invalid".to_owned());
+                }
+                let animate = *emoji_animated && animated;
+                Target {
+                    url: cdn_url(cdn, &format!("emojis/{id}"), EMOJI_SIZE, animate),
+                    key: format!("img:v1:emoji:{id}:{EMOJI_SIZE}:{}", flag(animate)),
+                }
+            }
             Source::Placeholder => return Ok(None),
         };
         Ok(Some(target))
@@ -340,6 +386,7 @@ impl fmt::Display for RemoteImage {
                 Err(_) => f.write_str("invalid-url"),
             },
             Source::Placeholder => f.write_str("placeholder"),
+            Source::Emoji { id, .. } => write!(f, "emoji/{id}"),
         }
     }
 }

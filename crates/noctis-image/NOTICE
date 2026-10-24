@@ -3,8 +3,10 @@ noctis-image
 
 The noctis-image code is licensed under MIT OR Apache-2.0. The package also
 ships the font files below, which are licensed under the SIL Open Font
-License, Version 1.1 (OFL-1.1). Each is used as published, unmodified. The
-package's license expression is therefore `(MIT OR Apache-2.0) AND OFL-1.1`.
+License, Version 1.1 (OFL-1.1); the emoji graphics inside the bundled emoji
+font are licensed under Creative Commons Attribution 4.0 (CC-BY-4.0). Each
+file is used as published, unmodified. The package's license expression is
+therefore `(MIT OR Apache-2.0) AND OFL-1.1 AND CC-BY-4.0`.
 
 Bundled font (the `default-font` feature)
 -----------------------------------------
@@ -17,6 +19,23 @@ fonts/InterVariable.woff2
   License:   OFL-1.1 (fonts/LICENSE-Inter.txt)
   Copyright: Copyright (c) 2016-2018 The Inter Project Authors (me@rsms.me)
   sha256:    693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3
+
+Bundled emoji font (the `emoji` feature)
+----------------------------------------
+
+fonts/TwemojiMozilla.woff2
+  Font:      Twemoji Mozilla (COLRv0), "Version 0.7.0"
+  Source:    https://registry.npmjs.org/twemoji-colr-font/-/twemoji-colr-font-15.0.3.tgz
+             (package/twemoji.woff2)
+  Version:   twemoji-colr-font 15.0.3
+  License:   OFL-1.1 (the font) and CC-BY-4.0 (the graphics)
+             (fonts/LICENSE-Twemoji.txt)
+  Copyright: Emoji graphics: Twemoji, Copyright Twitter, Inc and other
+             contributors, CC-BY-4.0
+             (https://creativecommons.org/licenses/by/4.0/); font build:
+             Mozilla twemoji-colr, packaged by Tilman Vatteroth as
+             twemoji-colr-font 15.0.3; unmodified
+  sha256:    598b6867d47954acab46edd6a9773d734b844d221d3a95834da7442d5df64f98
 
 Test fixtures (not linked into any build)
 -----------------------------------------

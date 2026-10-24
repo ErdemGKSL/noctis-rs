@@ -571,7 +571,17 @@
 //!   Templates. Without it, `animation(.., format = Gif)` or `Apng` is a
 //!   compile error naming the feature; the default animated format,
 //!   animated WebP, needs only `image`.
-//! - `image-emoji`: Twemoji colour emoji in image Templates.
+//! - `image-emoji` (implies `image`): colour Unicode emoji in image
+//!   Templates. It bundles the Twemoji Mozilla `COLRv0` font as a last-resort
+//!   emoji font, after every registered font, so author fonts and plain
+//!   digits keep their glyphs. Without it, an App that registers a Template
+//!   logs one `[IMG-04]` warning at build, and Unicode emoji draw as boxes.
+//!   Emoji graphics: Twemoji, Copyright Twitter, Inc and other contributors,
+//!   CC-BY-4.0 (<https://creativecommons.org/licenses/by/4.0/>); font build:
+//!   Mozilla twemoji-colr (twemoji-colr-font 15.0.3), OFL-1.1. A bot that
+//!   posts the rendered images should credit Twemoji. Discord custom emoji
+//!   (`<:name:id>`) in Template data are drawn as fetched images with or
+//!   without this feature.
 //! - `default-font` (implies `image`): bundles Inter 4.1 (OFL-1.1) as the
 //!   last-resort font family `"Inter"` of image Templates, after every font
 //!   registered with `ImageConfig::font`. Without it, an App that registers
@@ -2141,6 +2151,17 @@ pub mod image {
     //!   `RenderError::RemoteImage`. Drawing an undeclared remote image is
     //!   `RenderError::UndeclaredImage`; more than `max_per_job` is
     //!   `RenderError::OverCap` with `RenderCap::RemoteImages`.
+    //! - Emoji (FR-68, `[IMG-04]`): Unicode emoji draw in colour with the
+    //!   `image-emoji` feature (the bundled Twemoji font, a last resort after
+    //!   every registered font; CC-BY-4.0 Twemoji graphics). Without it, an
+    //!   App that registers a Template logs one `[IMG-04]` warning at build.
+    //!   Discord custom emoji (`<:name:id>`, `<a:name:id>`) in any string of a
+    //!   Template's data are found before the render, fetched like remote
+    //!   images (`RemoteImage::custom_emoji(id, animated)`, 128 px, at most
+    //!   `RemoteConfig::max_emoji` per job, default 32; the rest and failures
+    //!   draw the fallback) and drawn inline as `1.375em` images; the markup
+    //!   is never drawn. A token in literal `view!` text is a compile error;
+    //!   one only the view writes is `RenderError::UndeclaredImage`.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```

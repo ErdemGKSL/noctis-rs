@@ -56,6 +56,7 @@ fn fonts_config(fonts: Vec<Font>) -> FontsConfig {
     FontsConfig {
         fonts,
         bundled: cfg!(feature = "default-font"),
+        emoji: cfg!(feature = "emoji"),
     }
 }
 
@@ -187,4 +188,30 @@ async fn img_03_a_bad_fallback_is_an_img_02_violation() {
         ),
         "{err}"
     );
+}
+
+#[tokio::test]
+async fn img_04_max_emoji_is_checked_at_build() {
+    let runtime = noctis_core::Runtime::for_test();
+    let config = |n| {
+        ImageConfig::new()
+            .font(Font::from_static(INTER))
+            .remote(RemoteConfig::new().max_emoji(n))
+    };
+    let err = build(&runtime, config(129)).unwrap_err();
+    let violations: Vec<String> = err
+        .violations()
+        .iter()
+        .map(ToString::to_string)
+        .filter(|v| v.contains("[IMG-04]"))
+        .collect();
+    assert_eq!(violations.len(), 1, "{err}");
+    assert!(
+        violations[0].contains("[IMG-04] remote max_emoji 129 is out of range: use 0..=128"),
+        "{}",
+        violations[0]
+    );
+    for n in [0, 128] {
+        build(&runtime, config(n)).unwrap();
+    }
 }

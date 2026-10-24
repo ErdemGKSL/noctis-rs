@@ -1,0 +1,5 @@
+error: [IMG-04] custom emoji in literal `view!` text are never fetched: put the text in a Template field, or declare `#[asset] e: RemoteImage` (`RemoteImage::custom_emoji(id, animated)`) and draw `<img src={&self.e} />`
+  --> tests/ui-image/img/IMG-04_literal_custom_emoji.rs:13:20
+   |
+13 |         view! { <p>"hi <:pepe:123456789012345678>"</p> }
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

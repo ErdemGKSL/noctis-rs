@@ -208,3 +208,18 @@ fn img_03_config_ranges() {
         );
     }
 }
+
+#[test]
+fn img_04_max_emoji_range() {
+    assert_eq!(RemoteConfig::new().max_emoji_value(), 32);
+    for n in [0, 128] {
+        assert!(
+            RemoteConfig::new().max_emoji(n).validate().is_empty(),
+            "{n}"
+        );
+    }
+    assert_eq!(
+        RemoteConfig::new().max_emoji(129).validate(),
+        ["[IMG-04] remote max_emoji 129 is out of range: use 0..=128"]
+    );
+}
