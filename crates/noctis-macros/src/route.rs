@@ -11,6 +11,7 @@ use syn::{Attribute, Ident, Lit, LitStr, Meta};
 
 use crate::common::{combine, error};
 use crate::duration::{DurationError, parse_secs};
+use crate::flags::Flags;
 
 /// How a Route's body is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +67,8 @@ pub(crate) struct RouteArgs {
     pub(crate) ref_args: RefArgs,
     /// The Route Guards: `owner`, `permissions` and `guard` (AD-23 stage 8).
     pub(crate) guards: GuardArgs,
+    /// `flags = [..]`: the Boot Flags (FR-73).
+    pub(crate) flags: Flags,
 }
 
 /// The Route Guard arguments of a kind attribute (FR-19, AD-23 stage 8);
@@ -117,6 +120,22 @@ pub(crate) struct RefArgs {
     /// `one_shot`.
     pub(crate) one_shot: bool,
 }
+
+/// The argument names after the id, besides `defaults(..)`.
+const ARG_NAMES: [&str; 12] = [
+    "by_ref",
+    "overflow",
+    "schema",
+    "signed",
+    "response",
+    "auto_defer",
+    "ttl",
+    "one_shot",
+    "owner",
+    "permissions",
+    "guard",
+    "flags",
+];
 
 /// The runtime arguments of AD-6 that a later story adds (`rate_limit` in
 /// 13.4).
@@ -251,6 +270,7 @@ struct Seen {
     ttl: Option<(Ident, u64)>,
     one_shot: Option<Ident>,
     guards: GuardArgs,
+    flags: Flags,
     names: Vec<String>,
 }
 
@@ -324,6 +344,7 @@ fn parse_list(
                 one_shot: seen.one_shot.is_some(),
             },
             guards: seen.guards,
+            flags: seen.flags,
         },
         seen.defaults,
     ))
@@ -424,21 +445,7 @@ fn parse_arg(
         ));
         return;
     }
-    if ![
-        "by_ref",
-        "overflow",
-        "schema",
-        "signed",
-        "response",
-        "auto_defer",
-        "ttl",
-        "one_shot",
-        "owner",
-        "permissions",
-        "guard",
-    ]
-    .contains(&key.as_str())
-    {
+    if !ARG_NAMES.contains(&key.as_str()) {
         errors.push(cid_03(
             name,
             format!("unknown #[{a}] argument `{key}`"),
@@ -476,6 +483,10 @@ fn parse_arg(
             }
         }
         ("guard", value) => parse_guard(name, value, a, seen, errors),
+        ("flags", _) => match Flags::parse(segment) {
+            Ok(flags) => seen.flags = flags,
+            Err(error) => errors.push(error),
+        },
         (_, value) => parse_schema(name, value, seen, errors),
     }
 }
@@ -838,6 +849,7 @@ mod tests {
             auto_defer: true,
             ref_args: super::RefArgs::default(),
             guards: super::GuardArgs::default(),
+            flags: crate::flags::Flags::default(),
         }
     }
 
@@ -1164,15 +1176,10 @@ mod tests {
                 struct R;
             )),
             Ok(RouteArgs {
-                id: "a".to_owned(),
                 body: Body::Spill,
                 schema: 61,
-                select: false,
                 signed: true,
-                response: super::Response::Update,
-                auto_defer: true,
-                ref_args: super::RefArgs::default(),
-                guards: super::GuardArgs::default(),
+                ..args("a")
             })
         );
         assert_eq!(

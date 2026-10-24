@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `cb96e5663d69d3689707f68ebb7657fb5772e1a2f716774010e871f02df3cb5a` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `946d5acbec4ae58d28f9260833d56ff522b9b943f9c85ec8aa4a594b27c2f4db` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -473,7 +473,7 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | `*.interactions.yaml` `names:` | `cmdword.<word>` and `cmd.<path>.*` keys in the same locale files |
 | `beforeInteraction` returning `false`/object | Middleware returning `Flow::Stop` / inserting an `Ext<T>` |
 | `--publish [--guildId]` | `--publish`, `--publish-guild [<id>]`, `--publish-clear`, `--dry-run`; in code `app.publish(PublishScope::..)`; `--no-resume` (run without resuming, fresh shutdown) |
-| `--features a,b` | Boot Flags: `Module::flags([..])` + `--features a,b` |
+| `--features a,b` | Boot Flags: `Module::flags([..])` / `flags = [..]` on a kind attribute, selected with `--features a,b\|all\|none` or `NOCTIS_FEATURES` (read by `App::from_env()`) or `.boot_flags(BootFlags)` |
 | inline listeners | not supported (UD-7): Route + `one_shot` Ref |
 
 ## 7. Reference index (progressive disclosure)

@@ -592,16 +592,16 @@
 pub use noctis_core::{
     Access, AckDeadlineMissed, Acked, AfterCtx, AfterMiddleware, App, AppBuilder, AppId,
     AppIdError, AutoDefer, AutocompleteChoice, AutocompleteCtx, AutocompleteError,
-    AutocompleteValue, BaseMeta, BeforeCtx, BeforeMiddleware, BuildError, BuildViolation,
-    CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
-    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder, Component,
-    ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler,
-    DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport,
-    ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
-    FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
-    HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
-    Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales,
-    LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
+    AutocompleteValue, BaseMeta, BeforeCtx, BeforeMiddleware, BootFlagError, BootFlags, BuildError,
+    BuildViolation, CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler,
+    CommandInput, CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder,
+    Component, ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder,
+    ContextMenuHandler, DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error,
+    ErrorOrigin, ErrorReport, ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions,
+    Flow, Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
+    HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse,
+    InvalidOption, Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver,
+    Locales, LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
     ModalSubmit, ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue,
     Options, OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions,
     Plugin, RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded,
@@ -3063,6 +3063,10 @@ pub mod rules {
     //! - [`discord_len`] and [`truncate`]: the only length function for user text,
     //!   and `…` truncation that respects it.
     //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes.
+    //! - [`boot_flag`]: the Boot Flag grammar ([`boot_flag::check`],
+    //!   [`boot_flag::BootFlagError`], also re-exported as
+    //!   [`crate::BootFlagError`]) of `flags = [..]`, `Module::flags` and
+    //!   `--features`.
     //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
     //! - [`command`]: Command Pattern expansion ([`command::expand`]), the
     //!   command name and tree rules ([`command::validate_name`],
@@ -3156,7 +3160,7 @@ pub mod rules {
         Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,
         Violation,
     };
-    pub use noctis_rules::{attachment, command, component, message, modal};
+    pub use noctis_rules::{attachment, boot_flag, command, component, message, modal};
 }
 
 #[cfg(feature = "testkit")]

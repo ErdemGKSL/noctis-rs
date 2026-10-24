@@ -4,6 +4,7 @@ use std::fmt;
 
 use noctis_ports::{Template, TemplateDescriptor};
 
+use crate::boot_flags::BootFlags;
 use crate::command::CommandHandler;
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
@@ -16,8 +17,9 @@ pub(crate) mod sealed {
 
     /// How a descriptor adds itself to a Module.
     pub trait Sealed {
-        /// Appends the registration to `module`.
-        fn register(self, module: &mut Module);
+        /// Appends the registration to `module`, declaring the Boot Flags
+        /// `flags` (none for an unflagged registration).
+        fn register(self, module: &mut Module, flags: &'static [&'static str]);
     }
 }
 
@@ -29,40 +31,40 @@ pub(crate) mod sealed {
 pub trait Descriptor: sealed::Sealed {}
 
 impl sealed::Sealed for EventHandler {
-    fn register(self, module: &mut Module) {
-        module.handlers.push(self);
+    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
+        module.handlers.push(self, flags);
     }
 }
 
 impl Descriptor for EventHandler {}
 
 impl sealed::Sealed for CommandHandler {
-    fn register(self, module: &mut Module) {
-        module.commands.push(self);
+    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
+        module.commands.push(self, flags);
     }
 }
 
 impl Descriptor for CommandHandler {}
 
 impl sealed::Sealed for ContextMenuHandler {
-    fn register(self, module: &mut Module) {
-        module.menus.push(self);
+    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
+        module.menus.push(self, flags);
     }
 }
 
 impl Descriptor for ContextMenuHandler {}
 
 impl sealed::Sealed for ComponentHandler {
-    fn register(self, module: &mut Module) {
-        module.components.push(self);
+    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
+        module.components.push(self, flags);
     }
 }
 
 impl Descriptor for ComponentHandler {}
 
 impl sealed::Sealed for ModalHandler {
-    fn register(self, module: &mut Module) {
-        module.modals.push(self);
+    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
+        module.modals.push(self, flags);
     }
 }
 
@@ -121,6 +123,32 @@ pub(crate) enum NodeDecl {
 /// The id is the `module` field of every span and `ErrorReport` of its
 /// registrations.
 ///
+/// # Boot Flags
+///
+/// A Module declares Boot Flags with [`flags`](Self::flags) and a single
+/// registration with `flags = [..]` on its kind attribute
+/// (`#[command("beta stats", flags = ["beta"])]`). A flag is 1 to 32
+/// characters of `a-z`, `0-9`, `_` and `-`; `all` and `none` are reserved.
+/// The App's selection ([`BootFlags`](crate::BootFlags): `--features`,
+/// `NOCTIS_FEATURES` or `AppBuilder::boot_flags`, default `all`) prunes the
+/// trees before `build()` folds them: an unflagged Module or registration
+/// always exists, a flagged one exists when the selection is `all` or holds
+/// any of its flags, and a pruned Module drops its whole subtree
+/// (registrations, children, Middleware, `uses`, `base`/`group`
+/// declarations). A kept Module's `base`/`group` declaration whose node
+/// loses its last Command to the selection is dropped too. Pruned
+/// registrations are not dispatched, add no intents and are not published.
+/// Locale catalogs and Templates of pruned Modules stay App-wide. Module
+/// ids and flags are checked on the full trees, whatever is selected.
+///
+/// ```
+/// use noctis_core::Module;
+///
+/// // Exists only when `economy` is selected (or `all`).
+/// let eco = Module::new("eco").flags(["economy"]);
+/// assert!(format!("{eco:?}").contains("economy"));
+/// ```
+///
 /// Every interaction is one struct with a kind derive and a `#[handler]`
 /// method (`#[derive(SlashCommand)]`, `#[derive(EventHandler)]`,
 /// `#[derive(Button)]`, …); [`add::<T>()`](Self::add) registers it.
@@ -157,11 +185,14 @@ pub(crate) enum NodeDecl {
 #[derive(Clone)]
 pub struct Module {
     id: &'static str,
-    handlers: Vec<EventHandler>,
-    commands: Vec<CommandHandler>,
-    menus: Vec<ContextMenuHandler>,
-    components: Vec<ComponentHandler>,
-    modals: Vec<ModalHandler>,
+    /// The Boot Flags of `Module::flags`, in call order (validated at
+    /// `build()`).
+    flags: Vec<&'static str>,
+    handlers: Flagged<EventHandler>,
+    commands: Flagged<CommandHandler>,
+    menus: Flagged<ContextMenuHandler>,
+    components: Flagged<ComponentHandler>,
+    modals: Flagged<ModalHandler>,
     uses: Vec<UsedRoute>,
     nodes: Vec<NodeDecl>,
     before: Vec<BeforeMiddleware>,
@@ -169,6 +200,45 @@ pub struct Module {
     templates: Vec<(TemplateDescriptor, &'static str)>,
     locales: Vec<noctis_i18n::Catalog>,
     children: Vec<Module>,
+}
+
+/// One kind of registration in `add` order, each with the Boot Flags its
+/// kind attribute declares (`flags = [..]`; empty when unflagged).
+#[derive(Clone)]
+struct Flagged<T> {
+    items: Vec<T>,
+    /// Parallel to `items`.
+    flags: Vec<&'static [&'static str]>,
+}
+
+impl<T> Flagged<T> {
+    const fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            flags: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, item: T, flags: &'static [&'static str]) {
+        self.items.push(item);
+        self.flags.push(flags);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&T, &'static [&'static str])> {
+        self.items.iter().zip(self.flags.iter().copied())
+    }
+}
+
+impl<T: Clone> Flagged<T> {
+    /// The registrations `selection` keeps, in order.
+    fn selected(&self, selection: &BootFlags) -> Self {
+        let (items, flags) = self
+            .iter()
+            .filter(|&(_, flags)| selection.selects(flags))
+            .map(|(item, flags)| (item.clone(), flags))
+            .unzip();
+        Self { items, flags }
+    }
 }
 
 /// A Route a Module renders but another Module handles
@@ -193,11 +263,12 @@ impl Module {
     pub fn new(id: &'static str) -> Self {
         Self {
             id,
-            handlers: Vec::new(),
-            commands: Vec::new(),
-            menus: Vec::new(),
-            components: Vec::new(),
-            modals: Vec::new(),
+            flags: Vec::new(),
+            handlers: Flagged::new(),
+            commands: Flagged::new(),
+            menus: Flagged::new(),
+            components: Flagged::new(),
+            modals: Flagged::new(),
             uses: Vec::new(),
             nodes: Vec::new(),
             before: Vec::new(),
@@ -222,7 +293,41 @@ impl Module {
     #[doc(hidden)]
     #[must_use]
     pub fn __add(mut self, descriptor: impl Descriptor) -> Self {
-        descriptor.register(&mut self);
+        descriptor.register(&mut self, &[]);
+        self
+    }
+
+    /// Appends `descriptor` with the Boot Flags of its kind attribute's
+    /// `flags = [..]` (checked by the macro); what the derives' [`Register`]
+    /// impls call for a flagged registration.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __add_flagged(
+        mut self,
+        flags: &'static [&'static str],
+        descriptor: impl Descriptor,
+    ) -> Self {
+        descriptor.register(&mut self, flags);
+        self
+    }
+
+    /// Adds the Boot Flags `flags` to this Module (see
+    /// [Boot Flags](Module#boot-flags)); repeated calls append. No flags
+    /// leaves the Module unflagged.
+    ///
+    /// `build()` checks each flag's grammar and reports a broken or
+    /// repeated flag as
+    /// [`BuildViolation::InvalidBootFlag`](crate::BuildViolation::InvalidBootFlag).
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    ///
+    /// let eco = Module::new("eco").flags(["economy"]);
+    /// assert!(format!("{eco:?}").contains("economy"));
+    /// ```
+    #[must_use = "Module::flags returns the Module with the flags added"]
+    pub fn flags<I: IntoIterator<Item = &'static str>>(mut self, flags: I) -> Self {
+        self.flags.extend(flags);
         self
     }
 
@@ -458,27 +563,27 @@ impl Module {
 
     /// Its own handlers, in `add` order.
     pub(crate) fn handlers(&self) -> &[EventHandler] {
-        &self.handlers
+        &self.handlers.items
     }
 
     /// Its own Commands, in `add` order.
     pub(crate) fn commands(&self) -> &[CommandHandler] {
-        &self.commands
+        &self.commands.items
     }
 
     /// Its own context-menu commands, in `add` order.
     pub(crate) fn menus(&self) -> &[ContextMenuHandler] {
-        &self.menus
+        &self.menus.items
     }
 
     /// Its own component handlers, in `add` order.
     pub(crate) fn components(&self) -> &[ComponentHandler] {
-        &self.components
+        &self.components.items
     }
 
     /// Its own modal handlers, in `add` order.
     pub(crate) fn modals(&self) -> &[ModalHandler] {
-        &self.modals
+        &self.modals.items
     }
 
     /// The Routes it declared with [`Module::uses`], in call order.
@@ -515,23 +620,113 @@ impl Module {
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
     }
+
+    /// Its own Boot Flags (`Module::flags`), in call order.
+    pub(crate) fn boot_flags(&self) -> &[&'static str] {
+        &self.flags
+    }
+
+    /// The Boot Flags its own registrations declare, in kind then `add`
+    /// order (repeats included).
+    pub(crate) fn registration_flags(&self) -> impl Iterator<Item = &'static str> + '_ {
+        let handlers = self.handlers.flags.iter();
+        let commands = self.commands.flags.iter();
+        let menus = self.menus.flags.iter();
+        let components = self.components.flags.iter();
+        let modals = self.modals.flags.iter();
+        handlers
+            .chain(commands)
+            .chain(menus)
+            .chain(components)
+            .chain(modals)
+            .flat_map(|flags| flags.iter().copied())
+    }
+
+    /// This tree as `selection` keeps it (AD-7, filter before fold): `None`
+    /// when this Module's flags are not selected (its whole subtree goes),
+    /// else a copy with only the selected registrations and children, in
+    /// order. Templates, catalogs, Middleware, `uses` and `base`/`group`
+    /// declarations of a kept Module stay; see
+    /// [`retain_nodes`](Self::retain_nodes) for the declarations.
+    pub(crate) fn selected(&self, selection: &BootFlags) -> Option<Self> {
+        if !selection.selects(&self.flags) {
+            return None;
+        }
+        Some(Self {
+            id: self.id,
+            flags: self.flags.clone(),
+            handlers: self.handlers.selected(selection),
+            commands: self.commands.selected(selection),
+            menus: self.menus.selected(selection),
+            components: self.components.selected(selection),
+            modals: self.modals.selected(selection),
+            uses: self.uses.clone(),
+            nodes: self.nodes.clone(),
+            before: self.before.clone(),
+            after: self.after.clone(),
+            templates: self.templates.clone(),
+            locales: self.locales.clone(),
+            children: self
+                .children
+                .iter()
+                .filter_map(|child| child.selected(selection))
+                .collect(),
+        })
+    }
+
+    /// Keeps the `base`/`group` declarations of this tree for which `keep`
+    /// holds.
+    pub(crate) fn retain_nodes(&mut self, keep: &impl Fn(&NodeDecl) -> bool) {
+        self.nodes.retain(keep);
+        for child in &mut self.children {
+            child.retain_nodes(keep);
+        }
+    }
+}
+
+impl NodeDecl {
+    /// The declared node's Command Path.
+    pub(crate) fn path(&self) -> &'static str {
+        match *self {
+            Self::Base { name, .. } => name,
+            Self::Group { path, .. } => path,
+        }
+    }
 }
 
 impl fmt::Debug for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let handlers: Vec<&str> = self.handlers.iter().map(EventHandler::name).collect();
-        let commands: Vec<&str> = self.commands.iter().map(CommandHandler::name).collect();
+        let handlers: Vec<&str> = self.handlers.items.iter().map(EventHandler::name).collect();
+        let commands: Vec<&str> = self
+            .commands
+            .items
+            .iter()
+            .map(CommandHandler::name)
+            .collect();
         let menus: Vec<&str> = self
             .menus
+            .items
             .iter()
             .map(ContextMenuHandler::menu_name)
             .collect();
         let components: Vec<&str> = self
             .components
+            .items
             .iter()
             .map(ComponentHandler::route)
             .collect();
-        let modals: Vec<&str> = self.modals.iter().map(ModalHandler::route).collect();
+        let modals: Vec<&str> = self.modals.items.iter().map(ModalHandler::route).collect();
+        // The flagged registrations: (name or Route id, flags).
+        let flagged: Vec<(&str, &[&str])> = self
+            .handlers
+            .iter()
+            .map(|(h, f)| (h.name(), f))
+            .chain(self.commands.iter().map(|(h, f)| (h.name(), f)))
+            .chain(self.menus.iter().map(|(h, f)| (h.menu_name(), f)))
+            .chain(self.components.iter().map(|(h, f)| (h.route(), f)))
+            .chain(self.modals.iter().map(|(h, f)| (h.route(), f)))
+            .filter(|(_, f)| !f.is_empty())
+            .collect();
         let uses: Vec<&str> = self.uses.iter().map(|u| u.route).collect();
         let before: Vec<&str> = self.before.iter().map(BeforeMiddleware::name).collect();
         let after: Vec<&str> = self.after.iter().map(AfterMiddleware::name).collect();
@@ -543,11 +738,13 @@ impl fmt::Debug for Module {
             .collect();
         f.debug_struct("Module")
             .field("id", &self.id)
+            .field("flags", &self.flags)
             .field("handlers", &handlers)
             .field("commands", &commands)
             .field("menus", &menus)
             .field("components", &components)
             .field("modals", &modals)
+            .field("flagged", &flagged)
             .field("uses", &uses)
             .field("nodes", &self.nodes)
             .field("before", &before)

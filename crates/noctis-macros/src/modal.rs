@@ -1377,8 +1377,12 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let idents = defs.iter().map(|d| &d.ident);
     let decodes = defs.iter().map(|d| decode(d, &s));
     let modal_impl = modal_impl(name, &attr.args);
-    let scaffolding =
-        crate::kind::scaffolding(name, crate::kind::Family::Modal, !attr.args.auto_defer);
+    let scaffolding = crate::kind::scaffolding(
+        name,
+        crate::kind::Family::Modal,
+        !attr.args.auto_defer,
+        &attr.args.flags,
+    );
     let render = render_impls(
         name,
         vis,
@@ -2057,5 +2061,62 @@ mod tests {
         assert!(is_blankable(&syn::parse_quote!(::std::option::Option<u8>)));
         assert!(!is_blankable(&syn::parse_quote!(Option)));
         assert!(!is_blankable(&syn::parse_quote!(u8)));
+    }
+
+    /// Story 13.2 M1-M8 on `#[modal]`.
+    #[test]
+    fn boot_flags() {
+        let out = run(quote! {
+            #[modal("bio", flags = ["beta", "eco"], defaults(title = "T"))]
+            struct Bio {
+                #[text_input("Bio")]
+                bio: String,
+            }
+        });
+        assert!(
+            out.contains("__add_flagged (& [\"beta\" , \"eco\"]"),
+            "{out}"
+        );
+        for (flags, expected) in [
+            (quote!(flags = []), crate::flags::EMPTY),
+            (quote!(flags = "beta"), crate::flags::NOT_A_LIST),
+            (quote!(flags), crate::flags::NOT_A_LIST),
+            (
+                quote!(flags = ["Beta"]),
+                "invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`",
+            ),
+            (
+                quote!(flags = ["none"]),
+                "invalid Boot Flag `none` in `flags`: `none` is reserved: write `all` or `none` alone, never in a list or as a declared flag",
+            ),
+            (
+                quote!(flags = ["a", "a"]),
+                "invalid Boot Flag `a` in `flags`: a Boot Flag is given twice: keep one",
+            ),
+        ] {
+            let out = run(quote! {
+                #[modal("bio", #flags, defaults(title = "T"))]
+                struct Bio {
+                    #[text_input("Bio")]
+                    bio: String,
+                }
+            });
+            assert!(
+                out.contains(&expected.replace('"', "\\\"")),
+                "{flags}: {out}"
+            );
+        }
+        let long = "a".repeat(33);
+        let out = run(quote! {
+            #[modal("bio", flags = [#long], defaults(title = "T"))]
+            struct Bio {
+                #[text_input("Bio")]
+                bio: String,
+            }
+        });
+        assert!(
+            out.contains("the Boot Flag has 33 characters: shorten it to at most 32"),
+            "{out}"
+        );
     }
 }

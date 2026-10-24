@@ -148,7 +148,7 @@ Planned (signatures may change):
 | `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
 | `.presence(Presence)` | none (Discord shows online, no activity) | the presence every shard identifies with; the last call wins; change it at run time with `app.presence()` (§6) |
 | `.large_threshold(LargeThreshold)` | `LargeThreshold::default()` (50) | the IDENTIFY `large_threshold`; `LargeThreshold::new::<N>()` compiles only for 50..=250 (GW-06, §6); the last call wins |
-| `.boot_flags(BootFlags)` [planned] | env/CLI | which flagged Modules exist this run |
+| `.boot_flags(BootFlags)` | `all`; `App::from_env()` reads `NOCTIS_FEATURES`, then `--features` (wins) | which flagged Modules and registrations exist this run; `build()` prunes the trees with it before the fold; a selected flag nothing declares is `BuildViolation::UnknownBootFlag`; the last call wins; read back with `app.boot_flags()` (`modules-middleware-ratelimits.md` §2) |
 
 ### Errors
 
@@ -300,7 +300,7 @@ Memory rules for embedded data:
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
 | `NOCTIS_PUBLISHER` | `true` on the one publishing process; read by `App::from_env()` after `NOCTIS_SHUTDOWN_GRACE` with the same rules; `true`/`false`/`1`/`0` in any ASCII case, else `EnvError::InvalidPublisher`; passed to `.publisher(..)` |
-| `NOCTIS_FEATURES` [planned] | Boot Flags (`a,b` or `all`), same as `--features` |
+| `NOCTIS_FEATURES` | Boot Flags, read by `App::from_env()` after `NOCTIS_DEV_GUILD` with the same rules (trimmed; empty = unset): `all`, `none` or `a,b` (`BootFlags`), else `EnvError::InvalidBootFlags { var, reason }`; passed to `.boot_flags(..)`. `--features` on the command line wins over it |
 | `RUST_LOG` | tracing filter (Noctis uses `tracing`; you install the subscriber) |
 
 No config file is needed. Secrets come only from the environment.
@@ -317,7 +317,7 @@ explicitly). Built-in parser, no clap:
 | `--publish-guild [<id>]` | publish **every** Command into one guild (dev mirror; instant), print, exit. No id: `.dev_guild(..)` / `NOCTIS_DEV_GUILD`, else `CliError::MissingDevGuild` |
 | `--publish-clear [--guild <id>]` | publish an empty list globally (or to that guild): deletes this App's commands there |
 | `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff and the create count, write nothing |
-| `--features a,b` / `all` [planned, Story 13.2] | Boot Flags (an unknown flag today) |
+| `--features a,b` / `all` / `none` | Boot Flags. `App::from_env()` reads it from the process command line before `build()` (it wins over `NOCTIS_FEATURES`); `run` only checks that it equals `app.boot_flags()`, else `CliError::BootFlagsMismatch`. Combines with every mode, `--dry-run` and `--no-resume` |
 | `--no-resume` | run the bot with fresh sessions: `.resume_sessions(false)` for this run (`info` log `session resume disabled (--no-resume)`): each shard deletes its stored entry before it identifies, the shutdown closes with 1000 and deletes it. With a publish flag it is `CliError::NoResumeWithPublish` |
 
 Parsing rules: `--publish-guild=<id>` and `--guild=<id>` also work; `--publish-guild`
@@ -332,7 +332,13 @@ stdout, or `Err(noctis::Error::Publish(..))`; it installs no signal handler, sen
 (`--publish=1`, `--dry-run=yes`), `InvalidGuildId { flag, value }`, `DuplicateFlag { flag }`,
 `ConflictingModes { first, second }`, `DryRunWithoutPublish`, `GuildWithoutClear`
 (`--guild` without `--publish-clear`), `MissingDevGuild`, `NoResumeWithPublish`
-(`--no-resume` with `--publish`, `--publish-guild` or `--publish-clear`).
+(`--no-resume` with `--publish`, `--publish-guild` or `--publish-clear`),
+`InvalidFeatures { value, reason }` (a `--features` value that is not `all`, `none` or
+`a,b`), `MissingFeatures` (`--features` without a value), `BootFlagsMismatch { given,
+built }` (a `--features` that differs from the App's built Boot Flags: build it with
+`App::from_env()`, or pass the same selection to `.boot_flags(..)`). `NoctisArgs::features()
+-> Option<&BootFlags>` reads the parsed selection; iterating `NoctisArgs` renders
+`--features <canonical>` last.
 
 Stale guild commands: `--publish` writes only the global target and the guilds the
 Registry names, so a `--publish-guild` dev copy stays in that guild after you go global
@@ -341,7 +347,7 @@ commands. Clean such a guild with `cargo run --release -- --publish-clear --guil
 
 **Your own flags.** Split first; the rest keeps its order untouched (program name, your
 flags, positional and non-UTF-8 arguments, `--` and everything after it). Before `--`,
-`--publish`, `--publish-guild`, `--publish-clear`, `--guild`, `--dry-run` and `--no-resume` are reserved
+`--publish`, `--publish-guild`, `--publish-clear`, `--guild`, `--dry-run`, `--no-resume` and `--features` are reserved
 by Noctis and always claimed (a bot flag named `--guild` or `--dry-run` gets
 `GuildWithoutClear`/`DryRunWithoutPublish`; rename yours), and `--publish-guild` also
 consumes the next argument that does not start with `-`:

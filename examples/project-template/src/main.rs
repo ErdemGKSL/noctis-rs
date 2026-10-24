@@ -38,7 +38,9 @@ async fn main() -> anyhow::Result<()> {
     // --publish, --publish-guild [<id>] (NOCTIS_DEV_GUILD without an id),
     // --publish-clear [--guild <id>], each with optional --dry-run. --no-resume runs the bot
     // with fresh sessions: shards clear their stored sessions at start and close with 1000.
-    // [planned] --features a,b|all.
+    // --features a,b|all|none picks the Boot Flags (which flagged Modules and registrations
+    // exist); `App::from_env` reads it (and NOCTIS_FEATURES) before `build`, because the
+    // selection decides what is folded, and `run` rejects a different one.
     let app = noctis_bot_template::configure(&mut App::from_env()?).build()?;
     app.run().await?;
     Ok(())

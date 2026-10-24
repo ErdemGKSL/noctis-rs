@@ -1,6 +1,13 @@
 //! The built-in command line (spine Conventions, FR-13): `--publish`,
 //! `--publish-guild [<id>]`, `--publish-clear [--guild <id>]`,
-//! `--dry-run` and `--no-resume`, parsed without clap.
+//! `--dry-run`, `--no-resume` and `--features <a,b|all|none>`, parsed
+//! without clap.
+//!
+//! `--features` is the App's Boot Flag selection ([`BootFlags`], FR-73). It
+//! combines with every mode, `--dry-run` and `--no-resume`. The selection
+//! must exist before `build()`, so [`App::from_env`](crate::App::from_env)
+//! reads it from the process command line; `run` only checks that it
+//! matches the App's ([`CliError::BootFlagsMismatch`]).
 //!
 //! [`App::run`](crate::App::run) parses the process arguments with
 //! [`NoctisArgs::parse`]; [`App::run_with_args`](crate::App::run_with_args)
@@ -8,6 +15,8 @@
 //! [`NoctisArgs::split`] first and hands the Noctis part over.
 
 use std::ffi::OsString;
+
+use crate::boot_flags::{BootFlagError, BootFlags};
 
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
@@ -18,6 +27,7 @@ const PUBLISH_CLEAR: &str = "--publish-clear";
 const GUILD: &str = "--guild";
 const DRY_RUN: &str = "--dry-run";
 const NO_RESUME: &str = "--no-resume";
+const FEATURES: &str = "--features";
 /// The end-of-options marker: it and everything after it are never parsed.
 const END: &str = "--";
 
@@ -56,7 +66,7 @@ impl CliMode {
 }
 
 /// The Noctis part of a command line: an optional [`CliMode`],
-/// `--dry-run` and `--no-resume`.
+/// `--dry-run`, `--no-resume` and an optional `--features` selection.
 ///
 /// The default value (no mode) runs the bot. Iterating it renders the
 /// canonical flags, so `NoctisArgs::parse(args.clone())` gives `args` back.
@@ -76,6 +86,7 @@ pub struct NoctisArgs {
     mode: Option<CliMode>,
     dry_run: bool,
     no_resume: bool,
+    features: Option<BootFlags>,
 }
 
 /// Why a command line was rejected. Each message names the flag and a fix.
@@ -92,8 +103,8 @@ pub enum CliError {
     /// An argument Noctis does not know reached `parse` (or `App::run`).
     #[error(
         "unknown argument `{flag}`: Noctis accepts --publish, --publish-guild [<id>], \
-         --publish-clear [--guild <id>], --dry-run and --no-resume; split your own flags off first with \
-         `NoctisArgs::split`"
+         --publish-clear [--guild <id>], --dry-run, --no-resume and --features <a,b|all|none>; split \
+         your own flags off first with `NoctisArgs::split`"
     )]
     UnknownFlag {
         /// The argument (lossily converted when it is not UTF-8).
@@ -154,6 +165,60 @@ pub enum CliError {
          `--publish-guild <id>`, call `AppBuilder::dev_guild` or set NOCTIS_DEV_GUILD"
     )]
     MissingDevGuild,
+    /// `--features` got a value that is not a Boot Flag selection.
+    ///
+    /// ```
+    /// use noctis_core::cli::{CliError, NoctisArgs};
+    ///
+    /// let err = NoctisArgs::parse(["--features", "A"]).unwrap_err();
+    /// assert_eq!(
+    ///     err.to_string(),
+    ///     "`--features` got `A`: `A` at index 0 is not allowed in a Boot Flag: use only a-z, \
+    ///      0-9, `_` and `-`"
+    /// );
+    /// ```
+    #[error("`--features` got `{value}`: {reason}")]
+    InvalidFeatures {
+        /// The rejected value (lossily converted when it is not UTF-8).
+        value: String,
+        /// Why it was rejected.
+        reason: BootFlagError,
+    },
+    /// `--features` without a value.
+    #[error(
+        "`--features` needs a value: write `--features a,b`, `--features all` or `--features none`"
+    )]
+    MissingFeatures,
+    /// `--features` differs from the Boot Flags the App was built with
+    /// (`App::run_with_args` checks it before anything else).
+    ///
+    /// ```
+    /// use noctis_core::BootFlags;
+    /// use noctis_core::cli::CliError;
+    ///
+    /// let err = CliError::BootFlagsMismatch {
+    ///     given: BootFlags::only(["beta"])?,
+    ///     built: BootFlags::all(),
+    /// };
+    /// assert_eq!(
+    ///     err.to_string(),
+    ///     "`--features beta` does not match the Boot Flags this App was built with (`all`): \
+    ///      build it with `App::from_env()`, which reads `--features`, or pass the same \
+    ///      selection to `AppBuilder::boot_flags`"
+    /// );
+    /// # Ok::<(), noctis_core::BootFlagError>(())
+    /// ```
+    #[error(
+        "`--features {given}` does not match the Boot Flags this App was built with \
+         (`{built}`): build it with `App::from_env()`, which reads `--features`, or pass the \
+         same selection to `AppBuilder::boot_flags`"
+    )]
+    BootFlagsMismatch {
+        /// The `--features` selection.
+        given: BootFlags,
+        /// The App's selection.
+        built: BootFlags,
+    },
 }
 
 /// The guild id rule, shared by the command line and `NOCTIS_DEV_GUILD`:
@@ -181,6 +246,7 @@ struct Parser {
     dry_run: bool,
     no_resume: bool,
     guild: Option<Id<GuildMarker>>,
+    features: Option<BootFlags>,
 }
 
 impl Parser {
@@ -258,6 +324,18 @@ impl Parser {
                     return Err(CliError::DuplicateFlag { flag: GUILD });
                 }
             }
+            FEATURES => {
+                let value = match value {
+                    Some(value) => value.to_owned(),
+                    None => take_value(next).ok_or(CliError::MissingFeatures)?,
+                };
+                let features = value
+                    .parse::<BootFlags>()
+                    .map_err(|reason| CliError::InvalidFeatures { value, reason })?;
+                if self.features.replace(features).is_some() {
+                    return Err(CliError::DuplicateFlag { flag: FEATURES });
+                }
+            }
             _ => return Ok(false),
         }
         Ok(true)
@@ -279,6 +357,7 @@ impl Parser {
             mode,
             dry_run: self.dry_run,
             no_resume: self.no_resume,
+            features: self.features,
         })
     }
 }
@@ -303,7 +382,9 @@ impl NoctisArgs {
     ///
     /// `--publish-guild` takes the next argument as its id only when it
     /// does not start with `-`; `--guild <id>` belongs to
-    /// `--publish-clear`. The two value flags also accept `--flag=value`.
+    /// `--publish-clear`; `--features` takes the next argument when it does
+    /// not start with `-`. The three value flags also accept
+    /// `--flag=value`.
     ///
     /// # Errors
     ///
@@ -340,11 +421,11 @@ impl NoctisArgs {
     /// arguments, and `--` with everything after it.
     ///
     /// Before `--`, the flag names `--publish`, `--publish-guild`,
-    /// `--publish-clear`, `--guild`, `--dry-run` and `--no-resume` are
-    /// reserved by Noctis and always claimed (rename a flag of your own that
-    /// uses one), and
-    /// `--publish-guild` also consumes the next argument when it does not
-    /// start with `-`.
+    /// `--publish-clear`, `--guild`, `--dry-run`, `--no-resume` and
+    /// `--features` are reserved by Noctis and always claimed (rename a flag
+    /// of your own that uses one), and `--publish-guild`, `--guild` and
+    /// `--features` also consume the next argument when it does not start
+    /// with `-`.
     ///
     /// # Errors
     ///
@@ -410,6 +491,21 @@ impl NoctisArgs {
     pub fn no_resume(&self) -> bool {
         self.no_resume
     }
+
+    /// The `--features` Boot Flag selection, if given.
+    ///
+    /// ```
+    /// use noctis_core::BootFlags;
+    /// use noctis_core::cli::NoctisArgs;
+    ///
+    /// let args = NoctisArgs::parse(["--publish", "--dry-run", "--features", "economy,beta"])?;
+    /// assert_eq!(args.features(), Some(&BootFlags::only(["beta", "economy"]).unwrap()));
+    /// assert_eq!(NoctisArgs::parse(["--publish"])?.features(), None);
+    /// # Ok::<(), noctis_core::cli::CliError>(())
+    /// ```
+    pub fn features(&self) -> Option<&BootFlags> {
+        self.features.as_ref()
+    }
 }
 
 impl IntoIterator for NoctisArgs {
@@ -417,7 +513,8 @@ impl IntoIterator for NoctisArgs {
     type IntoIter = std::vec::IntoIter<OsString>;
 
     /// The canonical flags: the mode flag (with its id), then `--dry-run`,
-    /// then `--no-resume` (which never co-occurs with the other two).
+    /// then `--no-resume` (which never co-occurs with the other two), then
+    /// `--features <selection>` in its canonical form.
     fn into_iter(self) -> Self::IntoIter {
         let mut out: Vec<OsString> = Vec::new();
         match self.mode {
@@ -440,6 +537,10 @@ impl IntoIterator for NoctisArgs {
         }
         if self.no_resume {
             out.push(NO_RESUME.into());
+        }
+        if let Some(features) = self.features {
+            out.push(FEATURES.into());
+            out.push(features.to_string().into());
         }
         out.into_iter()
     }

@@ -12,6 +12,7 @@ use syn::{Data, DeriveInput, Fields, Ident, LitStr};
 
 use crate::command::{HandlerArgs, arg_name, segments, span_of, withdrawn};
 use crate::common::combine;
+use crate::flags::Flags;
 use crate::meta::{self, MetaArgs};
 
 /// Which context-menu macro is expanding.
@@ -52,9 +53,9 @@ impl Menu {
 }
 
 /// Arguments later stories add.
-const PLANNED: [&str; 3] = ["rate_limit", "flags", "apps"];
+const PLANNED: [&str; 2] = ["rate_limit", "apps"];
 
-const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` or `flags`";
 
 const KEY_LITERAL: &str = "`key` takes a string literal";
 
@@ -69,6 +70,8 @@ struct Args {
     meta: MetaArgs,
     /// `key = "…"`: the `ctxcmd.<key>.name` segment.
     key: Option<String>,
+    /// `flags = [..]`: the Boot Flags.
+    flags: Flags,
 }
 
 /// The error of a menu attribute without its name.
@@ -101,6 +104,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
         key: None,
+        flags: Flags::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -117,7 +121,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
         match name.as_str() {
             "description" => return Err(syn::Error::new(span, NO_DESCRIPTION)),
-            "response" | "auto_defer" | "key" => {}
+            "response" | "auto_defer" | "key" | "flags" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -141,6 +145,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         seen.push(name.clone());
         if name == "key" {
             parsed.key = Some(parse_key(&segment)?);
+            continue;
+        }
+        if name == "flags" {
+            parsed.flags = Flags::parse(&segment)?;
             continue;
         }
         if let Some(result) = parsed.handler.parse(&name, &segment) {
@@ -250,8 +258,12 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
         || quote!(::core::option::Option::None),
         |key| quote!(::core::option::Option::Some(#key)),
     );
-    let scaffolding =
-        crate::kind::scaffolding(ident, crate::kind::Family::Menu, args.handler.manual);
+    let scaffolding = crate::kind::scaffolding(
+        ident,
+        crate::kind::Family::Menu,
+        args.handler.manual,
+        &args.flags,
+    );
     Ok(quote! {
         #[automatically_derived]
         impl #core::__ContextMenu for #ident {
@@ -494,5 +506,44 @@ mod tests {
             error(Menu::Message, quote!(), QUOTE),
             "`#[message_command]` needs the menu name as its first argument: `#[message_command(\"Quote\")]`"
         );
+    }
+
+    /// Story 13.2 M1-M8 on both menu attributes.
+    #[test]
+    fn boot_flags() {
+        for (menu, src) in [(Menu::User, SHOW), (Menu::Message, QUOTE)] {
+            let out = expand(menu, quote!("X", flags = ["beta", "eco"]), item(src))
+                .unwrap()
+                .to_string();
+            assert!(
+                out.contains("__add_flagged (& [\"beta\" , \"eco\"]"),
+                "{out}"
+            );
+            let attr = menu.attr();
+            for (args, expected) in [
+                (quote!("X", flags = []), crate::flags::EMPTY.to_owned()),
+                (quote!("X", flags = "beta"), crate::flags::NOT_A_LIST.to_owned()),
+                (quote!("X", flags = [beta]), crate::flags::NOT_A_LIST.to_owned()),
+                (quote!("X", flags), crate::flags::NOT_A_LIST.to_owned()),
+                (
+                    quote!("X", flags = ["Beta"]),
+                    "invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`".to_owned(),
+                ),
+                (
+                    quote!("X", flags = ["none"]),
+                    "invalid Boot Flag `none` in `flags`: `none` is reserved: write `all` or `none` alone, never in a list or as a declared flag".to_owned(),
+                ),
+                (
+                    quote!("X", flags = ["a", "a"]),
+                    "invalid Boot Flag `a` in `flags`: a Boot Flag is given twice: keep one".to_owned(),
+                ),
+                (
+                    quote!("X", flags = ["a"], flags = ["a"]),
+                    format!("duplicate `{attr}` argument `flags`"),
+                ),
+            ] {
+                assert_eq!(error(menu, args.clone(), src), expected, "{args}");
+            }
+        }
     }
 }

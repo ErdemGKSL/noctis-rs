@@ -1,40 +1,48 @@
 //! `#[derive(EventHandler)]` on a unit struct, with its optional
-//! `#[event(ordered, droppable)]`: declares a typed gateway event handler
-//! for `#[handler]` (FR-6, AD-7).
+//! `#[event(ordered, droppable, flags = [..])]`: declares a typed gateway
+//! event handler for `#[handler]` (FR-6, FR-73, AD-7).
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, Meta};
 
-/// The flags `#[event(..)]` takes.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+use crate::command::{segments, span_of};
+use crate::flags::Flags;
+
+/// What `#[event(..)]` takes.
+#[derive(Default)]
 struct Args {
     ordered: bool,
     droppable: bool,
+    /// `flags = [..]`: the Boot Flags.
+    flags: Flags,
+    /// Whether `flags` was given.
+    has_flags: bool,
 }
 
-/// Parses `ordered`, `droppable` (any order, each at most once).
+const EXPECTED: &str = "expected `ordered`, `droppable` or `flags = [\"beta\"]`";
+
+/// Parses `ordered`, `droppable` and `flags = [..]` (any order, each at
+/// most once).
 fn parse_args(args: TokenStream) -> syn::Result<Args> {
     let mut parsed = Args::default();
-    let mut segments: Vec<Vec<TokenTree>> = vec![Vec::new()];
-    for tt in args {
-        match &tt {
-            TokenTree::Punct(p) if p.as_char() == ',' => segments.push(Vec::new()),
-            _ => {
-                if let Some(last) = segments.last_mut() {
-                    last.push(tt);
-                }
-            }
-        }
-    }
-    if segments.len() > 1 && segments.last().is_some_and(Vec::is_empty) {
-        segments.pop();
-    }
+    let segments = segments(args);
     if segments.len() == 1 && segments[0].is_empty() {
         return Ok(parsed);
     }
     for segment in segments {
         let tokens: TokenStream = segment.iter().cloned().collect();
+        if matches!(segment.first(), Some(TokenTree::Ident(i)) if i == "flags") {
+            if parsed.has_flags {
+                return Err(syn::Error::new(
+                    span_of(&segment),
+                    "duplicate `#[event]` argument `flags`",
+                ));
+            }
+            parsed.flags = Flags::parse(&segment)?;
+            parsed.has_flags = true;
+            continue;
+        }
         let name = match segment.as_slice() {
             [TokenTree::Ident(ident)] => Some(ident.to_string()),
             _ => None,
@@ -48,9 +56,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
                     .map_or_else(Span::call_site, TokenTree::span);
                 return Err(syn::Error::new(
                     span,
-                    format!(
-                        "unknown `#[event]` argument `{tokens}`: expected `ordered` or `droppable`"
-                    ),
+                    format!("unknown `#[event]` argument `{tokens}`: {EXPECTED}"),
                 ));
             }
         };
@@ -109,7 +115,7 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
                 Meta::NameValue(_) => {
                     return Err(syn::Error::new_spanned(
                         attr,
-                        "`#[event]` takes `ordered` and `droppable`: `#[event(ordered)]`",
+                        "`#[event]` takes `ordered`, `droppable` and `flags = [..]`: `#[event(ordered)]`",
                     ));
                 }
             }
@@ -117,7 +123,8 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     };
     let core = quote!(::noctis::__private::core);
     let (ordered, droppable) = (args.ordered, args.droppable);
-    let scaffolding = crate::kind::scaffolding(ident, crate::kind::Family::Event, false);
+    let scaffolding =
+        crate::kind::scaffolding(ident, crate::kind::Family::Event, false, &args.flags);
     Ok(quote! {
         #[automatically_derived]
         impl #core::__EventHandler for #ident {
@@ -188,6 +195,7 @@ mod tests {
             (quote!(ordered, droppable), (true, true)),
             (quote!(droppable, ordered), (true, true)),
             (quote!(ordered,), (true, false)),
+            (quote!(flags = ["beta"], ordered), (true, false)),
         ] {
             let parsed = parse_args(args.clone()).unwrap();
             assert_eq!((parsed.ordered, parsed.droppable), expected, "{args}");
@@ -225,7 +233,7 @@ mod tests {
                     #[event(x)]
                     struct S;
                 ),
-                "unknown `#[event]` argument `x`: expected `ordered` or `droppable`",
+                "unknown `#[event]` argument `x`: expected `ordered`, `droppable` or `flags = [\"beta\"]`",
             ),
             (
                 quote!(
@@ -239,10 +247,56 @@ mod tests {
                     #[event(ordered = true)]
                     struct S;
                 ),
-                "unknown `#[event]` argument `ordered = true`: expected `ordered` or `droppable`",
+                "unknown `#[event]` argument `ordered = true`: expected `ordered`, `droppable` or `flags = [\"beta\"]`",
             ),
         ] {
             assert_eq!(run(src.clone()), expected, "{src}");
+        }
+    }
+
+    /// Story 13.2 M1-M8 on `#[event]`.
+    #[test]
+    fn boot_flags() {
+        let out = run(quote!(
+            #[event(droppable, flags = ["beta", "eco"])]
+            struct Gone;
+        ));
+        assert!(
+            out.contains("__add_flagged (& [\"beta\" , \"eco\"]"),
+            "{out}"
+        );
+        assert!(
+            out.contains("const DROPPABLE : :: core :: primitive :: bool = true"),
+            "{out}"
+        );
+        for (args, expected) in [
+            (quote!(flags = []), crate::flags::EMPTY),
+            (quote!(flags = "beta"), crate::flags::NOT_A_LIST),
+            (quote!(flags = [beta]), crate::flags::NOT_A_LIST),
+            (quote!(flags = [1]), crate::flags::NOT_A_LIST),
+            (quote!(flags), crate::flags::NOT_A_LIST),
+            (
+                quote!(flags = ["Beta"]),
+                "invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`",
+            ),
+            (
+                quote!(flags = ["all"]),
+                "invalid Boot Flag `all` in `flags`: `all` is reserved: write `all` or `none` alone, never in a list or as a declared flag",
+            ),
+            (
+                quote!(flags = ["a", "a"]),
+                "invalid Boot Flag `a` in `flags`: a Boot Flag is given twice: keep one",
+            ),
+            (
+                quote!(flags = ["a"], flags = ["b"]),
+                "duplicate `#[event]` argument `flags`",
+            ),
+        ] {
+            let out = run(quote!(
+                #[event(#args)]
+                struct S;
+            ));
+            assert_eq!(out, expected, "{args}");
         }
     }
 }

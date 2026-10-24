@@ -162,7 +162,7 @@ impl Lowered {
 }
 
 /// Whether `node` is `path` or a word prefix of it.
-fn is_word_prefix(node: &str, path: &str) -> bool {
+pub(super) fn is_word_prefix(node: &str, path: &str) -> bool {
     path.strip_prefix(node)
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
 }

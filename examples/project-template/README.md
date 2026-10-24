@@ -106,7 +106,7 @@ Other CLI modes of the same binary:
 | `--publish-guild [<id>]` | Publish every command to one guild (development). |
 | `--publish-clear [--guild <id>]` | Remove this App's commands globally or from a guild. |
 | `--dry-run` | With a publish flag: print the JSON and the diff, write nothing. |
-| `--features a,b` / `--features all` | [planned] Boot Flags: register only Modules carrying these flags. |
+| `--features a,b` / `--features all` / `--features none` | Boot Flags (also `NOCTIS_FEATURES`; the flag wins): flagged Modules and registrations exist only when one of their flags is selected (`all`, the default, keeps everything; `none` keeps only unflagged ones). Combines with every other flag; this template flags `profile/badges` with `badges`. |
 | `--no-resume` | Close shards fresh (1000) and clear this process's stored sessions at start and at shutdown; the next start identifies. Not combinable with a publish flag. |
 
 By default a graceful shutdown closes each shard with 4000 and stores its session, so the

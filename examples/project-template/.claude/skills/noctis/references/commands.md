@@ -120,7 +120,7 @@ are unknown arguments naming their replacement: `` unknown `#[command]` argument
 | `nsfw = true` | age-restricted: `true` or `false`, anything else is `` [CMD-07] `nsfw` takes `true` or `false` `` |
 | `guilds = [123456789012345678]` | guild-scoped: published only to these guilds. Integer literals only (no consts or paths), non-zero, distinct, `u64` (`42u64` works). `contexts`/`integration_types` are then a compile error: ``[META-03] contexts: limit only on global commands, actual `[Guild]` `` with `= note: scope: guild 42` (the first id). Dev-guild publishing comes from `--publish-guild` |
 | `rate_limit(user, 3, per = "10s")` | [planned] see `modules-middleware-ratelimits.md` |
-| `flags = ["beta"]` | [planned] Boot Flags |
+| `flags = ["beta"]` | Boot Flags: the Command exists only when the selection is `all` or holds one of them (`modules-middleware-ratelimits.md` §2). A non-empty list of string literals, each 1-32 of `a-z`, `0-9`, `_`, `-` (not `all`/`none`), no repeats; errors: ``invalid Boot Flag `Beta` in `flags`: …``, `` `flags` needs at least one Boot Flag … ``, `` `flags` takes a list of string literals … `` |
 | `apps = ["main"]` | [planned] publish only for these Apps (multi-App) |
 
 There is no `dm_permission` (`` [META-05] `dm_permission` is deprecated by Discord and not
@@ -730,7 +730,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
   and `response = public | ephemeral` and `auto_defer = true | false` (with `false` the
   handler takes `r: CommandResponder<Manual>`; same `[INT-04]`/`[INT-05]` errors as
-  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
+  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `flags = ["beta"]` declares Boot Flags (same rules as §1); `rate_limit(..)` and `apps` are [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
@@ -837,8 +837,9 @@ are omitted; option fields only when set (`required: true`, `choices`, `min_valu
 follow each localized name and description, and choices carry `name_localizations`
 (`i18n.md` §4; empty maps are omitted).
 
-[planned] Boot Flags (Story 13.2), per-guild Module enablement (Story 13.3) and
-`apps = [...]` filter what is published. Disabled Modules: only their guild-scoped
+Boot Flags filter what is published: only selected and unflagged Commands are in the
+JSON and the diff (`modules-middleware-ratelimits.md` §2). [planned] Per-guild Module
+enablement (Story 13.3) and `apps = [...]` filter it further. Disabled Modules: only their guild-scoped
 commands are left out of a guild publish; global commands stay published and answer
 "disabled here".
 

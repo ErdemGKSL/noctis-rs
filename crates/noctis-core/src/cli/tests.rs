@@ -24,6 +24,7 @@ fn mode(mode: Option<CliMode>, dry_run: bool) -> NoctisArgs {
         mode,
         dry_run,
         no_resume: false,
+        features: None,
     }
 }
 
@@ -360,4 +361,164 @@ fn no_resume_messages_name_the_flag() {
         let text = error.to_string();
         assert!(text.contains("--no-resume"), "{text}");
     }
+}
+
+fn flags(list: &[&str]) -> BootFlags {
+    BootFlags::only(list).expect("valid flags")
+}
+
+/// Story 13.2 C1-C3, C8.
+#[test]
+fn features_parse() {
+    let ab = Some(&flags(&["a", "b"]));
+    assert_eq!(parsed(&["--features", "a,b"]).features(), ab);
+    assert_eq!(parsed(&["--features=b,a"]).features(), ab);
+    assert_eq!(
+        parsed(&["--features", "all"]).features(),
+        Some(&BootFlags::all())
+    );
+    assert_eq!(
+        parsed(&["--features=none"]).features(),
+        Some(&BootFlags::none())
+    );
+    assert_eq!(parsed(&[]).features(), None);
+    assert_eq!(parsed(&["--publish"]).features(), None);
+
+    let publish = parsed(&["--publish", "--dry-run", "--features", "a"]);
+    assert_eq!(publish.mode(), Some(CliMode::Publish));
+    assert!(publish.dry_run());
+    assert_eq!(publish.features(), Some(&flags(&["a"])));
+    let run = parsed(&["--no-resume", "--features", "a"]);
+    assert!(run.no_resume());
+    assert_eq!(run.features(), Some(&flags(&["a"])));
+    let clear = parsed(&["--publish-clear", "--guild", "1", "--features", "a"]);
+    assert_eq!(clear.mode(), Some(CliMode::PublishClear(id(1))));
+    assert_eq!(clear.features(), Some(&flags(&["a"])));
+    let first = parsed(&["--features", "a", "--publish-guild", "7"]);
+    assert_eq!(first.mode(), Some(CliMode::PublishGuild(id(7))));
+}
+
+/// Story 13.2 C4-C7.
+#[test]
+fn features_rejects_malformed_lines() {
+    assert_eq!(rejected(&["--features"]), CliError::MissingFeatures);
+    assert_eq!(
+        rejected(&["--features", "--dry-run"]),
+        CliError::MissingFeatures
+    );
+    assert_eq!(
+        rejected(&["--features="]),
+        CliError::InvalidFeatures {
+            value: String::new(),
+            reason: BootFlagError::Empty
+        }
+    );
+    assert_eq!(
+        rejected(&["--features", "a", "--features", "b"]),
+        CliError::DuplicateFlag { flag: "--features" }
+    );
+    assert_eq!(
+        rejected(&["--features", "A"]),
+        CliError::InvalidFeatures {
+            value: "A".into(),
+            reason: BootFlagError::InvalidChar { index: 0, ch: 'A' }
+        }
+    );
+    assert_eq!(
+        rejected(&["--features", "a,,b"]),
+        CliError::InvalidFeatures {
+            value: "a,,b".into(),
+            reason: BootFlagError::Empty
+        }
+    );
+}
+
+/// Story 13.2 C9.
+#[test]
+fn features_round_trip() {
+    let with = |mut args: NoctisArgs, features: BootFlags| {
+        args.features = Some(features);
+        args
+    };
+    let values = [
+        with(NoctisArgs::default(), flags(&["b", "a"])),
+        with(NoctisArgs::default(), BootFlags::all()),
+        with(no_resume(), BootFlags::none()),
+        with(mode(Some(CliMode::Publish), true), flags(&["x"])),
+        with(
+            mode(Some(CliMode::PublishClear(id(42))), true),
+            flags(&["eco_v2-x"]),
+        ),
+    ];
+    for value in values {
+        let flags: Vec<OsString> = value.clone().into_iter().collect();
+        assert_eq!(NoctisArgs::parse(flags.clone()), Ok(value), "{flags:?}");
+    }
+    let rendered: Vec<OsString> = with(mode(Some(CliMode::Publish), true), flags(&["b", "a"]))
+        .into_iter()
+        .collect();
+    assert_eq!(rendered, ["--publish", "--dry-run", "--features", "a,b"]);
+    let rendered: Vec<OsString> = with(no_resume(), BootFlags::none()).into_iter().collect();
+    assert_eq!(rendered, ["--no-resume", "--features", "none"]);
+}
+
+/// Story 13.2 C10.
+#[test]
+fn split_claims_features_before_the_marker() {
+    let (args, rest) =
+        NoctisArgs::split(["bot", "--x", "--features", "a", "--", "--features", "b"]).unwrap();
+    assert_eq!(args.features(), Some(&flags(&["a"])));
+    assert_eq!(rest, ["bot", "--x", "--", "--features", "b"]);
+}
+
+/// Story 13.2 C11.
+#[cfg(unix)]
+#[test]
+fn features_non_utf8_value_is_lossy() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let raw = OsString::from_vec(vec![b'a', 0xff]);
+    assert_eq!(
+        NoctisArgs::parse([OsString::from("--features"), raw]),
+        Err(CliError::InvalidFeatures {
+            value: "a\u{fffd}".into(),
+            reason: BootFlagError::InvalidChar {
+                index: 1,
+                ch: '\u{fffd}'
+            }
+        })
+    );
+}
+
+/// Story 13.2: the exact texts.
+#[test]
+fn features_messages() {
+    assert_eq!(
+        CliError::MissingFeatures.to_string(),
+        "`--features` needs a value: write `--features a,b`, `--features all` or `--features none`"
+    );
+    assert_eq!(
+        CliError::InvalidFeatures {
+            value: "a,".into(),
+            reason: BootFlagError::Empty
+        }
+        .to_string(),
+        "`--features` got `a,`: a Boot Flag is empty: write flags such as `beta`, separated by \
+         single commas"
+    );
+    assert_eq!(
+        CliError::BootFlagsMismatch {
+            given: flags(&["b", "a"]),
+            built: BootFlags::none()
+        }
+        .to_string(),
+        "`--features a,b` does not match the Boot Flags this App was built with (`none`): build \
+         it with `App::from_env()`, which reads `--features`, or pass the same selection to \
+         `AppBuilder::boot_flags`"
+    );
+    let unknown = CliError::UnknownFlag { flag: "--x".into() }.to_string();
+    assert!(
+        unknown.contains("--dry-run, --no-resume and --features <a,b|all|none>"),
+        "{unknown}"
+    );
 }

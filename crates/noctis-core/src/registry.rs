@@ -5,7 +5,8 @@
 
 pub(crate) mod commands;
 
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use noctis_gateway::{DROPPABLE_EVENTS, EventTypeFlags};
@@ -14,11 +15,12 @@ use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::EventType;
 
 use crate::BuildViolation;
+use crate::boot_flags::{BootFlagError, BootFlags};
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::kind::__ExtType;
 use crate::middleware::Chain;
-use crate::module::{self, Module};
+use crate::module::{self, Module, NodeDecl};
 
 use self::commands::{Commands, Folded};
 
@@ -130,13 +132,18 @@ pub(crate) struct Registry {
 }
 
 impl Registry {
-    /// Folds `roots` pre-order: a Module's own registrations in `add`
-    /// order, then each child. Returns the Registry and its violations:
-    /// first the Module-id checks of every folded Module, in fold order
-    /// (per Module, a [`BuildViolation::InvalidModuleId`] for a broken
-    /// grammar or, when the grammar holds, for a wrong tree position, then
-    /// a [`BuildViolation::DuplicateModule`] when an earlier Module had the
-    /// id), then one
+    /// Folds the trees `roots` as the Boot Flag selection `selection` keeps
+    /// them (AD-7: filter before fold, see [`Module::selected`]), pre-order:
+    /// a Module's own registrations in `add` order, then each child.
+    /// Returns the Registry and its violations: first the Module-id checks
+    /// of every mounted Module of the **full** trees, in pre-order (per
+    /// Module, a [`BuildViolation::InvalidModuleId`] for a broken grammar
+    /// or, when the grammar holds, for a wrong tree position, then a
+    /// [`BuildViolation::DuplicateModule`] when an earlier Module had the
+    /// id), then one [`BuildViolation::InvalidBootFlag`] per broken or
+    /// repeated `Module::flags` entry of the full trees, in pre-order, then
+    /// one [`BuildViolation::UnknownBootFlag`] per selected flag that the
+    /// full trees never declare, sorted; then, on the kept trees, one
     /// [`BuildViolation::MissingIntent`] per handler whose privileged intent
     /// is not in `requested`, in fold order, then one
     /// [`BuildViolation::Command`] per command rule broken after merging
@@ -149,12 +156,19 @@ impl Registry {
     /// one [`BuildViolation::MissingExtension`] per (handler, `Ext<T>`)
     /// that no before-Middleware on the handler's Module path provides,
     /// then one [`BuildViolation::DuplicateTemplate`] per extra
-    /// registration of a Template id, in fold order.
+    /// registration of a Template id of the full trees (Templates stay
+    /// App-wide), in pre-order.
     pub(crate) fn fold(
         roots: &[Module],
         requested: Intents,
         strings: Option<&noctis_i18n::AppStrings>,
+        selection: &BootFlags,
     ) -> (Self, Vec<BuildViolation>) {
+        let full = pre_order(roots);
+        let mut violations = check_module_ids(&full);
+        check_boot_flags(&full, selection, &mut violations);
+        let kept = select(roots, selection);
+        let roots: &[Module] = &kept;
         let mut entries = Vec::new();
         let mut folded = Vec::new();
         let mut route_entries = Vec::new();
@@ -208,7 +222,6 @@ impl Registry {
         let mut by_dispatch: HashMap<EventType, Handlers> = HashMap::new();
         let mut event_types = base_event_types(!entries.is_empty());
         let mut intents = Intents::empty();
-        let mut violations = check_module_ids(&folded);
         for entry in &entries {
             let handler = &entry.handler;
             event_types |= handler.parse();
@@ -243,7 +256,7 @@ impl Registry {
             routes,
             signed,
             // After the extension checks: its violations come last.
-            templates: fold_templates(&folded, &mut violations),
+            templates: fold_templates(&full, &mut violations),
             entries,
             handlers: by_dispatch
                 .into_iter()
@@ -316,19 +329,124 @@ impl Registry {
     }
 }
 
-/// Checks every folded Module's id (FR-44), in fold order: per Module its
+/// One mounted Module of the full trees with its parent's id (`None` for a
+/// root).
+type Mounted<'m> = (&'m Module, Option<&'static str>);
+
+/// Every Module of `roots`, pre-order (parent before children, children in
+/// `module` order).
+fn pre_order(roots: &[Module]) -> Vec<Mounted<'_>> {
+    let mut out = Vec::new();
+    let mut stack: Vec<Mounted<'_>> = roots.iter().rev().map(|root| (root, None)).collect();
+    while let Some((module, parent)) = stack.pop() {
+        out.push((module, parent));
+        stack.extend(
+            module
+                .children()
+                .iter()
+                .rev()
+                .map(|child| (child, Some(module.id()))),
+        );
+    }
+    out
+}
+
+/// The trees `selection` keeps. With `all` nothing is pruned. Otherwise
+/// each kept Module drops the `base`/`group` declarations whose node had a
+/// Command in the full trees and has none in the kept trees; a declaration
+/// whose node never had one stays (REG-04 reports it).
+fn select<'m>(roots: &'m [Module], selection: &BootFlags) -> Cow<'m, [Module]> {
+    if selection.is_all() {
+        return Cow::Borrowed(roots);
+    }
+    let mut kept: Vec<Module> = roots
+        .iter()
+        .filter_map(|root| root.selected(selection))
+        .collect();
+    let paths = |roots: &[Module]| -> Vec<&'static str> {
+        pre_order(roots)
+            .into_iter()
+            .flat_map(|(module, _)| module.commands())
+            .flat_map(|handler| handler.paths().iter().copied())
+            .collect()
+    };
+    let full_paths = paths(roots);
+    let kept_paths = paths(&kept);
+    let has_command = |paths: &[&'static str], node: &str| {
+        paths
+            .iter()
+            .any(|path| commands::is_word_prefix(node, path))
+    };
+    let keep = |node: &NodeDecl| {
+        has_command(&kept_paths, node.path()) || !has_command(&full_paths, node.path())
+    };
+    for root in &mut kept {
+        root.retain_nodes(&keep);
+    }
+    Cow::Owned(kept)
+}
+
+/// Appends the Boot Flag checks of the full trees (FR-73): one
+/// [`BuildViolation::InvalidBootFlag`] per `Module::flags` entry that
+/// breaks the grammar or repeats one of the Module's earlier flags (once
+/// per flag), in pre-order; then one [`BuildViolation::UnknownBootFlag`]
+/// per selected flag that no Module or registration declares, sorted.
+fn check_boot_flags(
+    full: &[Mounted<'_>],
+    selection: &BootFlags,
+    violations: &mut Vec<BuildViolation>,
+) {
+    let mut declared: BTreeSet<&'static str> = BTreeSet::new();
+    for &(module, _) in full {
+        let mut seen: Vec<&'static str> = Vec::new();
+        let mut repeated: Vec<&'static str> = Vec::new();
+        for &flag in module.boot_flags() {
+            let reason = match noctis_rules::boot_flag::check(flag) {
+                Err(reason) => Some(reason),
+                Ok(()) if seen.contains(&flag) => (!repeated.contains(&flag)).then(|| {
+                    repeated.push(flag);
+                    BootFlagError::Duplicate
+                }),
+                Ok(()) => None,
+            };
+            seen.push(flag);
+            if let Some(reason) = reason {
+                violations.push(BuildViolation::InvalidBootFlag {
+                    module: module.id(),
+                    flag,
+                    reason,
+                });
+            }
+        }
+        declared.extend(module.boot_flags());
+        declared.extend(module.registration_flags());
+    }
+    let unknown: Vec<&str> = selection
+        .flags()
+        .filter(|flag| !declared.contains(flag))
+        .collect();
+    if !unknown.is_empty() {
+        let declared: Vec<&'static str> = declared.into_iter().collect();
+        violations.extend(
+            unknown
+                .into_iter()
+                .map(|flag| BuildViolation::UnknownBootFlag {
+                    flag: flag.to_owned(),
+                    declared: declared.clone(),
+                }),
+        );
+    }
+}
+
+/// Checks every mounted Module's id (FR-44), in pre-order: per Module its
 /// grammar, then (only when the grammar holds) its position under its
 /// parent (none for a root), then its uniqueness against the earlier
 /// Modules, one violation per broken check.
-fn check_module_ids(folded: &[Folded<'_>]) -> Vec<BuildViolation> {
+fn check_module_ids(full: &[Mounted<'_>]) -> Vec<BuildViolation> {
     let mut seen = HashSet::new();
     let mut violations = Vec::new();
-    for Folded {
-        module, ancestors, ..
-    } in folded
-    {
+    for &(module, parent) in full {
         let id = module.id();
-        let parent = ancestors.last().copied();
         if let Err(reason) = module::check_id(id).and_then(|()| module::check_position(id, parent))
         {
             violations.push(BuildViolation::InvalidModuleId { id, reason });
@@ -373,24 +491,24 @@ fn fold_routes(
 /// later one (any version, the same type included) is a
 /// [`BuildViolation::DuplicateTemplate`].
 fn fold_templates(
-    folded: &[Folded<'_>],
+    full: &[Mounted<'_>],
     violations: &mut Vec<BuildViolation>,
 ) -> Vec<TemplateDescriptor> {
     let mut kept: Vec<TemplateDescriptor> = Vec::new();
     // Template id → (first Module, first type name).
     let mut first: HashMap<&'static str, (&'static str, &'static str)> = HashMap::new();
-    for f in folded {
-        for &(ref descriptor, type_name) in f.module.templates() {
+    for &(module, _) in full {
+        for &(ref descriptor, type_name) in module.templates() {
             if let Some(&(first_module, first_type)) = first.get(descriptor.id) {
                 violations.push(BuildViolation::DuplicateTemplate {
                     id: descriptor.id,
                     first_module,
                     first_type,
-                    second_module: f.module.id(),
+                    second_module: module.id(),
                     second_type: type_name,
                 });
             } else {
-                first.insert(descriptor.id, (f.module.id(), type_name));
+                first.insert(descriptor.id, (module.id(), type_name));
                 kept.push(descriptor.clone());
             }
         }

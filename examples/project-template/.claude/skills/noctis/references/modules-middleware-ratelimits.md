@@ -24,7 +24,7 @@ pub fn module() -> Module {
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // Middleware (§5)
         .after(Middleware::after(audit))
         .module(Module::new("profile/badges").add::<Badge>())   // child = parent + "/" + one segment
-        .flags(["profiles"])               // Boot Flags [planned]
+        .flags(["profiles"])               // Boot Flags (§2): exists only when selected
 }
 
 // main / configure:
@@ -34,7 +34,7 @@ builder.module(profile::module()).module(ops::module());
 Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
 `.base(name, BaseMeta)`, `.group(path, description)`, `.before(BeforeMiddleware)`,
 `.after(AfterMiddleware)` (§5), `.locales(Catalog)` (merged App-wide at build; see
-`i18n.md` §5), `.id()`, `Clone`, `Debug`, and
+`i18n.md` §5), `.flags([..])` (Boot Flags, §2), `.id()`, `Clone`, `Debug`, and
 `AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
 kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
 the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the
@@ -109,14 +109,91 @@ Module::new("profile")
 
 ## 2. Boot Flags (FR-73)
 
+One binary, different feature sets: flag Modules and single registrations, then pick
+the flags at start-up.
+
 ```rust
-Module::new("seacord").flags(["seacord"]);
+use noctis::prelude::*;
+use noctis::BootFlags;                       // not in the prelude
+
+// A whole Module (and its subtree): `Module::flags`, a runtime value.
+Module::new("eco").flags(["economy"]).add::<Balance>();
+
+// One registration: `flags = [..]` on its kind attribute, checked at compile time.
+#[derive(SlashCommand)]
 #[command("beta stats", flags = ["beta"])]
+struct BetaStats;
+
+#[derive(EventHandler)]
+#[event(ordered, flags = ["beta"])]
+struct OnDelete;
+
+#[derive(Button)]
+#[button("core.beta", flags = ["beta"], defaults(style = Primary, label = "Beta"))]
+struct CoreBeta;
+// Also `#[user_command(..)]`, `#[message_command(..)]`, the five select attributes and
+// `#[modal(..)]`. Not on `#[autocomplete]` (it registers with its command),
+// `LinkButton`, Middleware, Templates or locale catalogs.
 ```
 
-Selected at startup with `--features seacord,beta`, `--features all`, or
-`NOCTIS_FEATURES`. Unselected registrations are not registered, dispatched or
-published (dry run included). Unflagged registrations always exist.
+- **Grammar.** A flag is 1-32 characters of `a-z`, `0-9`, `_` and `-`; `all` and `none`
+  are reserved (`noctis::rules::boot_flag`: `check(flag)` returns the same
+  `BootFlagError`, `MAX_LEN` is 32). `flags = [..]` takes a non-empty list of string literals with no
+  repeats; anything else is a compile error (``invalid Boot Flag `Beta` in `flags`: `B`
+  at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-` ``,
+  `` `flags` needs at least one Boot Flag: write `flags = ["beta"]` or remove it ``,
+  `` `flags` takes a list of string literals: write `flags = ["beta"]` ``; component and
+  modal attributes report a repeated `flags` argument as `[CID-03]`). `Module::flags`
+  appends (calls add up; `.flags([])` is a no-op); a bad or repeated entry fails
+  `build()` with `BuildViolation::InvalidBootFlag { module, flag, reason }`.
+- **Semantics.** An unflagged Module or registration always exists. A flagged one
+  exists when the selection is `all` or holds **any** of its flags (`.flags(["a", "b"])`
+  with `--features b` is kept). Nesting is AND: a pruned Module drops its whole
+  subtree (registrations, children, Middleware, `uses`, `base`/`group` declarations).
+  `none` keeps only unflagged items.
+- **Selection** (`noctis::BootFlags`, opaque, `Clone + Eq`): `BootFlags::all()` (the
+  default), `BootFlags::none()`, `BootFlags::only(["a", "b"])?` (same item rules;
+  `only([])` is `none`), `"a,b".parse::<BootFlags>()?` (`all` | `none` | `a,b,..`:
+  single commas, no spaces, no empty items, no duplicates), `.is_all()`,
+  `.selects(&["a"])` (empty slice = true). `Display` is canonical (`all`, `none`, or
+  sorted `a,b`); equality is set equality. Errors are `noctis::BootFlagError`
+  (`Empty`, `TooLong { len }`, `InvalidChar { index, ch }` with character indexes
+  into the whole value, `Reserved { flag }`, `Duplicate`).
+- **Sources and precedence.** `--features a,b|all|none` (also `--features=a,b`) on the
+  process command line wins over `NOCTIS_FEATURES` (trimmed; empty = unset); both are
+  read by `App::from_env()`, because the selection decides what `build()` folds. A
+  setter called afterwards wins: `builder.boot_flags(BootFlags::only(["economy"])?)`.
+  Read the result with `app.boot_flags()`. A bad `NOCTIS_FEATURES` is
+  `EnvError::InvalidBootFlags { var, reason }`; a bad `--features` is
+  `Error::Cli(CliError::InvalidFeatures { value, reason })` (or `MissingFeatures`,
+  `DuplicateFlag`).
+- **Typo guard.** A selected flag that no mounted Module or registration declares
+  (full trees, pruned subtrees included) fails `build()` with
+  `BuildViolation::UnknownBootFlag { flag, declared }`, listing the declared flags.
+- **Mismatch rule.** `run()`/`run_with_args(..)` never re-fold: a `--features` that
+  differs from the App's built selection is
+  `Error::Cli(CliError::BootFlagsMismatch { given, built })` before anything runs; an
+  equal one is accepted. `--features` combines with every mode, `--dry-run` and
+  `--no-resume`.
+- **What is filtered.** Unselected registrations are not registered, dispatched,
+  counted for intents or published (`--publish --dry-run --features a` prints only
+  selected and unflagged Commands). A component or modal of a pruned Module is an
+  unknown Route; a kept Module that `uses::<R>()` it fails `build()` with the usual
+  `[CID-04]`. A kept Module's `base`/`group` declaration whose node loses its last
+  Command to the selection is dropped (a declaration that never had a Command is still
+  `[REG-04]`). Two flagged alternatives of one Command (`/shop` in Modules flagged `a`
+  and `b`) build when only one is selected, and fail as duplicates under `all`.
+- **What is kept.** Module ids and flags are checked on the full trees, whatever is
+  selected. Locale catalogs and image Templates of pruned Modules stay App-wide.
+- **Publish.** A Publish of a subset overwrites the remote list with the subset, so an
+  unselected Command that is live on Discord is deleted (the diff shows
+  `` - delete chat_input `x` ``). Publish from a process with the full selection, or
+  accept that the subset is what users see.
+- **Several Apps in one process.** Give each App its own selection with
+  `.boot_flags(..)` and run each with `run_with_args(..)` (only `App::from_env()` reads
+  the process command line).
+- This template flags `profile/badges` with `badges` (`src/modules/profile/mod.rs`):
+  `--features none` runs without `/badge`.
 
 ## 3. Runtime enable/disable (FR-45)
 

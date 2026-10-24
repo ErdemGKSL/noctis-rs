@@ -33,8 +33,10 @@ pub fn module() -> Module {
         .template::<ProfileCard>()
         // A child's id is its parent's id plus one segment (checked at App build).
         .module(
+            // Boot Flag `badges`: the Module exists only when the selection is `all` (the
+            // default) or holds `badges` (`--features badges`, `NOCTIS_FEATURES=badges`).
             // Registers `/badge` and its `#[autocomplete(name)]` method together.
-            Module::new("profile/badges").add::<handlers::Badge>(),
+            Module::new("profile/badges").flags(["badges"]).add::<handlers::Badge>(),
         )
 }
 

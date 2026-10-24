@@ -28,6 +28,7 @@ use twilight_model::gateway::Intents;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
+use crate::boot_flags::BootFlags;
 use crate::cli::{CliError, CliMode, NoctisArgs, parse_guild_id};
 use crate::component::{AppExpiredFn, Expired, ExpiredCtx, app_expired};
 use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
@@ -69,6 +70,9 @@ const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
 const PUBLISHER_VAR: &str = "NOCTIS_PUBLISHER";
 /// The environment variable [`App::from_env`] reads the dev guild from.
 const DEV_GUILD_VAR: &str = "NOCTIS_DEV_GUILD";
+/// The environment variable [`App::from_env`] reads the Boot Flag selection
+/// from.
+const FEATURES_VAR: &str = "NOCTIS_FEATURES";
 /// The environment variable [`App::from_env`] reads the payload key from.
 const PAYLOAD_KEY_VAR: &str = "NOCTIS_PAYLOAD_KEY";
 /// The environment variable [`App::from_env`] reads the previous payload key
@@ -160,6 +164,8 @@ pub struct App {
     large_threshold: LargeThreshold,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
+    /// The Boot Flag selection the Registry was folded with.
+    boot_flags: BootFlags,
     /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
     lifecycle: Lifecycle,
 }
@@ -207,8 +213,8 @@ impl App {
     ///
     /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
     /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHARD_RANGE`, `NOCTIS_SHUTDOWN_GRACE`,
-    /// `NOCTIS_PUBLISHER`,
-    /// `NOCTIS_DEV_GUILD`, `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS`
+    /// `NOCTIS_PUBLISHER`, `NOCTIS_DEV_GUILD`, `NOCTIS_FEATURES`,
+    /// `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS`
     /// and then `NOCTIS_APP_ID`, each trimmed of ASCII whitespace; an empty
     /// value counts as unset. The proxy and the gateway URL are passed to
     /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and
@@ -220,10 +226,17 @@ impl App {
     /// 901-9999 fail at `build()`; the publisher switch (`true`, `false`,
     /// `1` or `0`, any ASCII case) is passed to [`AppBuilder::publisher`];
     /// the dev guild (1-20 ASCII digits, not 0) to [`AppBuilder::dev_guild`];
+    /// the Boot Flag selection (`all`, `none` or `a,b,..`,
+    /// [`BootFlags`]) to [`AppBuilder::boot_flags`];
     /// the payload keys (64 hex digits each, [`PayloadKey::from_hex`]) to
     /// [`AppBuilder::payload_key`] and [`AppBuilder::previous_payload_key`];
     /// the App id, raw, to [`AppBuilder::app_id`], validated by `build()`.
-    /// Setters called afterwards win.
+    ///
+    /// It then reads `--features <a,b|all|none>` from the process command
+    /// line ([`NoctisArgs::split`] over `std::env::args_os()`), which wins
+    /// over `NOCTIS_FEATURES`: the Boot Flag selection must exist before
+    /// `build()`, and [`run`](App::run) only checks that its `--features`
+    /// matches. Setters called afterwards win.
     ///
     /// # Errors
     ///
@@ -231,15 +244,17 @@ impl App {
     /// an invalid shard total, an invalid Shard Range
     /// ([`EnvError::InvalidShardRange`]), an invalid shutdown grace, an invalid
     /// publisher switch, an invalid dev guild or an invalid payload key
-    /// ([`EnvError::InvalidPayloadKey`]); the message never shows the
-    /// value.
+    /// ([`EnvError::InvalidPayloadKey`]), or an invalid Boot Flag selection
+    /// ([`EnvError::InvalidBootFlags`]); the message never shows a secret
+    /// value. [`Error::Cli`] when a Noctis flag on the command line is
+    /// malformed (such as `--features A`).
     ///
     /// ```no_run
     /// let app = noctis_core::App::from_env()?;
     /// # Ok::<(), noctis_core::Error>(())
     /// ```
     pub fn from_env() -> Result<AppBuilder, Error> {
-        Ok(AppBuilder::from_lookup(|var| std::env::var_os(var))?)
+        AppBuilder::from_sources(|var| std::env::var_os(var), std::env::args_os())
     }
 
     /// The App's id ([`AppBuilder::app_id`] or `NOCTIS_APP_ID`; by default
@@ -455,6 +470,22 @@ impl App {
     /// ```
     pub fn dev_guild(&self) -> Option<Id<GuildMarker>> {
         self.dev_guild
+    }
+
+    /// The Boot Flag selection this App was built with
+    /// ([`AppBuilder::boot_flags`], `NOCTIS_FEATURES` or `--features`;
+    /// `all` by default).
+    ///
+    /// ```
+    /// use noctis_core::BootFlags;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.boot_flags(), &BootFlags::all());
+    /// # }
+    /// ```
+    pub fn boot_flags(&self) -> &BootFlags {
+        &self.boot_flags
     }
 
     /// A Publish of the Registry's commands to `scope`; `.await` it. See
@@ -698,7 +729,10 @@ impl App {
     /// Runs the App with an explicit command line (without the program
     /// name; see [`NoctisArgs`]).
     ///
-    /// In order: parses `args` ([`Error::Cli`] before anything else); checks
+    /// In order: parses `args` ([`Error::Cli`] before anything else); rejects
+    /// a `--features` selection that differs from the App's
+    /// ([`App::boot_flags`]) with [`CliError::BootFlagsMismatch`] (an equal
+    /// one is accepted; the App is never re-folded); checks
     /// that a multi-thread tokio runtime is current and that a rustls crypto
     /// provider is installed (installing `ring`'s when none is set). With a
     /// mode (`--publish`, `--publish-guild [<id>]`, `--publish-clear [--guild
@@ -736,6 +770,15 @@ impl App {
         let mut app = self;
         async move {
             let args = parsed?;
+            if let Some(given) = args.features()
+                && *given != app.boot_flags
+            {
+                return Err(CliError::BootFlagsMismatch {
+                    given: given.clone(),
+                    built: app.boot_flags.clone(),
+                }
+                .into());
+            }
             check_runtime(true)?;
             ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
             if let Some(mode) = args.mode() {
@@ -1569,6 +1612,8 @@ pub struct AppBuilder {
     large_threshold: LargeThreshold,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
+    /// The Boot Flag selection the fold prunes the Module trees with.
+    boot_flags: BootFlags,
     /// The current payload key (never printed).
     payload_key: Option<PayloadKey>,
     /// The previous payload key of a rotation (never printed).
@@ -1665,6 +1710,7 @@ impl AppBuilder {
             presence: None,
             large_threshold: LargeThreshold::default(),
             dev_guild: None,
+            boot_flags: BootFlags::all(),
             payload_key: None,
             previous_payload_key: None,
             expired_handler: None,
@@ -1701,7 +1747,25 @@ impl AppBuilder {
         }))
     }
 
-    /// [`App::from_env`] over `lookup` instead of the process environment.
+    /// [`App::from_env`] over `lookup` and the full command line `args`
+    /// (program name included) instead of the process environment.
+    pub(crate) fn from_sources<I, A>(
+        lookup: impl Fn(&str) -> Option<OsString>,
+        args: I,
+    ) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = A>,
+        A: Into<OsString>,
+    {
+        let mut builder = Self::from_lookup(lookup)?;
+        let (cli, _) = NoctisArgs::split(args)?;
+        if let Some(features) = cli.features() {
+            builder.boot_flags(features.clone());
+        }
+        Ok(builder)
+    }
+
+    /// The environment half of [`App::from_env`], over `lookup`.
     pub(crate) fn from_lookup(lookup: impl Fn(&str) -> Option<OsString>) -> Result<Self, EnvError> {
         let mut builder = App::builder();
         if let Some(raw) = read_var(&lookup, TOKEN_VAR)? {
@@ -1744,6 +1808,15 @@ impl AppBuilder {
             let guild =
                 parse_guild_id(&raw).ok_or(EnvError::InvalidDevGuild { var: DEV_GUILD_VAR })?;
             builder.dev_guild(guild);
+        }
+        if let Some(raw) = read_var(&lookup, FEATURES_VAR)? {
+            let flags = raw
+                .parse::<BootFlags>()
+                .map_err(|reason| EnvError::InvalidBootFlags {
+                    var: FEATURES_VAR,
+                    reason,
+                })?;
+            builder.boot_flags(flags);
         }
         for (var, previous) in [(PAYLOAD_KEY_VAR, false), (PAYLOAD_KEY_PREVIOUS_VAR, true)] {
             if let Some(raw) = read_var(&lookup, var)? {
@@ -2285,6 +2358,36 @@ impl AppBuilder {
         self
     }
 
+    /// The Boot Flag selection (FR-73, AD-7; default `all`): `build()`
+    /// prunes the mounted trees with it before the fold, so unselected
+    /// Modules and registrations are not registered, dispatched, counted
+    /// for intents or published (see [`Module`](crate::Module#boot-flags)).
+    /// [`App::from_env`] sets it from `NOCTIS_FEATURES` and `--features`;
+    /// the last call wins.
+    ///
+    /// A selected flag that no mounted Module or registration declares is a
+    /// [`BuildViolation::UnknownBootFlag`]. `run`/`run_with_args` reject a
+    /// `--features` that differs from it
+    /// ([`CliError::BootFlagsMismatch`]); in a process with several Apps,
+    /// give each its own selection here and run it with `run_with_args`.
+    ///
+    /// ```
+    /// use noctis_core::{BootFlags, Module};
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder()
+    ///     .module(Module::new("eco").flags(["economy"]))
+    ///     .boot_flags(BootFlags::only(["economy"]).unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// assert_eq!(app.boot_flags().to_string(), "economy");
+    /// # }
+    /// ```
+    pub fn boot_flags(&mut self, flags: BootFlags) -> &mut Self {
+        self.boot_flags = flags;
+        self
+    }
+
     /// Routes the failures of `origin` (handler errors and panics, and for
     /// [`ErrorOrigin::Event`] also handlers cancelled at shutdown and events
     /// dropped by a full overflow) to `sink` instead of
@@ -2483,7 +2586,11 @@ impl AppBuilder {
     /// One [`BuildError`] with every violation: setters', plugins' reports
     /// and the checks', in that order; among the checks, every
     /// [`BuildViolation::InvalidModuleId`] and
-    /// [`BuildViolation::DuplicateModule`], then missing intents (GW-05),
+    /// [`BuildViolation::DuplicateModule`], then every
+    /// [`BuildViolation::InvalidBootFlag`] and
+    /// [`BuildViolation::UnknownBootFlag`] (checked on the full trees; the
+    /// later checks see only the trees [`boot_flags`](Self::boot_flags)
+    /// keeps), then missing intents (GW-05),
     /// then every [`BuildViolation::Command`] (in the rule engine's
     /// order, then each declared or fallback description that differs from
     /// the value sent for its owner catalog's default locale, CMD-04, sorted
@@ -2628,7 +2735,12 @@ impl AppBuilder {
                 (None, violations)
             }
         };
-        let (registry, missing) = Registry::fold(&self.modules, self.intents, strings.as_ref());
+        let (registry, missing) = Registry::fold(
+            &self.modules,
+            self.intents,
+            strings.as_ref(),
+            &self.boot_flags,
+        );
         let registry = Arc::new(registry);
         self.violations.extend(missing);
         self.register_templates(&registry);
@@ -2701,6 +2813,7 @@ impl AppBuilder {
             presence: config.presence,
             large_threshold: config.large_threshold,
             dev_guild: config.dev_guild,
+            boot_flags: config.boot_flags,
             lifecycle: Lifecycle::new(),
         })
     }
