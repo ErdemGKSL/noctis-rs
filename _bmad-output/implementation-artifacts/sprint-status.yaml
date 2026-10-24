@@ -145,7 +145,7 @@ development_status:
   11-5-runtime-locale-overlays-through-localesource: done
   epic-11-retrospective: optional
 
-  epic-12: in-progress
+  epic-12: done
   12-1-shard-ranges-and-cluster-wide-identify: done
   12-2-session-resume-through-the-sessionstore: done
   12-3-resumable-shutdown: done
