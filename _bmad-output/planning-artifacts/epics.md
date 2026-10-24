@@ -62,6 +62,13 @@ recorded here.
   functions, Responder ergonomics and the testing kit" (5 stories instead of 7). With
   later additions and the 6.10/6.11 split the plan now has 101 stories. Later stories assume the simplified
   codec.
+- **Correct course, 2026-10-24 (maintainer request):** the maintainer asked for a
+  concurrency- and performance-focused story on the event pipeline at the end of the
+  backlog. It became Epic 16, "Event pipeline throughput", with three stories: a bench
+  and allocation baseline first (16.1), so the two optimization stories (16.2 lanes,
+  drain and per-guild ordering; 16.3 per-event and per-handler overhead) are proven by
+  numbers. Epic 16 runs after Epics 12, 13 and 15 and before Epic 14 (Story 14.3 sets
+  budgets against the optimized pipeline). The plan now has 104 stories.
 
 ### Validation summary (step 4)
 
@@ -564,19 +571,19 @@ is mapped.
 | FR-79 | P0 | E1 | Rules catalog as code and CI cross-check (+E14 pending list empty) |
 | NFR-1 | — | E3 + E12 + E14 | Bounded defaults (E3); memory bench over 10k idle guilds (E12); gating in CI (E14) |
 | NFR-2 | — | E7 + E8 | No per-message state by construction (E7); `assert_memory_flat` (E8) |
-| NFR-3 | — | E14 (+E10) | Latency bench (E14); reference card bench (E10) |
+| NFR-3 | — | E14 (+E10, E16) | Latency bench (E14); reference card bench (E10); pipeline throughput bench and optimizations (E16) |
 | NFR-4 | — | E5 (+E6, E10) | `catch_unwind` around every future (E5); panic → error response (E6); render jobs (E10) |
 | NFR-5 | — | E5 (+all) | Span and metric contract (E5); each runtime story emits its spans/metrics |
 | NFR-6 | — | E2 + E3 + E7 + E10 | Ref entropy, key newtypes (E2); bytes-only ports (E3); namespacing, mentions (E7, E8); host allow-list (E10) |
 | NFR-7 | — | E1 | Edition, MSRV, workspace pins, `#[non_exhaustive]` policy |
 | NFR-8 | — | E1 (+E10) | CI quality gates (E1); pixel-snapshot gate for renderer upgrades (E10) |
-| NFR-9 | — | E2 + E7 + E14 | Zero-alloc decode (E2); zero-alloc Route lookup (E7); allocation bench budget (E14) |
+| NFR-9 | — | E2 + E7 + E14 (+E16) | Zero-alloc decode (E2); zero-alloc Route lookup (E7); allocation bench budget (E14); dispatch-path allocation cuts (E16) |
 | NFR-10 | — | E1 + E14 | `xtask rules-catalog` (E1); empty pending list audit (E14) |
 | UX-DR1..9 | — | E4 + E8 + E14 | V2-only message model (E4); recipes, rulebook and example (E8, Story 8.5); doctrine lint (E1 gate, E8, E14) |
 
 ## Epic List
 
-Fifteen epics, ordered by priority tier (P0 → P1 → P2) and, inside a tier, by the
+Sixteen epics, ordered by priority tier (P0 → P1 → P2) and, inside a tier, by the
 crate layers (rules → codec → ports/ui → gateway → core → macro-heavy features →
 image → i18n → scale). Each epic builds only on earlier epics. The README roadmap
 milestone is given per epic.
@@ -670,6 +677,12 @@ docs exist, the release pipeline is ready, and `noctis` 0.1.0 is published (Stor
 A bot author can opt into prefix commands, a remote Renderer, several Apps per process
 and presence/gateway commands, each behind a feature or as an extension.
 **FRs covered:** FR-14, FR-37, FR-47, FR-53.
+
+### Epic 16: Event pipeline throughput (P1, added 2026-10-24; runs before Epic 14)
+A bot operator gets an event pipeline that scales with cores and shards: measured
+throughput, lock-light lanes, a parallel drain, per-guild ordering without
+head-of-line blocking and fewer allocations per event, with every AD-10 guarantee kept.
+**FRs covered:** FR-5, FR-6 (performance); NFR-3, NFR-5, NFR-9.
 
 ## Epic 1: Project foundation and Discord rules as code
 
@@ -3640,3 +3653,137 @@ So that users who type `!command` keep working during migration.
 **Given** the new public API
 **When** the story is done
 **Then** the Usage Skill documents prefix commands as an opt-in P2 feature, and `skill-check` passes
+
+## Epic 16: Event pipeline throughput
+
+A bot operator gets an event pipeline that scales with cores and shards: the path from
+a shard's parsed `Inbound` to a handler start has no single-consumer ceiling, no
+global lock every shard contends on, no cross-guild head-of-line blocking for ordered
+handlers and no avoidable per-event allocation, while every AD-10 guarantee
+(interaction priority, the bounded event lane and its drop policy, per-guild order,
+the `handler_concurrency` bound, the AD-21 shutdown phases) holds unchanged. Added
+2026-10-24 at the maintainer's request (see Workflow decisions).
+
+**Order:** Epic 16 runs after Epics 12, 13 and 15 (Stories 12.5, 13.3 and 13.5 touch
+the same drain and dispatch code) and before Epic 14, so Story 14.3 sets its budgets
+against the optimized pipeline. Story 16.1 creates `noctis-core/benches`; Story 14.3
+extends it instead of creating it.
+
+**Measured starting point (main at 9422c90):** each Shard is one tokio task that
+parses and pushes into one `LaneSender` (`noctis-gateway/src/lanes.rs`): one
+`std::sync::Mutex` guards the interaction, event and overflow queues of every shard,
+each push and pop sets three gauges and calls `notify_one`, and evicting a droppable
+event scans the event lane under that lock (O(capacity) per push when full). One
+drain task (`noctis-core/src/worker.rs`, `drain`) takes every item: it runs
+`locales.observe` (an `RwLock` write on guild events), looks up the Registry twice per
+event, waits for a `Semaphore` permit (default 256) and spawns one task per handled
+event. Ordered handlers go to 64 fixed unbounded sub-queues hashed by guild id, so a
+slow ordered handler stalls every guild sharing its sub-queue. Per handler run the
+worker builds a span with seven fields, resolves locales into a new `Arc`, builds the
+Middleware `Around`, clones the whole `Event` for every handler but the last, collects
+a `Vec` for `join_all`, and records metrics through `metrics::histogram!`/`counter!`
+with labels, which builds the metric key and asks the recorder on every call.
+
+### Story 16.1: Event pipeline throughput bench and baseline
+
+As a Noctis maintainer,
+I want the event pipeline's throughput, latency, scaling and allocations measured on a repeatable bench,
+So that every pipeline optimization is proven by numbers instead of assumed.
+
+**Implements:** NFR-3, NFR-9 (measurement); AD-10, AD-25.
+
+**Acceptance Criteria:**
+
+**Given** `crates/noctis-core/benches/pipeline.rs` (criterion, the workspace `criterion` pin, `harness = false`)
+**When** it runs with `cargo bench --release -p noctis-core --bench pipeline`
+**Then** it drives a real App built on `Runtime::for_test()` by pushing pre-parsed `Inbound` values into the same lanes the shard tasks use (the AD-10 testkit injection path, no JSON parse in the timed loop) from P producer tasks that stand in for shards, with P ∈ {1, 4, 16}
+**And** it reports, per scenario: sustained events/s, p50/p99/p99.9 of `received_at` to handler start, and lane push cost per item under P concurrent producers
+
+**Given** the scenarios
+**When** the bench runs
+**Then** it covers: (a) the AD-25 mix (60% `MESSAGE_CREATE` with no handler, 25% handled guild events, 10% component interactions with inline Payloads, 5% command interactions, no-op handlers) at a fixed 10k events/s and at saturation; (b) one handled event type with 1 and with 4 concurrent no-op handlers; (c) ordered handlers across 1, 64 and 10 000 guilds, with one guild's ordered handler sleeping 50 ms; (d) an event flood at saturation with 1% interactions, reporting interaction p99 separately
+
+**Given** a dhat test `crates/noctis-core/tests/pipeline_alloc.rs` (counting allocator, single-threaded runtime, no tracing subscriber, no metrics recorder)
+**When** it pushes one unhandled event, one event with one concurrent no-op handler, one with two concurrent handlers and one with an ordered handler through lane pop to handler return
+**Then** it prints the heap allocations and bytes of each case, and asserts each count equals the value this story records (a later change that adds an allocation fails it; a change that removes one updates the recorded value in the same commit)
+
+**Given** a finished bench run on the story's machine
+**When** the story records it
+**Then** `crates/noctis-core/benches/PIPELINE.md` lists the machine (CPU count, model), the commit, and every scenario's numbers as the baseline Stories 16.2 and 16.3 compare against; no number gates CI yet (Story 14.3 decides budgets)
+
+**Given** the gates
+**When** the story is done
+**Then** the bench compiles under `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, no public API changes (`api-snapshot` passes without a re-bless), and no gate runs the bench itself
+
+### Story 16.2: Lock-light lanes, parallel drain and per-guild ordering without head-of-line blocking
+
+As a bot operator running many shards on many cores,
+I want shard pushes, draining and ordered dispatch to scale with cores,
+So that event throughput is not capped by one lock, one drain task or one slow guild.
+
+**Implements:** FR-5, FR-6, NFR-3, NFR-5; AD-10 (amended), AD-21, AD-25.
+
+**Acceptance Criteria:**
+
+**Given** P shards pushing at once
+**When** they push into the lanes
+**Then** shards no longer contend on one lock for every push: the lanes are partitioned (for example by shard, so a guild's events stay in one partition and keep their order) or use a lock-free queue, the shard task still never awaits (AD-10 `try_send` rule), and the bench's push cost per item at P = 16 is no more than 1.5× its P = 1 cost
+
+**Given** a full event lane
+**When** a droppable event arrives
+**Then** evicting the oldest queued droppable event is O(1) amortized (no scan of the lane), the FIFO order of events that are not dropped is unchanged, and the drop counter, `DropObserver` call and logs behave exactly as before (existing `lanes` tests pass unchanged)
+
+**Given** the drain
+**When** events arrive faster than one task can take them
+**Then** draining is not limited to one task: either several drain tasks (one per lane partition, at most the runtime's worker count) or batched pops (up to a documented batch size per lock acquisition) remove the single-consumer ceiling, the Registry is looked up once per event, and lane gauges are updated at most once per batch, not once per item
+**And** an interaction that arrives during an event flood still starts before any event queued after it (the Interaction Lane keeps priority in every partition) and its p99 in bench scenario (d) is no worse than the 16.1 baseline
+
+**Given** ordered handlers in two guilds that share a sub-queue today
+**When** guild A's ordered handler is slow
+**Then** guild B's ordered events are not delayed by it: ordering is per guild, not per hash bucket (for example one on-demand FIFO per guild with queued work, whose map holds only guilds with a queued job and is therefore bounded by `handler_concurrency`, satisfying AD-25's no-unbounded-map rule), events of one guild still run their ordered handlers in arrival order, and no task exists per idle guild
+
+**Given** `handler_concurrency = N`
+**When** the pipeline runs
+**Then** at most N events are in their handler phase at once, interactions still take no permit, and the AD-21 order holds: `shutdown` drains every partition until empty, `cancel` discards queued items with one summary `warn` naming the totals across all partitions
+
+**Given** the 16.1 bench on the same machine
+**When** the story's final tree runs it
+**Then** saturation throughput of the AD-25 mix at P = 16 is at least 2× the baseline, p99 arrival-to-handler-start at 10k events/s is ≤ 1 ms (NFR-3), scenario (c) shows guild B's p99 unaffected by guild A's 50 ms handler, and `PIPELINE.md` records the before and after numbers side by side; a target that cannot be met without a public API change is recorded with the measured value and the reason as a `(decision)` line in the story's memlog
+
+**Given** the architecture spine
+**When** the story is done
+**Then** AD-10 carries an "Amended (Story 16.2)" note describing the new lane partitioning, drain and per-guild ordering; metric names and labels of AD-29 are unchanged (`noctis_lane_depth` reports the sum across partitions); the existing worker, lane, shutdown and testkit tests pass unchanged, and new tests cover partition order, O(1) eviction, interaction priority under a flood and per-guild ordering isolation
+
+### Story 16.3: Per-event and per-handler overhead
+
+As a bot operator,
+I want each event and handler run to cost as little CPU and as few allocations as possible,
+So that the same hardware handles more events and the dispatch path meets its NFR-9 allocation budget.
+
+**Implements:** NFR-3, NFR-5, NFR-9; AD-25, AD-29.
+
+**Acceptance Criteria:**
+
+**Given** the metric calls on the dispatch path (`noctis_handler_duration_seconds`, `noctis_handler_errors_total`, lane gauges and drop counters)
+**When** an event runs
+**Then** their handles are registered once (at App build or on first use per label set) and cached, so no metric key is built and no recorder lookup happens per event; names and labels are unchanged
+
+**Given** an event with several concurrent handlers
+**When** it is dispatched
+**Then** the event is not deep-cloned for a handler whose payload type or derived filter rejects it (the check runs before any clone), one handler runs without `join_all` and without a `Vec`, and several handlers share one allocation for their futures
+
+**Given** an event handler run with no Middleware and no tracing subscriber interested in `noctis.event`
+**When** it starts
+**Then** it builds no Middleware chain state and no span fields it will not use, and resolves its locales without a new `Arc` per run when the guild's locale record and the App default are unchanged
+
+**Given** the 16.1 dhat test
+**When** it runs on the final tree
+**Then** an unhandled event allocates nothing in core, one handled event with one concurrent no-op handler allocates at most 3 times from lane pop to handler return (the spawned task, the boxed handler future and at most one more), and the recorded counts in `pipeline_alloc.rs` are lowered to the new values; a count above these targets that would need a public API change is recorded with the reason as a `(decision)` line
+
+**Given** the 16.1 bench on the same machine
+**When** the story's final tree runs it
+**Then** scenario (b) with 1 and with 4 handlers shows at least 1.3× the throughput measured at the end of Story 16.2, and `PIPELINE.md` records the numbers
+
+**Given** the gates
+**When** the story is done
+**Then** observable behavior (spans and their fields when a subscriber is enabled, error reports, Middleware order, panic and cancel handling, NFR-4) is unchanged and every existing test passes unchanged; if a public API changes, the Project Template, its `AGENTS.md` and the Usage Skill are updated, `xtask/public-api.txt` is re-blessed and the Skill's `API hash` updated in the same commit
