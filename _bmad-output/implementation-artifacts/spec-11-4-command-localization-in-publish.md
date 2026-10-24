@@ -2,7 +2,7 @@
 title: 'Story 11.4: Command localization in Publish'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '3112448dddd819d1d872649dcbd1b2dac8c8060c'
 review_loop_iteration: 2
 followup_review_recommended: false
@@ -443,3 +443,42 @@ These decisions are logged in the architecture memlog.
 - `cargo +1.91 check --release --workspace`: expected ok.
 - Optional, tracking only: `cargo check --release --manifest-path examples/project-template/Cargo.toml --target-dir target/template`. CI marks the template build `continue-on-error` until Story 14.2, so errors from API that has not landed are acceptable. An error from a template command's description, `key` or locale files is not. Delete `target/template` afterwards if disk is tight.
 - `test ! -d target/debug`: expected no debug profile.
+
+### 2026-10-23 — Review pass
+- verdicts: 26 findings — high 0, medium 1, low 13, false 10, maybe-false 2
+- findings:
+  - `[low]` `[reject]` (blind) Declared-description CMD-04 on a handler-fallback node says `declared by` and "remove the declaration", which misdirects (nothing was declared) — real (`declarations` carries the synthetic fallback decl with the leaf's Module as `source`; the help is uniform), but the case needs a sibling-only `cmd.<P>.description` with an undescribed base, rare in everyday use, the error still names the key and the file text, and the fix threads the fallback source into `declared_descriptions`.
+  - `[false]` `[reject]` (blind) `add_fallbacks` (own file) and `declared_descriptions` (`[default, sibling]`) look up different values, so a sibling-only key always fails — the intent contract mandates the fallback from the owner's `default_locale()` file, and Design Notes ("`add_fallbacks` is unchanged … which this check then reports when it differs") settle the error deliberately.
+  - `[low]` `[reject]` (blind) Conflicting Module declarations plus a differing catalog value give both `validate_merge`'s conflict and a declared CMD-04 — two distinct problems are reported, each true; rare, and suppressing one needs a skip branch.
+  - `[false]` `[reject]` (blind) `cfg!(feature = "i18n")` in `noctis-macros` changes `#[command]` through feature unification — `noctis` itself is unified the same way (`i18n = ["noctis-macros/i18n"]`), so the Module crate's `noctis` has `i18n` on whenever the macro does; the macro follows the facade's feature state.
+  - `[false]` `[reject]` (blind) One bad key in the default file fails every `#[command]` with only the first error — the intent contract prescribes exactly this: "A file with errors gives one error … `<first error>`".
+  - `[false]` `[reject]` (blind) The `expand`-failure branch omits `#includes` — cargo records no fingerprint for a failed compile and reruns it on the next build, and `expand` errors depend only on the source, so no stale state arises.
+  - `[low]` `[reject]` (blind) Runtime-registered paths with reserved words (`config name`, `x opt`) are silently unlocalized — real (`i18n!`'s layout makes their keys unwritable), but runtime registration with reserved words is rare and the fix adds an App-build check.
+  - `[low]` `[reject]` (blind) The compile-time option CMD-04 conflict names only the option — cosmetic; the error is spanned at the field, and rewriting the path needs the field index threaded through `resolve_description`.
+  - `[low]` `[reject]` (blind) No `i18n!`-file end-to-end test for the sibling-only default or App-build LOC-02/declared CMD-04 — the logic is covered in `publish/tests/localize.rs` with `Catalog::__new` statics; the extra e2e duplicates it.
+  - `[low]` `[reject]` (blind) `emitted_default` resolves all 32 locales and option texts are re-resolved per scope — compile-of-App cost only for realistic sizes (as pass 1's quadratic/per-scope row); the fix restructures the resolver.
+  - `[false]` `[reject]` (blind) Publish JSON pairs option localizations by position — `build_scope` takes `table.options[index]` from the same first declaration whose `handler.options()` `node` zips, so lengths and order match; a hypothetical future change is not a defect.
+  - `[low]` `[reject]` (edge) carried: no rebuild dependency when the default-locale file is missing — same as pass 1's row.
+  - `[low]` `[reject]` (edge) carried: non-UTF-8 locale path drops `include_bytes!` — same as pass 1's row.
+  - `[maybe-false]` `[defer]` (edge) carried: top-level bases' localized names not compared — pass 1's deferred row; not deferred again.
+  - `[maybe-false]` `[defer]` (edge) carried: same-kind menus' localized names not compared — pass 1's deferred row; not deferred again.
+  - `[low]` `[reject]` (edge) A Pattern that fails to expand with a locale file stacks option missing-description CMD-04s on the real error — real, only when the Pattern is already broken; suppressing them needs a new branch.
+  - `[false]` `[reject]` (edge) carried: `Problems::finish` silently drops problems — the code still reads as pass 1's row describes.
+  - `[false]` `[reject]` (edge) carried: full path vs own-locale `cmdword` precedence — as pass 1's D2 row (Matrix 5).
+  - `[medium]` `[patch]` (vgap) Macro-derived Pattern per-path `DESCRIPTIONS` binding through `kind.rs::slash` untested — pre-verified; patch: add a Pattern `#[command]` with two file descriptions to `crates/noctis/tests/i18n_commands.rs` and assert each subcommand's description.
+  - `[low]` `[patch]` (vgap) `#[command]`'s `include_bytes!` emission untested — pre-verified; patch: `#[cfg(feature = "i18n")]` expansion test asserting the token.
+  - `[low]` `[patch]` (vgap) `locale::load` error branches (M15, M18) untested — pre-verified; patch: unit tests for the missing explicit dir and a file with errors.
+  - `[low]` `[patch]` (vgap) Option-description file resolution (M13 conflict/missing note, M14) tested only on the happy path — pre-verified; patch: `options.rs` unit tests with an `OptionLocale`.
+  - `[false]` `[reject]` (intent D1) carried: maintainer decision §9 versus literal descriptions — as pass 1's D6 row (§9 governs runtime-rendered text; Design Notes).
+  - `[false]` `[reject]` (intent D2) carried: App-build CMD-04 on declared descriptions beyond the AC/row 21 — as pass 2's intent 5 row.
+  - `[false]` `[reject]` (intent D3) carried: mirrored `dir`/`default` — as pass 1's D1 row.
+  - `[low]` `[reject]` (intent D4) No template test asserts the template's published localizations — the same pipeline is asserted end to end in `i18n_commands.rs` with real `i18n!` files; the template build is tracking-only until Story 14.2.
+
+## Auto Run Result
+
+- **Summary:** Publish now sends `name_localizations`/`description_localizations` for slash commands, groups, subcommands, options, choices and keyed context menus. Values come from Module catalogs (`cmd.<path>.*`, `cmdword.*`, `ctxcmd.*`) through a per-locale `[L, L.sibling()]` chain. `#[command]` takes `locales`/`default_locale` and checks literals against the default-locale file at compile time (CMD-01 reserved words, CMD-04 missing or differing description). `i18n!` checks LOC-02/LOC-03 at compile time. App-build reports `BuildViolation::CommandLocalization` (LOC-02/LOC-03), declared-description CMD-04 against the emitted default-locale value, and LOC-05 counts. Without catalogs the output is byte-identical.
+- **Files changed:** `crates/noctis-core/src/publish/localize.rs` + tests (localization table, Resolver, problems, declared-description check); `crates/noctis-core/src/registry/*` (descriptions per path, menu keys, fallbacks); `crates/noctis-rules/src/command/*` (`validate_localized*`, LOC limits); `crates/noctis-i18n` (`AppStrings::{get, owner}`); `crates/noctis-macros/src/command{,/locale}.rs`, `options.rs`, `kind.rs` (locale-file loading, `include_bytes!`, `key`); `crates/noctis/tests/i18n_commands.rs` + fixtures; ui-i18n trybuild fixtures; `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt`; project template code, AGENTS.md and noctis skill (`i18n.md`, `commands.md`, cheatsheet, API hash).
+- **Review findings:** pass 1 had 38 findings: 2 bad_spec (amendment A1, declared description vs catalog), 6 patched, 3 deferred (LOC-03 across top-level bases and menus, unverified; gates.sh hack-skip vs AGENTS.md; hack-skip lane race), the rest rejected with reasons in the triage log. Pass 2 had 28: 1 bad_spec (amendment A2, sibling-supplied default-locale value), 7 patched, the rest rejected or carried. Pass 3 had 26: 4 patched (1 medium: Pattern per-path DESCRIPTIONS end-to-end test; 3 low: `include_bytes!` expansion test, `locale::load` M15/M18 error tests, option-description M13/M14 unit tests), 2 carried defers, 20 rejected (reasons in the triage log, e.g. misleading "declared by" wording on handler-fallback CMD-04, runtime reserved-word paths silently unlocalized).
+- **Follow-up review recommended:** false. Pass 3 is a follow-up pass and patched no high (patched: high 0, medium 1, low 3).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, ui and ui-i18n trybuild, featureless noctis-macros, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI is paused by the maintainer.
+- **Residual risks:** LOC-03 distinctness of localized names across top-level bases and same-kind menus is unchecked and unverified against Discord (deferred). Runtime-registered paths that contain reserved words are silently unlocalized. A missing implicit default-locale file adds no rebuild dependency until it is first created. gates.sh skips cargo hack except on an epic's last story (deferred tooling mismatch).

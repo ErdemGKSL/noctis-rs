@@ -465,4 +465,38 @@ mod tests {
             (vec![Some("Bir üyeyi yasakla".to_owned())], vec![])
         );
     }
+
+    /// Matrix M15: an explicit file that is missing is an error naming it.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn explicit_missing_file_is_an_error() {
+        let span = proc_macro2::Span::call_site();
+        let args = LocaleArgs {
+            dir: Some(syn::LitStr::new("nope", span)),
+            ..LocaleArgs::default()
+        };
+        let text = load(&args).expect_err("the file is missing").to_string();
+        assert!(
+            text.contains("nope/en-US.yaml") && text.contains("not found"),
+            "{text}"
+        );
+    }
+
+    /// Matrix M18: a default file with errors is one error.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn file_with_errors_is_an_error() {
+        let span = proc_macro2::Span::call_site();
+        let args = LocaleArgs {
+            dir: Some(syn::LitStr::new(
+                "../noctis/tests/fixtures/i18n/cmd_bad",
+                span,
+            )),
+            ..LocaleArgs::default()
+        };
+        let err = load(&args).expect_err("the file has errors");
+        assert_eq!(err.into_iter().count(), 1);
+        let text = load(&args).expect_err("the file has errors").to_string();
+        assert!(text.contains("has errors (see `i18n!`)"), "{text}");
+    }
 }

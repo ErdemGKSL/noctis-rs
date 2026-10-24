@@ -67,6 +67,18 @@ impl SetupStart {
     }
 }
 
+/// A Pattern: each expansion takes its own `cmd.cfg.<word>.description`.
+#[derive(SlashCommand)]
+#[command("cfg (set|get)", locales = "tests/fixtures/i18n/cmd")]
+struct Cfg;
+
+impl Cfg {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, path: CfgPath) -> HandlerResult<Responded> {
+        ctx.reply_text(path.as_str()).await
+    }
+}
+
 #[derive(UserCommand)]
 #[user_command("Show profile", key = "show_profile")]
 struct ShowProfile;
@@ -211,6 +223,25 @@ async fn keyed_message_menu_is_localized() {
             },
         })]
     );
+}
+
+/// Matrix M6: a Pattern's expansions publish their own file descriptions.
+#[tokio::test]
+async fn pattern_paths_take_their_own_descriptions() {
+    let json = commands(Module::new("cfg").add::<Cfg>().locales(strings::catalog()));
+    assert_eq!(json[0]["description"], "Configuration");
+    let subs: Vec<(&str, &str)> = json[0]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| {
+            (
+                o["name"].as_str().unwrap(),
+                o["description"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(subs, [("set", "Set a value"), ("get", "Get a value")]);
 }
 
 /// Row 7: an en-GB file serves en-GB; en-US keeps its own text.

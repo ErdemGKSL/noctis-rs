@@ -1376,4 +1376,22 @@ mod tests {
         assert!(out.contains("enum TypePath"), "{out}");
         assert!(out.contains("\"Type\""), "{out}");
     }
+
+    /// Matrix M2: the expansion tracks the default-locale file it read
+    /// with `include_bytes!`.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn includes_the_read_locale_file() {
+        let out = run(quote! {
+            #[command("mod ban", locales = "../noctis/tests/fixtures/i18n/cmd")]
+            struct Ban;
+        });
+        let file = std::fs::canonicalize(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../noctis/tests/fixtures/i18n/cmd/en-US.yaml"
+        ))
+        .unwrap();
+        let expected = format!("include_bytes ! ({:?})", file.to_str().unwrap());
+        assert!(out.contains(&expected), "{expected} in {out}");
+    }
 }

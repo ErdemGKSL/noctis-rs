@@ -14,6 +14,12 @@ cmd:
     description: Set the bot up
     start:
       description: Start the setup
+  cfg:
+    description: Configuration
+    set:
+      description: Set a value
+    get:
+      description: Get a value
 ctxcmd:
   show_profile:
     name: Show profile

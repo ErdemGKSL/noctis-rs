@@ -1,0 +1,7 @@
+# Story 11.4: a default-locale file with errors (a duplicate key); the
+# unit tests of `noctis-macros` `command/locale.rs` read it through `load`.
+cmd:
+  ping:
+    description: Pong
+  ping:
+    description: Pong again

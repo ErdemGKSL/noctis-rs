@@ -1581,4 +1581,86 @@ mod tests {
         );
         assert!(err.contains("= help: #[derive(SlashCommand)]"), "{err}");
     }
+
+    /// The expansion-time error text of `input` read against `entries`
+    /// over `paths` (Story 11.4).
+    #[cfg(feature = "i18n")]
+    fn locale_errors(input: TokenStream, entries: &[(&str, &str)], paths: &[&str]) -> String {
+        let input: DeriveInput = syn::parse2(input).unwrap_or_else(|e| panic!("{e}"));
+        let fields = crate::common::kind_fields(&input, "SlashCommand").unwrap();
+        let file = LocaleFile::of("locales/en-US.yaml", entries);
+        let paths: Vec<String> = paths.iter().map(|p| (*p).to_owned()).collect();
+        let locale = OptionLocale {
+            file: &file,
+            paths: &paths,
+        };
+        match super::expand(&input, &fields, Some(locale)) {
+            Ok(t) => panic!("expected an error, got {t}"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// Matrix M13: a literal differing from the file is CMD-04.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn option_literal_conflicting_with_the_file() {
+        let err = locale_errors(
+            quote!(
+                struct B {
+                    #[option(description = "X")]
+                    user: ResolvedUser,
+                }
+            ),
+            &[("cmd.ban.opt.user.description", "Who")],
+            &["ban"],
+        );
+        assert!(err.contains("[CMD-04]"), "{err}");
+        assert!(
+            err.contains(
+                "description differs from `cmd.ban.opt.user.description` in `locales/en-US.yaml`"
+            ),
+            "{err}"
+        );
+    }
+
+    /// Matrix M14: different file texts across a Pattern's expansions.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn option_texts_differ_across_expansions() {
+        let err = locale_errors(
+            quote!(
+                struct C {
+                    v: String,
+                }
+            ),
+            &[
+                ("cmd.cfg.set.opt.v.description", "A"),
+                ("cmd.cfg.get.opt.v.description", "B"),
+            ],
+            &["cfg set", "cfg get"],
+        );
+        assert!(
+            err.contains("different descriptions across the Pattern's expansions"),
+            "{err}"
+        );
+    }
+
+    /// The missing-description error names the key it looked for.
+    #[cfg(feature = "i18n")]
+    #[test]
+    fn missing_option_description_names_the_key() {
+        let err = locale_errors(
+            quote!(
+                struct B {
+                    reason: String,
+                }
+            ),
+            &[],
+            &["ban"],
+        );
+        assert!(
+            err.contains("not found as `cmd.ban.opt.reason.description` in `locales/en-US.yaml`"),
+            "{err}"
+        );
+    }
 }
