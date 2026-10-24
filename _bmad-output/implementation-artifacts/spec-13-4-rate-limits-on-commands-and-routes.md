@@ -2,7 +2,8 @@
 title: 'Story 13.4: Rate limits on Commands and Routes'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'c0b96ce9a4f6c9a4695dc48b6ea69a36870f2c60'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
