@@ -2,7 +2,8 @@
 title: 'Story 10.7: Fonts and static assets'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'b57e676b64cc8ca729aab9a8313fdffca014d1b9'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

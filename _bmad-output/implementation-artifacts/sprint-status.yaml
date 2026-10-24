@@ -130,7 +130,7 @@ development_status:
   10-4-output-formats-and-size-budget: done
   10-5-per-job-caps-and-admission-control: done
   10-6-animated-templates: done
-  10-7-fonts-and-static-assets: backlog
+  10-7-fonts-and-static-assets: in-progress
   10-8-remote-image-fetching-through-the-assetfetcher: backlog
   10-9-emoji-rendering: backlog
   10-10-render-cache-and-single-flight-deduplication: backlog
