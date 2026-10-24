@@ -2,7 +2,8 @@
 title: 'Story 12.5: Discord cache wiring, `ctx.cache()`, configuration and minimal intents'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '1c9b9902fba93e808858f8109398cf495f5afc5a'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
