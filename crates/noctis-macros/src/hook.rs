@@ -206,11 +206,12 @@ pub(crate) fn expand(hook: Hook, args: TokenStream, item: TokenStream) -> syn::R
             quote!(#core::__StaleHook),
             quote!(#core::__BindStale),
         ),
-        Hook::Expired | Hook::RateLimited => (
+        Hook::Expired => (
             Ident::new("__noctis_on_expired", name.span()),
             quote!(#core::__ExpiredHook),
             quote!(#core::__BindExpired),
         ),
+        Hook::RateLimited => unreachable!("handled by rate_limited() above"),
     };
     let item = quote_spanned! {name.span()=>
         #[doc(hidden)]

@@ -474,9 +474,18 @@ impl RateRun {
         let window = limit.window();
         let now = now_ms();
         let count = self.store.incr_with_ttl(&n_key, 1, Some(window)).await?;
-        if count == 1 {
-            self.put_end(&e_key, now.saturating_add(millis(window)), window)
-                .await?;
+        if count == 1
+            && let Err(error) = self
+                .put_end(&e_key, now.saturating_add(millis(window)), window)
+                .await
+        {
+            tracing::warn!(
+                target: "noctis::rate_limit",
+                handler = self.handler,
+                scope = scope.as_str(),
+                %error,
+                "rate-limit store failed to record the window end: use counted"
+            );
         }
         Ok(count)
     }

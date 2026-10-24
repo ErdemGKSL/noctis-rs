@@ -2,10 +2,10 @@
 title: 'Story 13.4: Rate limits on Commands and Routes'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'c0b96ce9a4f6c9a4695dc48b6ea69a36870f2c60'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -161,6 +161,51 @@ Runtime (core unit tests `int_14_*` with `MemoryRateLimitStore`; end-to-end in t
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 41 findings — high 0, medium 3, low 16, false 22, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) `reset` writes a 0 counter with TTL `window`, so the next use's `count == 1` branch rewrites the window end to `use + window` while the counter still expires at `reset + window` — real (`RateRun::reset`, stage5 `Ok(1)`), but it only overstates the shown retry after a `reset`, rarely met; the fix needs a new branch or a port `delete` the spec forbids.
+  - `[false]` `[reject]` (blind) earlier auto limits stay incremented when a later limit refuses — spec R10 deliberately settles this ("both incremented … evaluation stops at first hit"), and the skill's "later ones are not counted" is accurate.
+  - `[false]` `[reject]` (blind) stage 5 runs before Route Guards, so Guard-denied clicks use shared-scope quota — AD-23 orders stage 5 before stage 8 and the Boundaries require it; the skill documents the order ("before the auto-defer, the Middleware and the Route Guards").
+  - `[false]` `[reject]` (blind) component stage 5 runs after the `one_shot` take and restores the Ref — Boundaries deliberately place it "after the struct decoded (Ref resolved) and before `arm`; a taken `one_shot` record is put back".
+  - `[false]` `[reject]` (blind) component path passes full `parts` instead of `rate_limited_parts()` — every `RateLimitedCtx` getter reads fields (module, path, ids, locales, app) identical in both; `path()` is documented as "Command Path, menu name or Route id"; no observable difference.
+  - `[false]` `[reject]` (blind) `#[on_rate_limited]` skips `shape()`, so a wrong signature yields only a trait-bound error — spec G17 deliberately accepts "rustc bound error from `__RateLimitedHook::__new`".
+  - `[low]` `[patch]` (blind) `Hook::Expired | Hook::RateLimited` arm in `hook.rs::expand` would silently bind a RateLimited hook as Expired if the early return moved — patch: give `RateLimited` its own `unreachable!` arm.
+  - `[low]` `[reject]` (blind) `#[on_rate_limited]` on a struct without `rate_limit(..)` compiles as dead code — real, but a misconfiguration that is harmless (nothing to override) and the fix adds a const assertion and a fixture.
+  - `[false]` `[reject]` (blind) string-literal scope `"user"` reports unknown scope `"user"` — spec G10 deliberately lists `rate_limit("user", ..)` as an unknown-scope error.
+  - `[false]` `[reject]` (blind) `RateScope`/`RateLimitScope` naming confusion — the spec deliberately chose the new names ("do NOT reuse names"); the skill places the HTTP 429 family under `noctis::http` in `app-and-sharding.md`; no named failing caller.
+  - `[false]` `[reject]` (blind) `hit` returns only the raw count / concurrent manual overshoot — signature `hit -> Result<u64, RateLimitError>` and manual semantics are fixed by the spec; the limit is available as the declared const.
+  - `[false]` `[reject]` (blind) bot authors cannot unit-test an override outside `TestApp` — spec makes `__new`/`__declare` hidden deliberately; the skill documents `Detached` and `response.is_rate_limited()` on the TestApp path.
+  - `[false]` `[reject]` (blind) `RateLimitedCtx` has no translate helper — spec fixes its surface (`module`..`state::<T>()`); `state::<T>()` carries a bot catalog and the default notice is already localized.
+  - `[low]` `[reject]` (blind) missing tests; `block` can shorten a longer live window when the end read fails transiently; Dispatcher deadline from `Instant::now()` — the read-failure case is real but needs a store read error with a successful write (rare) and the fix adds branches; the Dispatcher has no Discord ack window, so `now + ack_deadline` is correct there; ordering is covered by `int_14_*` wire tests (no defer, no handler).
+  - `[low]` `[reject]` (blind) clippy `duplicated_attributes` fires on two limits with one `per` text — the grammar is fixed by the spec; the advised `#[expect]` is exercised in `crates/noctis-testkit/tests/rate_limits.rs:204` under the `-D warnings` clippy gate, so the advice is verified.
+  - `[low]` `[reject]` (edge) a hanging `RateLimitStore` before the auto-defer misses the ack window — same exposure as the pre-defer Ref lookup and `LocaleResolver`, which have no timeout either; adapters bound their own I/O; a deadline wrapper is a new guard for an undemonstrated state.
+  - `[low]` `[reject]` (edge) stage 5 plus a slow override can push the type-4 notice past 3 s — the override is cut at `received_at + ack_deadline` (default under 3 s) and the default notice follows immediately; further budgeting adds branches for a rare case.
+  - `[low]` `[reject]` (edge) `reset` counter/end mismatch — same defect as the first blind row; same reasoning.
+  - `[low]` `[patch]` (edge) `RateRun::hit` returns `Err(Store)` when `incr_with_ttl` counted the use but the window-end `put_end` failed — stage 5 treats the same write as best effort (`warn`); patch: `hit` logs the `put_end` error with `fail_open`-style `warn` and returns `Ok(count)`.
+  - `[false]` `[reject]` (edge) template `BioForm` shows the error notice when `hit` fails after the save — the spec's template task prescribes `ctx.rate_limits().hit(RateScope::User).await?`; the partial-write case is fixed by the row above.
+  - `[low]` `[reject]` (edge) `block` shortens a longer live counter when the end record is absent — same root as the blind `block` row; same reasoning.
+  - `[low]` `[patch]` (edge) `restore_ref` warns "after a Guard denial" when called for a rate-limit refusal (`pipeline.rs:421`) — patch: make the message cause-neutral ("after a refused run").
+  - `[low]` `[reject]` (edge) `#[on_rate_limited]` without a declared limit is dead — same as the blind row; same reasoning.
+  - `[false]` `[reject]` (edge) string-literal scope arm — same as the blind row; spec G10.
+  - `[low]` `[reject]` (edge) testkit `is_rate_limited()` is false when a locale overlay drops `{retry}` — real (`outcome.rs` length check), but overlays that drop the retry time are unusual and the fix adds a branch.
+  - `[low]` `[patch]` (edge) `pipeline.rs` module doc says the hit `debug` goes to `noctis::dispatch` — code logs on `noctis::rate_limit`; patch with the next row.
+  - `[medium]` `[patch]` (vgap) `#[on_rate_limited]` on components, modals and context menus is never exercised through a pipeline — patch: add the method to a limited button (or `MemberForm`) and to `Quote` in `crates/noctis-testkit/tests/rate_limits.rs` and assert the override text on the wire; assert Debug `on_rate_limited: true` for a component and a context-menu descriptor in `crates/noctis/tests/rate_limits.rs`.
+  - `[medium]` `[patch]` (vgap) `ctx.rate_limits()` on `ComponentCtx`/`ModalSubmitCtx` is unverified (the only call swallows its result) — patch: a button or modal with `rate_limit(user, 1, per = "1m", manual)` whose handler calls `hit(..).await?`, asserting the second interaction gets the default notice.
+  - `[medium]` `[patch]` (vgap) `message` scope on a component-opened modal is never keyed in a test — patch: a `submit_on` helper with a `message` object and a case asserting the second submit on the same message is refused.
+  - `[low]` `[reject]` (vgap) the hit `debug` line (no ids) is never observed by a test — filed `defer`; caused by this story, low risk, the fail-open `warn` already pins the no-ids rule; adding a DEBUG capture harness is not worth this pass.
+  - `[low]` `[patch]` (vgap) module docs in `pipeline.rs` (L17-24) and `pipeline/component.rs` (L40-45) say only non-`manual` limits take part in stage 5 and name `noctis::dispatch` — patch: say every declared limit is checked (auto ones counted, `manual` ones read) and name `noctis::rate_limit`.
+  - `[false]` `[reject]` (intent 1) dynamic "set" means changing N/window — the intent contract defines the stateful `hit`/`block`/`extend`/`reset` API (R12-R19); `extend` has core coverage (R14).
+  - `[false]` `[reject]` (intent 2) `manual` limits are read, not incremented, in stage 5 — settled by the Boundaries' stage-5 rule and R11/R12.
+  - `[false]` `[reject]` (intent 3) Dispatcher refusal is a public reply — Boundaries: "a public reply over the `Dispatcher`'s message transport"; R29.
+  - `[false]` `[reject]` (intent 4) time remaining is `<t:N:R>` and falls back to a whole window — settled by Boundaries and R23.
+  - `[false]` `[reject]` (intent 5) fallback and unkeyed scopes — settled by the Boundaries' segment rules, R5, R6, R8.
+  - `[false]` `[reject]` (intent 6) fail open under store errors — settled by Boundaries and R21; recorded as the AD-23 amendment.
+  - `[false]` `[reject]` (intent 7) stage 5 before Guards — AD-23 order; same as the blind row.
+  - `[false]` `[reject]` (intent 8) override shape (method + App builder, ephemeral, deadline) — settled by Boundaries and R24-R27; maintainer decisions §7 put hooks as struct methods.
+  - `[false]` `[reject]` (intent 9) template `BioForm` gains a manual limit — the spec's template task prescribes it.
+  - `[false]` `[reject]` (intent 10) Cluster consistency tested at store level only; end record non-atomic — the counter uses atomic `incr_with_ttl`; the end record is best effort by design (Design Notes, R23, R30).
+
 ## Design Notes
 
 - **Why kind-trait consts, not `RouteRuntime`:** Commands have no `RouteRuntime`, and scopes/keys are core concepts (codec sits below core), exactly like `RESPONSE`/`EPHEMERALITY`; one `RATE_LIMITS` const per kind trait with an empty default keeps hand-written test impls compiling.
@@ -203,3 +248,12 @@ Run from `/home/claude/lanes/d/noctis-rs`, release only (wrap workspace-wide run
 - `cargo deny check` and `cargo +1.91 check --release --workspace` -- expected: exit 0
 - `cargo check --release --manifest-path examples/project-template/Cargo.toml --target-dir target/template` -- expected: template compiles (delete `target/template` if disk is tight)
 - `cargo hack` -- not run here (gate script, epic-last story only)
+
+## Auto Run Result
+
+- **Summary:** declarative `rate_limit(scope, N, per = "..", [manual])` on slash commands, context menus, components and modals; pipeline stage 5 (before auto-defer, Middleware, Route Guards) checks every declared limit (auto counted, manual read) over the `RateLimitStore` port, fail-open with a `warn` on `noctis::rate_limit`; ephemeral localized notice with `<t:N:R>` retry (public reply on the Dispatcher), `#[on_rate_limited]` override with `RateLimitedCtx`, and stateful `ctx.rate_limits()` `hit`/`block`/`extend`/`reset` API; compile-time checks (INT-14 fixtures); testkit `is_rate_limited()`.
+- **Files changed:** `crates/noctis-core/src/rate_limits.rs` + `pipeline.rs`/`pipeline/component.rs` (stage 5, run API), `crates/noctis-macros` (grammar, `#[on_rate_limited]`), `crates/noctis/src/lib.rs` (re-exports), `crates/noctis-testkit` (outcome/response helpers, `tests/rate_limits.rs`), `crates/noctis/tests/rate_limits.rs` + INT-14 UI fixtures, `docs/discord-rules.md`, rules catalog, `xtask/public-api.txt`, project template code, AGENTS.md and noctis skill references.
+- **Review findings:** 41 total (high 0, medium 3, low 16, false 22). Patched 9 (medium 3, low 6): own `unreachable!` arm for `Hook::RateLimited`; `RateRun::hit` treats a failed `put_end` as best effort (`warn`, `Ok(count)`); cause-neutral `restore_ref` warn; module docs name `noctis::rate_limit` and say every declared limit is checked; tests for `#[on_rate_limited]` on components/modals/context menus through the pipeline, `ctx.rate_limits()` on component/modal ctx, and `message` scope on component-opened modals. Deferred 1: hit `debug` line not observed by a test. Rejected: `reset`/`block` window-end mismatches (rare, fix needs port `delete` the spec forbids), dead `#[on_rate_limited]` without a limit (harmless), hanging store before defer (same exposure as Ref/locale lookups), slow override near ack deadline (cut at deadline), testkit `is_rate_limited()` with overlays dropping `{retry}` (unusual), clippy `duplicated_attributes` (expect verified); 22 false findings settled by spec Boundaries/R-rules (ordering before Guards, R10 counting, G10/G17, naming, hidden constructors).
+- **Follow-up review recommended: true** (first pass, 3 medium patched). Named risk: the newly added component/modal/context-menu override and `message`-scope tests and the `hit` best-effort change have not been independently reviewed.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV); CI paused by maintainer.
+- **Residual risks:** after `reset`/`block` the shown retry time can differ from the counter TTL; a hanging `RateLimitStore` adapter can miss the ack window; overlays without `{retry}` defeat `is_rate_limited()`.

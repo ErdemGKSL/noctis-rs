@@ -14,13 +14,14 @@
 //!    code's own locale file or its sibling's), then the App's
 //!    `LocaleResolver` once. The run's one locale cell is shared by the
 //!    context, the Responder, the notices and the Middleware;
-//! 5. rate limits (FR-46, INT-14): every non-`manual` `rate_limit(..)` the
-//!    handler declares is counted in declared order in the App's namespaced
-//!    `RateLimitStore`; the first one over its count stops the run before
+//! 5. rate limits (FR-46, INT-14): every `rate_limit(..)` the handler
+//!    declares is checked in declared order in the App's namespaced
+//!    `RateLimitStore` (auto limits counted, `manual` limits read); the
+//!    first one over its count stops the run before
 //!    the auto-defer with one type-4 ephemeral notice (the struct's
 //!    `#[on_rate_limited]`, else the App's `rate_limited_handler`, else
 //!    `noctis.rate_limited` with `{retry}`), one `debug` on
-//!    `noctis::dispatch` and `noctis_rate_limited_total{app, kind}`; a store
+//!    `noctis::rate_limit` and `noctis_rate_limited_total{app, kind}`; a store
 //!    error fails open with one warning;
 //! 6. arm the auto-defer (INT-01): a task that acknowledges the interaction
 //!    with a type-5 callback at `received_at + ack_deadline` unless the
@@ -418,7 +419,7 @@ async fn restore_ref(app: &AppShared, restore: &Restore) {
     if !matches!(put, Ok(true)) {
         tracing::warn!(
             target: "noctis::refs",
-            "could not restore the one-shot Ref after a Guard denial"
+            "could not restore the one-shot Ref after a refused run"
         );
     }
 }

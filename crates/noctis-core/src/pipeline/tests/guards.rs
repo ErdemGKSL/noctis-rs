@@ -652,7 +652,7 @@ async fn failed_restore_is_one_warning() {
             .lines()
             .filter(|l| {
                 l.contains("noctis::refs")
-                    && l.contains("could not restore the one-shot Ref after a Guard denial")
+                    && l.contains("could not restore the one-shot Ref after a refused run")
             })
             .collect();
         assert_eq!(warns.len(), 1, "{answer:?}: {logs}");

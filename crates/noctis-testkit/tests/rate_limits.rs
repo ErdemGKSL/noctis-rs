@@ -393,6 +393,11 @@ impl Quote {
         saw!(ctx, "quote {}", target.message.id);
         Ok(responded())
     }
+
+    #[on_rate_limited]
+    async fn slow_down(_ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+        Ok(view(format!("quote override {}", hit.scope())))
+    }
 }
 
 /// R29: the Dispatcher's Command.
@@ -439,6 +444,25 @@ impl PerMessage {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         saw!(ctx, "msg");
+        Ok(responded())
+    }
+
+    #[on_rate_limited]
+    async fn slow_down(_ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+        Ok(view(format!("msg override {}", hit.scope())))
+    }
+}
+
+/// R12 on a component: only `ctx.rate_limits().hit(..)` counts.
+#[derive(Button)]
+#[button("r.charge", rate_limit(user, 1, per = "1m", manual), defaults(style = Primary, label = "C"))]
+struct Charge;
+
+impl Charge {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        saw!(ctx, "charge");
+        ctx.rate_limits().hit(RateScope::User).await?;
         Ok(responded())
     }
 }
@@ -496,6 +520,11 @@ impl MemberForm {
             .map(drop)
             .ok();
         Ok(responded())
+    }
+
+    #[on_rate_limited]
+    async fn slow_down(_ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+        Ok(view(format!("member override {}", hit.scope())))
     }
 }
 
@@ -589,6 +618,7 @@ impl Running {
                     .add::<Dlim>()
                     .add::<Prefix>()
                     .add::<PerMessage>()
+                    .add::<Charge>()
                     .add::<Once>()
                     .add::<Form>()
                     .add::<MemberForm>(),
@@ -747,6 +777,14 @@ fn submit(custom_id: &str, by: u64, bio: &str) -> Value {
         Some(9),
         "en-US",
     )
+}
+
+/// A component-opened submit of `custom_id` by `by` in guild 9 on message
+/// `on`.
+fn submit_on(custom_id: &str, by: u64, on: u64, bio: &str) -> Value {
+    let mut d = submit(custom_id, by, bio);
+    d["message"] = message(on);
+    d
 }
 
 fn now_secs() -> u64 {
@@ -993,7 +1031,7 @@ async fn int_14_message_command_target() {
     };
     running.ran(quote(500), "quote 500").await;
     let sent = running.exactly(quote(500), 1).await;
-    assert_limited(&sent[0], 60);
+    assert_eq!(ephemeral_text(&sent[0]), "quote override message");
     running.ran(quote(501), "quote 501").await;
     running.stop();
 }
@@ -1005,10 +1043,21 @@ async fn int_14_component_message_scope() {
     let before = limited_total("component");
     running.ran(click("0r.msg:", 3, 77), "msg").await;
     let sent = running.exactly(click("0r.msg:", 4, 77), 1).await;
-    assert_limited(&sent[0], 60);
+    assert_eq!(ephemeral_text(&sent[0]), "msg override message");
     running.ran(click("0r.msg:", 3, 78), "msg").await;
     assert_eq!(running.seen.count("msg"), 2);
     assert!(limited_total("component") > before);
+    running.stop();
+}
+
+/// R12 on a component: the handler's own `hit` charges a `manual` limit.
+#[tokio::test(flavor = "multi_thread")]
+async fn int_14_component_manual_hit() {
+    let running = Running::start(|_| {}).await;
+    running.ran(click("0r.charge:", 3, 77), "charge").await;
+    let sent = running.exactly(click("0r.charge:", 3, 78), 1).await;
+    assert_limited(&sent[0], 60);
+    assert_eq!(running.seen.count("charge"), 1);
     running.stop();
 }
 
@@ -1057,8 +1106,18 @@ async fn int_14_modal_scopes() {
     running.ran(submit("0r.form:", 3, "b"), "form b").await;
     running.ran(submit("0r.member:", 3, "a"), "member a").await;
     let sent = running.exactly(submit("0r.member:", 3, "b"), 1).await;
-    assert_limited(&sent[0], 60);
+    assert_eq!(ephemeral_text(&sent[0]), "member override member");
     assert_eq!(running.seen.count("member b"), 0);
+    // A component-opened submit keys `message` by its source message.
+    running
+        .ran(submit_on("0r.form:", 3, 80, "c"), "form c")
+        .await;
+    let sent = running.exactly(submit_on("0r.form:", 4, 80, "d"), 1).await;
+    assert_limited(&sent[0], 60);
+    assert_eq!(running.seen.count("form d"), 0);
+    running
+        .ran(submit_on("0r.form:", 4, 81, "e"), "form e")
+        .await;
     running.stop();
 }
 

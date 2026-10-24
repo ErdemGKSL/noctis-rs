@@ -38,8 +38,10 @@
 //!    (one type-4 callback, no timer). Each is one `debug` on target
 //!    `noctis::dispatch` naming the `reason` and the `hook`.
 //! 5. **Rate limits** (shared with Commands, FR-46, INT-14): once the
-//!    struct is decoded, the Route's non-`manual` `rate_limit(..)`s are
-//!    counted (`message` keyed by the source message); the first one over
+//!    struct is decoded, every `rate_limit(..)` the Route declares is
+//!    checked in declared order (auto limits counted, `manual` limits
+//!    read; `message` keyed by the source message), with one `debug` on
+//!    `noctis::rate_limit` for a hit; the first one over
 //!    its count puts a taken `one_shot` record back and answers with one
 //!    type-4 ephemeral notice instead of the handler (never for the Expired
 //!    Handler chain).

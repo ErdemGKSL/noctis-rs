@@ -119,6 +119,13 @@ impl Quote {
     ) -> HandlerResult<LegacyMessage> {
         Ok(LegacyMessage::new("ok"))
     }
+
+    #[on_rate_limited]
+    async fn limited(_ctx: RateLimitedCtx, _hit: RateLimitHit) -> HandlerResult<V2Message> {
+        Ok(V2Message::new(
+            Components::new().push(TextDisplay::new("slow down")),
+        ))
+    }
 }
 
 mod auth {
@@ -216,16 +223,21 @@ macro_rules! stub_handlers {
     )*};
 }
 
-stub_handlers!(
-    Guarded,
-    WithLimit,
-    WithoutLimit,
-    Strs,
-    Usrs,
-    Rols,
-    Mens,
-    Chns
-);
+stub_handlers!(Guarded, WithoutLimit, Strs, Usrs, Rols, Mens, Chns);
+
+impl WithLimit {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        Ok(responded())
+    }
+
+    #[on_rate_limited]
+    async fn limited(_ctx: RateLimitedCtx, _hit: RateLimitHit) -> HandlerResult<V2Message> {
+        Ok(V2Message::new(
+            Components::new().push(TextDisplay::new("slow down")),
+        ))
+    }
+}
 
 /// G14/G15: `message` on a modal, with `owner` and `guard`.
 #[derive(Modal)]
@@ -350,11 +362,14 @@ fn int_14_descriptors_show_rate_limits() {
 
     let quote = format!("{:?}", Quote::descriptor());
     assert!(quote.contains("scope: Message"), "{quote}");
-    assert!(quote.contains("on_rate_limited: false"), "{quote}");
+    assert!(quote.contains("on_rate_limited: true"), "{quote}");
 
     let guarded = format!("{:?}", Guarded::descriptor());
     assert!(guarded.contains("manual: true"), "{guarded}");
     assert!(guarded.contains("on_rate_limited: false"), "{guarded}");
+
+    let with_limit = format!("{:?}", WithLimit::descriptor());
+    assert!(with_limit.contains("on_rate_limited: true"), "{with_limit}");
 
     let shaped = format!("{:?}", Shaped::descriptor());
     assert!(shaped.contains("scope: Member"), "{shaped}");
