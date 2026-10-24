@@ -330,6 +330,12 @@ pub fn noctis::BuildError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 impl core::marker::StructuralPartialEq for noctis::BuildError
 #[non_exhaustive] pub enum noctis::BuildViolation
 pub noctis::BuildViolation::Command(noctis::rules::Violation)
+pub noctis::BuildViolation::CommandLocalization
+pub noctis::BuildViolation::CommandLocalization::key: &'static str
+pub noctis::BuildViolation::CommandLocalization::locale: noctis::rules::Locale
+pub noctis::BuildViolation::CommandLocalization::origin: &'static str
+pub noctis::BuildViolation::CommandLocalization::rule: noctis::rules::RuleId
+pub noctis::BuildViolation::CommandLocalization::violation: noctis::rules::Violation
 pub noctis::BuildViolation::CryptoProvider
 pub noctis::BuildViolation::DuplicateLocaleKey
 pub noctis::BuildViolation::DuplicateLocaleKey::first: &'static str
@@ -484,6 +490,7 @@ pub struct noctis::CommandHandler
 impl noctis::CommandHandler
 pub fn noctis::CommandHandler::auto_defer(&self) -> bool
 pub fn noctis::CommandHandler::description(&self) -> &'static str
+pub fn noctis::CommandHandler::descriptions(&self) -> &[&'static str]
 pub fn noctis::CommandHandler::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::CommandHandler::metadata(&self) -> &noctis::CommandMetadata
 pub fn noctis::CommandHandler::name(&self) -> &'static str
@@ -665,6 +672,7 @@ pub struct noctis::ContextMenuHandler
 impl noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::auto_defer(&self) -> bool
 pub fn noctis::ContextMenuHandler::ephemerality(&self) -> noctis::Ephemerality
+pub fn noctis::ContextMenuHandler::key(&self) -> core::option::Option<&'static str>
 pub fn noctis::ContextMenuHandler::kind(&self) -> noctis::MenuKind
 pub fn noctis::ContextMenuHandler::menu_name(&self) -> &'static str
 pub fn noctis::ContextMenuHandler::metadata(&self) -> &noctis::CommandMetadata
@@ -5292,6 +5300,22 @@ impl core::hash::Hash for noctis::rules::command::InteractionContext
 pub fn noctis::rules::command::InteractionContext::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::rules::command::InteractionContext
 impl core::marker::StructuralPartialEq for noctis::rules::command::InteractionContext
+#[non_exhaustive] pub enum noctis::rules::command::LocalizedField
+pub noctis::rules::command::LocalizedField::ChoiceName
+pub noctis::rules::command::LocalizedField::ContextMenuName
+pub noctis::rules::command::LocalizedField::Description
+pub noctis::rules::command::LocalizedField::Name
+impl core::clone::Clone for noctis::rules::command::LocalizedField
+pub fn noctis::rules::command::LocalizedField::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::LocalizedField
+impl core::cmp::PartialEq for noctis::rules::command::LocalizedField
+pub fn noctis::rules::command::LocalizedField::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::LocalizedField
+pub fn noctis::rules::command::LocalizedField::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::LocalizedField
+pub fn noctis::rules::command::LocalizedField::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::LocalizedField
+impl core::marker::StructuralPartialEq for noctis::rules::command::LocalizedField
 pub enum noctis::rules::command::MenuKind
 pub noctis::rules::command::MenuKind::Message
 pub noctis::rules::command::MenuKind::User
@@ -5522,6 +5546,8 @@ pub fn noctis::rules::command::measure_options(&[noctis::rules::command::OptionD
 pub fn noctis::rules::command::permission(&str) -> core::option::Option<u64>
 pub fn noctis::rules::command::validate_autocomplete(&[noctis::rules::command::Choice<'_>], noctis::rules::command::OptionType, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_context_menu_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_localized(noctis::rules::command::LocalizedField, &str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_localized_option_names(&[&str], &[core::option::Option<&str>]) -> alloc::vec::Vec<(usize, noctis::rules::Violation)>
 pub fn noctis::rules::command::validate_merge(&[noctis::rules::command::CommandDecl<'_>], &[noctis::rules::command::ContextMenuDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
 pub fn noctis::rules::command::validate_meta(&noctis::rules::command::CommandMeta<'_>, noctis::rules::command::Scope, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>

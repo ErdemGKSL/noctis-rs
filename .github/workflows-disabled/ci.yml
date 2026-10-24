@@ -60,9 +60,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release --workspace
-      # The i18n TestApp suites (App and Module catalogs) need both `i18n`
+      # The i18n TestApp suites (App and Module catalogs, command localization) need both `i18n`
       # and `testkit`, which no single-feature run enables.
-      - run: cargo test --release -p noctis --features i18n,testkit --test i18n_app --test i18n_modules --test i18n_locales
+      - run: cargo test --release -p noctis --features i18n,testkit --test i18n_app --test i18n_modules --test i18n_locales --test i18n_commands
       # Needs both `image` and `testkit` (Story 10.3: `ctx.render` end to end).
       - run: cargo test --release -p noctis --features image,testkit --test render_e2e
 

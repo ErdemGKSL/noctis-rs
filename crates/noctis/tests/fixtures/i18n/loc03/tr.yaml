@@ -1,0 +1,7 @@
+# Story 11.4: LOC-03 fixture; `reason`'s localized name equals the option
+# `user`.
+cmd:
+  ban:
+    opt:
+      reason:
+        name: user

@@ -17,6 +17,11 @@ use unicode_ident::{is_xid_continue, is_xid_start};
 use crate::common::combine;
 use crate::meta::{self, MetaArgs};
 
+mod locale;
+
+use self::locale::{LocaleArgs, description_key};
+pub(crate) use self::locale::{LocaleFile, OptionText, not_found, option_description};
+
 const MISSING_PATTERN: &str = "`#[command]` needs a Command Path or Pattern as its first argument: `#[command(\"ping\", description = \"…\")]`";
 const NOT_A_LITERAL: &str = "`#[command]` needs its Command Path or Pattern as a string literal; check runtime-built patterns with `noctis::rules::command::{validate_pattern_spacing, expand, validate_tree}`";
 const DESCRIPTION_LITERAL: &str = "`description` takes a string literal";
@@ -25,9 +30,13 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 4] = ["rate_limit", "flags", "apps", "locales"];
+const PLANNED: [&str; 3] = ["rate_limit", "flags", "apps"];
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`";
+
+/// The hidden flag of Noctis's own trybuild fixtures: `locales` is relative
+/// to the invoking source file.
+const FROM_SOURCE_FILE: &str = "__locales_from_source_file";
 
 const RESPONSE_UPDATE: &str = "[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral`";
 
@@ -42,6 +51,7 @@ struct Args {
     max_expansions: Option<usize>,
     handler: HandlerArgs,
     meta: MetaArgs,
+    locales: LocaleArgs,
 }
 
 /// The handler arguments every Command macro shares: `response` and
@@ -204,6 +214,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         max_expansions: None,
         handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
+        locales: LocaleArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -219,7 +230,14 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             return Err(error);
         }
         match name.as_str() {
-            "description" | "max_expansions" | "response" | "auto_defer" => {}
+            "locales" | "default_locale" | FROM_SOURCE_FILE if !cfg!(feature = "i18n") => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("`{name}` needs the `i18n` feature of `noctis`"),
+                ));
+            }
+            "description" | "max_expansions" | "response" | "auto_defer" | "locales"
+            | "default_locale" | FROM_SOURCE_FILE => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -249,6 +267,13 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             result?;
             continue;
         }
+        if matches!(
+            name.as_str(),
+            "locales" | "default_locale" | FROM_SOURCE_FILE
+        ) {
+            parse_locale_arg(&mut parsed.locales, &name, &segment)?;
+            continue;
+        }
         let value = value_of(&segment);
         if name == "description" {
             let lit = value
@@ -269,6 +294,36 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         }
     }
     Ok(parsed)
+}
+
+/// Parses one of `locales = "<dir>"`, `default_locale = "<code>"` and the
+/// hidden bare flag into `locales`.
+fn parse_locale_arg(
+    locales: &mut LocaleArgs,
+    name: &str,
+    segment: &[TokenTree],
+) -> syn::Result<()> {
+    let span = span_of(segment);
+    if name == FROM_SOURCE_FILE {
+        if segment.len() != 1 {
+            return Err(syn::Error::new(span, format!("`{name}` is a bare flag")));
+        }
+        locales.from_source_file = true;
+        return Ok(());
+    }
+    let lit = value_of(segment)
+        .and_then(|v| syn::parse2::<LitStr>(v).ok())
+        .ok_or_else(|| syn::Error::new(span, format!("`{name}` takes a string literal")))?;
+    if name == "locales" {
+        locales.dir = Some(lit);
+    } else {
+        let locale = lit
+            .value()
+            .parse::<noctis_rules::Locale>()
+            .map_err(|e| syn::Error::new(lit.span(), e.to_string()))?;
+        locales.default = Some((locale, lit.span()));
+    }
+    Ok(())
 }
 
 /// Adds the macro's help to a violation that has none (see the spec's
@@ -299,24 +354,40 @@ fn add_help(violation: &mut Violation, pattern: &str, limits: &Limits) {
     violation.help = help;
 }
 
-/// Steps 3-4: the spacing check, `expand` and `validate_tree`; every
-/// violation, with the macro's help added.
-fn check_pattern(args: &Args) -> Result<Vec<String>, Vec<Violation>> {
+/// The result of steps 3-4: the paths (when the pattern expands), each
+/// path's description and every violation, with the macro's help added.
+struct Checked {
+    paths: Option<Vec<String>>,
+    descriptions: Vec<String>,
+    violations: Vec<Violation>,
+}
+
+/// Steps 3-4: the spacing check, `expand`, the description of each path
+/// (the literal or `cmd.<path>.description` of `file`), the reserved words
+/// (with a `file`) and `validate_tree`.
+fn check_pattern(args: &Args, file: Option<&LocaleFile>) -> Checked {
     let defaults = Limits::default();
     let mut cap = Limits::default();
     if let Some(n) = args.max_expansions {
         cap.pattern_expansions = n;
     }
     let pattern = args.pattern.value();
-    let description = args.description.as_ref().map(LitStr::value);
+    let literal = args.description.as_ref().map(LitStr::value);
     let mut violations = validate_pattern_spacing(&pattern, &defaults);
+    let mut descriptions = Vec::new();
     let paths = match rules::expand(&pattern, &cap) {
         Ok(paths) => {
+            if let Some(file) = file {
+                violations.extend(locale::reserved_words(&paths, file));
+            }
+            let (texts, conflicts) = locale::descriptions(&paths, literal.as_deref(), file);
+            violations.extend(conflicts);
             let decls: Vec<CommandDecl<'_>> = paths
                 .iter()
-                .map(|path| {
+                .zip(&texts)
+                .map(|(path, text)| {
                     let decl = CommandDecl::handler("", path);
-                    match &description {
+                    match text {
                         Some(d) => decl.description(LocalizedText::new(d)),
                         None => decl,
                     }
@@ -325,6 +396,7 @@ fn check_pattern(args: &Args) -> Result<Vec<String>, Vec<Violation>> {
             if let Err(tree) = validate_tree(&decls, &defaults) {
                 violations.extend(tree);
             }
+            descriptions = texts.into_iter().map(Option::unwrap_or_default).collect();
             Some(paths)
         }
         Err(errors) => {
@@ -332,26 +404,28 @@ fn check_pattern(args: &Args) -> Result<Vec<String>, Vec<Violation>> {
             None
         }
     };
-    match paths {
-        Some(paths) if violations.is_empty() => Ok(paths),
-        _ => {
-            for v in &mut violations {
-                add_help(v, &pattern, &defaults);
-            }
-            Err(violations)
+    for v in &mut violations {
+        if let Some(file) = file
+            && v.rule == RuleId::CMD_04
+            && v.notes.iter().any(|n| n == "missing description")
+        {
+            v.notes.push(not_found(&description_key(&v.path), file));
         }
+        add_help(v, &pattern, &defaults);
+    }
+    Checked {
+        paths,
+        descriptions,
+        violations,
     }
 }
 
 /// The pattern violations (on the description literal for CMD-04 when one
 /// is given, else on the pattern literal), then META-03 (on the argument
-/// name), as one error; `Ok` with the paths when there is none.
-fn report(args: &Args, checked: Result<Vec<String>, Vec<Violation>>) -> syn::Result<Vec<String>> {
-    let (paths, violations) = match checked {
-        Ok(paths) => (Some(paths), Vec::new()),
-        Err(violations) => (None, violations),
-    };
-    let mut errors: Vec<syn::Error> = violations
+/// name), as one error.
+fn report(args: &Args, checked: &Checked) -> syn::Result<()> {
+    let mut errors: Vec<syn::Error> = checked
+        .violations
         .iter()
         .map(|v| {
             let span = match (&args.description, v.rule) {
@@ -363,7 +437,13 @@ fn report(args: &Args, checked: Result<Vec<String>, Vec<Violation>>) -> syn::Res
         .collect();
     errors.extend(args.meta.meta03());
     combine(errors)?;
-    paths.ok_or_else(|| syn::Error::new(args.pattern.span(), "`#[command]` pattern check failed"))
+    if checked.paths.is_none() {
+        return Err(syn::Error::new(
+            args.pattern.span(),
+            "`#[command]` pattern check failed",
+        ));
+    }
+    Ok(())
 }
 
 /// One word in `UpperCamelCase`: split on `seps`, each non-empty segment's
@@ -591,7 +671,7 @@ fn fallback_items(input: &DeriveInput, options: Option<TokenStream>) -> TokenStr
         impl #core::__SlashCommand for #ident {
             const PATTERN: &'static ::core::primitive::str = "";
             const PATHS: &'static [&'static ::core::primitive::str] = &[];
-            const DESCRIPTION: &'static ::core::primitive::str = "";
+            const DESCRIPTIONS: &'static [&'static ::core::primitive::str] = &[];
             const METADATA: #core::CommandMetadata = #core::CommandMetadata::new();
             const EPHEMERALITY: #core::Ephemerality = #core::Ephemerality::Public;
         }
@@ -623,19 +703,41 @@ pub(crate) fn derive(input: &DeriveInput) -> TokenStream {
         Ok(args) => args,
         Err(e) => return fail(None, e.into_compile_error()),
     };
-    let checked = report(&args, check_pattern(&args));
-    let options = crate::options::expand(input, &fields);
-    let (paths, options) = match (checked, options) {
-        (Ok(p), Ok(o)) => (p, o),
-        (Err(e), Ok(o)) => return fail(Some(o), e.into_compile_error()),
-        (Ok(_), Err(errors)) => return fail(None, errors),
+    let file = match locale::load(&args.locales) {
+        Ok(file) => file,
+        Err(e) => return fail(None, e.into_compile_error()),
+    };
+    let checked = check_pattern(&args, file.as_ref());
+    let reported = report(&args, &checked);
+    let option_locale = file
+        .as_ref()
+        .zip(checked.paths.as_deref())
+        .map(|(file, paths)| crate::options::OptionLocale { file, paths });
+    let options = crate::options::expand(input, &fields, option_locale);
+    let includes = file
+        .as_ref()
+        .and_then(|f| f.path.as_ref())
+        .and_then(|p| p.to_str())
+        .map(|p| {
+            quote!(
+                const _: &[::core::primitive::u8] = ::core::include_bytes!(#p);
+            )
+        })
+        .unwrap_or_default();
+    let (paths, options) = match (reported, options) {
+        (Ok(()), Ok(o)) => (checked.paths.unwrap_or_default(), o),
+        (Err(e), Ok(o)) => {
+            let e = e.into_compile_error();
+            return fail(Some(o), quote!(#e #includes));
+        }
+        (Ok(()), Err(errors)) => return fail(None, quote!(#errors #includes)),
         (Err(e), Err(errors)) => {
             let e = e.into_compile_error();
-            return fail(None, quote!(#e #errors));
+            return fail(None, quote!(#e #errors #includes));
         }
     };
-    match expand(input, &args, &paths, &options) {
-        Ok(tokens) => tokens,
+    match expand(input, &args, &paths, &checked.descriptions, &options) {
+        Ok(tokens) => quote!(#tokens #includes),
         Err(e) => fail(Some(options), e.into_compile_error()),
     }
 }
@@ -645,6 +747,7 @@ fn expand(
     input: &DeriveInput,
     args: &Args,
     paths: &[String],
+    descriptions: &[String],
     options: &TokenStream,
 ) -> syn::Result<TokenStream> {
     let ident = &input.ident;
@@ -674,11 +777,6 @@ fn expand(
             impl #core::__SinglePath for #ident {}
         }
     };
-    let description = args
-        .description
-        .as_ref()
-        .map(LitStr::value)
-        .unwrap_or_default();
     let metadata = if args.meta.is_empty() {
         quote!(#core::CommandMetadata::new())
     } else {
@@ -696,7 +794,7 @@ fn expand(
         impl #core::__SlashCommand for #ident {
             const PATTERN: &'static ::core::primitive::str = #pattern;
             const PATHS: &'static [&'static ::core::primitive::str] = &[#(#paths),*];
-            const DESCRIPTION: &'static ::core::primitive::str = #description;
+            const DESCRIPTIONS: &'static [&'static ::core::primitive::str] = &[#(#descriptions),*];
             const METADATA: #core::CommandMetadata = #metadata;
             const EPHEMERALITY: #core::Ephemerality = #ephemerality;
         }
@@ -788,7 +886,9 @@ mod tests {
             "{out}"
         );
         assert!(
-            out.contains("const DESCRIPTION : & 'static :: core :: primitive :: str = \"d\""),
+            out.contains(
+                "const DESCRIPTIONS : & 'static [& 'static :: core :: primitive :: str] = & [\"d\"]"
+            ),
             "{out}"
         );
         assert!(out.contains("Ephemerality :: Public"), "{out}");
@@ -1026,7 +1126,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", ephemeral),
@@ -1050,7 +1150,7 @@ mod tests {
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1120,12 +1220,44 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in ["rate_limit", "flags", "apps", "locales"] {
+        for planned in ["rate_limit", "flags", "apps"] {
             let ident = quote::format_ident!("{planned}");
             assert_eq!(
                 error(quote!("ping", #ident), PING),
                 format!("`#[command]` argument `{planned}` is planned and not supported yet")
             );
+        }
+    }
+
+    /// Story 11.4 Matrix M16, M17: the locale arguments.
+    #[test]
+    fn locale_argument_errors() {
+        if cfg!(feature = "i18n") {
+            for (args, expected) in [
+                (
+                    quote!("ping", description = "d", locales = "a", locales = "b"),
+                    "duplicate `#[command]` argument `locales`".to_owned(),
+                ),
+                (
+                    quote!("ping", description = "d", locales = 5),
+                    "`locales` takes a string literal".to_owned(),
+                ),
+                (
+                    quote!("ping", description = "d", default_locale = "en"),
+                    "[LOC-01] `en` is not a Discord locale code; matching codes: `en-GB`, `en-US`"
+                        .to_owned(),
+                ),
+            ] {
+                assert_eq!(error(args.clone(), PING), expected, "{args}");
+            }
+        } else {
+            for name in ["locales", "default_locale"] {
+                let ident = quote::format_ident!("{name}");
+                assert_eq!(
+                    error(quote!("ping", description = "d", #ident = "x"), PING),
+                    format!("`{name}` needs the `i18n` feature of `noctis`")
+                );
+            }
         }
     }
 

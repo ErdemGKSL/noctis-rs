@@ -3004,6 +3004,60 @@ async fn cli_dry_run_writes_the_report() {
     assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
 }
 
+/// Story 11.4 Matrix 1, 6: a dry run's target JSON carries the
+/// localizations.
+#[tokio::test(flavor = "multi_thread")]
+async fn loc_dry_run_reports_localizations() {
+    use crate::edge::test_support::TestServer;
+    use crate::test_support::command;
+    use noctis_rules::Locale;
+
+    static BOT: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+        "bot/locales",
+        Locale::EnUs,
+        &[
+            (Locale::EnUs, &[("cmd.ping.description", "Pong!")]),
+            (Locale::Tr, &[("cmdword.ping", "ping-tr")]),
+        ],
+        &[],
+    );
+    let server = TestServer::start_with(
+        false,
+        Arc::new(|seen| {
+            let body: &'static [u8] = if seen.path.ends_with("/applications/@me") {
+                br#"{"id": "7", "integration_types_config": {"0": {}}}"#
+            } else {
+                b"[]"
+            };
+            (hyper::StatusCode::OK, Bytes::from_static(body))
+        }),
+    )
+    .await;
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .token(token())
+        .http_proxy(server.authority())
+        .locales(BOT)
+        .module(Module::new("m").__add(command("m::ping", &["ping"], "Pong!")));
+    let app = builder.build().unwrap();
+    let report = app
+        .publish(PublishScope::Global)
+        .dry_run(true)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(report.targets()[0].json()).unwrap();
+    assert_eq!(
+        json[0]["name_localizations"],
+        serde_json::json!({"tr": "ping-tr"})
+    );
+    assert_eq!(
+        json[0]["description_localizations"],
+        serde_json::json!({"en-GB": "Pong!", "en-US": "Pong!"})
+    );
+    assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
+}
+
 // ---- payload keys (Story 7.2 Matrix 13-16) ----
 
 /// Matrix 15: `NOCTIS_PAYLOAD_KEY` and `NOCTIS_PAYLOAD_KEY_PREVIOUS` parse
