@@ -515,12 +515,15 @@ impl core::fmt::Debug for noctis::CommandHandler
 pub fn noctis::CommandHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::CommandInput
 impl noctis::CommandInput
+pub fn noctis::CommandInput::error(&self) -> core::option::Option<&noctis::OptionError>
 pub fn noctis::CommandInput::from_json(&[u8]) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::CommandInput::get(&self, &str) -> core::option::Option<&noctis::OptionValue>
 pub fn noctis::CommandInput::new(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn noctis::CommandInput::path(&self) -> &str
 pub fn noctis::CommandInput::resolved(&self) -> &twilight_model::application::interaction::resolved::InteractionDataResolved
+pub fn noctis::CommandInput::with_error(self, noctis::OptionError) -> Self
 pub fn noctis::CommandInput::with_option(self, impl core::convert::Into<alloc::string::String>, noctis::OptionValue) -> Self
+pub fn noctis::CommandInput::with_resolved(self, twilight_model::application::interaction::resolved::InteractionDataResolved) -> Self
 impl core::clone::Clone for noctis::CommandInput
 pub fn noctis::CommandInput::clone(&self) -> Self
 impl core::fmt::Debug for noctis::CommandInput
@@ -1412,6 +1415,9 @@ pub fn noctis::NoticeText::from(noctis::prelude::MessageKey) -> Self
 impl core::fmt::Debug for noctis::NoticeText
 pub fn noctis::NoticeText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::OptionError
+pub noctis::OptionError::Constraint
+pub noctis::OptionError::Constraint::option: alloc::string::String
+pub noctis::OptionError::Constraint::reason: alloc::string::String
 pub noctis::OptionError::Duplicate
 pub noctis::OptionError::Duplicate::option: alloc::string::String
 pub noctis::OptionError::Malformed
@@ -4434,6 +4440,17 @@ impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
+pub mod noctis::prefix
+pub struct noctis::prefix::PrefixPlugin
+impl noctis::prefix::PrefixPlugin
+pub fn noctis::prefix::PrefixPlugin::command<T: noctis::__private::core::__SlashCommand>(self) -> Self
+pub fn noctis::prefix::PrefixPlugin::new(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::prefix::PrefixPlugin
+pub fn noctis::prefix::PrefixPlugin::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prefix::PrefixPlugin
+pub fn noctis::prefix::PrefixPlugin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::Plugin for noctis::prefix::PrefixPlugin
+pub fn noctis::prefix::PrefixPlugin::install(&self, &mut noctis::AppBuilder)
 pub mod noctis::prelude
 pub enum noctis::prelude::Access
 pub noctis::prelude::Access::Allow

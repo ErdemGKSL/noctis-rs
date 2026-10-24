@@ -497,6 +497,37 @@ async fn gw_05_several() {
     assert_eq!(handlers, ["add", "remove"]);
 }
 
+/// Story 15.4: a handler needing a privileged and a non-privileged
+/// intent (the prefix plugin's `MESSAGE_CREATE` + `MESSAGE_CONTENT`): the
+/// violation names only the missing privileged bit, and the non-privileged
+/// part is still derived.
+#[tokio::test]
+async fn gw_05_mixed_intent_handler() {
+    let handler = || noop::<MessageCreate>("prefix").__with_intents(Intents::MESSAGE_CONTENT);
+    let err = builder()
+        .module(Module::new("m").__add(handler()))
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        violations(&err),
+        [BuildViolation::MissingIntent {
+            module: "m",
+            handler: "prefix",
+            event: "MESSAGE_CREATE",
+            intent: Intents::MESSAGE_CONTENT,
+        }]
+    );
+    let app = builder()
+        .intents(Intents::MESSAGE_CONTENT)
+        .module(Module::new("m").__add(handler()))
+        .build()
+        .unwrap();
+    assert_eq!(
+        app.intents(),
+        Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT
+    );
+}
+
 /// Matrix 15: GW-05 joins the other violations in one `BuildError`.
 #[tokio::test]
 async fn gw_05_mixed_violations() {

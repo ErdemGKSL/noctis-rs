@@ -212,19 +212,19 @@ impl Registry {
         for entry in &entries {
             let handler = &entry.handler;
             event_types |= handler.parse();
+            // The privileged part must be requested (GW-05; the violation
+            // names only the missing bits); the rest is always derived.
             let intent = handler.intent();
-            if intent.intersects(PRIVILEGED) {
-                if !requested.contains(intent) {
-                    violations.push(BuildViolation::MissingIntent {
-                        module: entry.module,
-                        handler: handler.name(),
-                        event: handler.kind().name().unwrap_or("UNKNOWN"),
-                        intent,
-                    });
-                }
-            } else {
-                intents |= intent;
+            let missing = intent & PRIVILEGED & !requested;
+            if !missing.is_empty() {
+                violations.push(BuildViolation::MissingIntent {
+                    module: entry.module,
+                    handler: handler.name(),
+                    event: handler.kind().name().unwrap_or("UNKNOWN"),
+                    intent: missing,
+                });
             }
+            intents |= intent - PRIVILEGED;
             let slot = by_dispatch.entry(handler.dispatch()).or_default();
             if handler.ordered() {
                 slot.ordered.push(Arc::clone(entry));

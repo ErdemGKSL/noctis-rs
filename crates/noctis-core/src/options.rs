@@ -233,6 +233,26 @@ pub enum OptionError {
         /// The value that was sent.
         value: String,
     },
+    /// A value breaks a constraint Discord enforces for slash options
+    /// (OPT-03, OPT-04, OPT-05, OPT-06, OPT-13), checked by a caller that
+    /// decodes its own options, such as the prefix plugin.
+    ///
+    /// ```
+    /// use noctis_core::OptionError;
+    ///
+    /// let err = OptionError::Constraint {
+    ///     option: "days".into(),
+    ///     reason: "[OPT-05] 0 is below min_value 1".into(),
+    /// };
+    /// assert_eq!(err.to_string(), "option `days`: [OPT-05] 0 is below min_value 1");
+    /// ```
+    #[error("option `{option}`: {reason}")]
+    Constraint {
+        /// The option name.
+        option: String,
+        /// What is wrong, starting with the rule id (`[OPT-05] …`).
+        reason: String,
+    },
 }
 
 impl OptionError {
@@ -296,6 +316,7 @@ pub struct CommandInput {
     path: String,
     options: Vec<(String, OptionValue)>,
     resolved: InteractionDataResolved,
+    error: Option<OptionError>,
 }
 
 impl CommandInput {
@@ -316,6 +337,7 @@ impl CommandInput {
             path,
             options,
             resolved,
+            error: None,
         })
     }
 
@@ -329,6 +351,7 @@ impl CommandInput {
             path,
             options,
             resolved,
+            error: None,
         }
     }
 
@@ -355,6 +378,7 @@ impl CommandInput {
             path: path.into(),
             options: Vec::new(),
             resolved: empty_resolved(),
+            error: None,
         }
     }
 
@@ -376,6 +400,49 @@ impl CommandInput {
             Some((_, slot)) => *slot = value,
             None => self.options.push((name, value)),
         }
+        self
+    }
+
+    /// Marks the input as failed with `error`: the handler does not run,
+    /// and the run answers exactly like a failed slash decode (FR-10).
+    /// The first error wins; later ones are ignored.
+    ///
+    /// ```
+    /// use noctis_core::{CommandInput, OptionError};
+    ///
+    /// let input = CommandInput::new("warn")
+    ///     .with_error(OptionError::Missing { option: "user".into() })
+    ///     .with_error(OptionError::Missing { option: "days".into() });
+    /// assert_eq!(
+    ///     input.error(),
+    ///     Some(&OptionError::Missing { option: "user".into() })
+    /// );
+    /// ```
+    #[must_use]
+    pub fn with_error(mut self, error: OptionError) -> Self {
+        self.error.get_or_insert(error);
+        self
+    }
+
+    /// The error set by [`with_error`](Self::with_error), if any.
+    pub fn error(&self) -> Option<&OptionError> {
+        self.error.as_ref()
+    }
+
+    /// Replaces the resolved users, members, roles, channels and
+    /// attachments.
+    ///
+    /// ```
+    /// use noctis_core::CommandInput;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// let input = CommandInput::new("warn").with_resolved(resolved);
+    /// assert!(input.resolved().users.is_empty());
+    /// ```
+    #[must_use]
+    pub fn with_resolved(mut self, resolved: InteractionDataResolved) -> Self {
+        self.resolved = resolved;
         self
     }
 
@@ -1179,5 +1246,38 @@ mod tests {
         ] {
             assert_eq!(value.kind(), kind);
         }
+    }
+
+    /// Story 15.4: `with_error` keeps the first error; `with_resolved`
+    /// replaces the resolved data the resolved types decode from.
+    #[test]
+    fn input_errors_and_resolved() {
+        let input = CommandInput::new("warn");
+        assert_eq!(input.error(), None);
+        let first = OptionError::Constraint {
+            option: "days".into(),
+            reason: "[OPT-05] 0 is below min_value 1".into(),
+        };
+        let input = input
+            .with_error(first.clone())
+            .with_error(OptionError::malformed("later"));
+        assert_eq!(input.error(), Some(&first));
+        assert_eq!(
+            first.to_string(),
+            "option `days`: [OPT-05] 0 is below min_value 1"
+        );
+
+        let resolved: InteractionDataResolved =
+            serde_json::from_value(json!({ "users": { "5": user_json("5") } })).unwrap();
+        let input = CommandInput::new("warn")
+            .with_option("user", OptionValue::User(Id::new(5)))
+            .with_resolved(resolved);
+        let user: ResolvedUser = required(&input, "user").unwrap();
+        assert_eq!(user.user.id, Id::new(5));
+        let input = CommandInput::new("warn").with_option("user", OptionValue::User(Id::new(5)));
+        assert!(matches!(
+            required::<ResolvedUser>(&input, "user"),
+            Err(OptionError::Unresolved { id: 5, .. })
+        ));
     }
 }

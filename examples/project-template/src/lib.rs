@@ -33,7 +33,8 @@ pub struct BotMeta {
 /// caller passes in (`App::from_env()` in production, `App::builder()` for `TestApp` in tests).
 pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // Event and Render failures go to our AlertSink; other origins log at `error`.
-    observability::install(builder)
+    let builder = observability::install(builder);
+    builder
         .app_id("noctis-template")
         .locales(strings::catalog())
         // Theme tokens and keyframes for Templates; the same file the macros validate against.
@@ -61,5 +62,16 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         })
         .module(modules::setup::module())
         .module(modules::dashboard::module())
-        .module(modules::profile::module())
+        .module(modules::profile::module());
+    // Prefix commands (template feature `prefix`, off by default): `!profile @user` and
+    // `!badge gold` run the same handlers as `/profile` and `/badge`. Message text needs
+    // the privileged MESSAGE_CONTENT intent (enable it in the Developer Portal too);
+    // without `.intents(..)` the build fails with `[GW-05]` MissingIntent.
+    #[cfg(feature = "prefix")]
+    builder.intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT).plugin(
+        noctis::prefix::PrefixPlugin::new("!")
+            .command::<modules::profile::Profile>()
+            .command::<modules::profile::Badge>(),
+    );
+    builder
 }

@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use crate::strings::keys;
 
 pub use view::ProfileCard;
+/// The `/profile` and `/badge` Commands; `configure` also opts them into prefix
+/// commands with the `prefix` feature.
+pub use handlers::{Badge, Profile};
 
 pub fn module() -> Module {
     Module::new("profile")

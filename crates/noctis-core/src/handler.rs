@@ -455,6 +455,19 @@ impl EventHandler {
         }
     }
 
+    /// Adds `extra` to the intents the handler needs, beside its event's;
+    /// what a plugin whose handler reads gated data calls (the prefix
+    /// plugin adds `MESSAGE_CONTENT`). A privileged bit the App does not
+    /// request is a GW-05 `MissingIntent` at build.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_intents(self, extra: Intents) -> Self {
+        Self {
+            intent: self.intent | extra,
+            ..self
+        }
+    }
+
     /// Sets the Extension types the handler requires; what
     /// `__RequireExtensions` calls.
     pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {

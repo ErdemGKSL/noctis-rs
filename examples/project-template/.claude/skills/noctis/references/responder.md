@@ -599,7 +599,10 @@ impl EditBio {
 ### 4.1 Running a Command from elsewhere: the `Dispatcher`
 
 `ctx.dispatcher()` on an `EventCtx` gives the App's `Dispatcher` (`Clone`), which runs a
-registered Command outside an interaction, for example a prefix command:
+registered Command outside an interaction, for example a prefix command. For `!command`
+messages use the shipped `noctis::prefix::PrefixPlugin` (`prefix` feature,
+`commands.md` §9), which parses arguments against the Command's options and does all of
+the below; write your own caller only for another trigger:
 
 ```rust
 #[derive(EventHandler)]
@@ -633,7 +636,9 @@ impl Prefix {
 - `CommandInput::new(path)` plus `.with_option(name, OptionValue::…)` (a later value of
   the same name replaces the earlier one): you decode your own options; the handler's
   options struct is built and validated from them as usual (a missing required one is
-  an `OptionError` in the Command Error Sink).
+  an `OptionError` in the Command Error Sink). When your own parsing fails, mark the
+  input with `.with_error(OptionError::…)`: the handler does not run and the user gets
+  the same public `noctis.validation.failed` reply as for a slash decode.
 - `run_command` resolves the path in the guild's scope, then globally, and runs the
   handler. An unregistered path is `Err(DispatchError::UnknownCommand { path })` with no
   request; a failing handler goes to the `Command` Error Sink, not into the result.

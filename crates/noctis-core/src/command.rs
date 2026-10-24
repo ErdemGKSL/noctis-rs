@@ -721,7 +721,14 @@ impl CommandHandler {
 
     /// Starts the handler for `ctx`; an [`UnknownCommandPath`] error when
     /// `ctx`'s path is not one of [`paths`](Self::paths).
+    ///
+    /// An input marked failed with [`CommandInput::with_error`] fails with
+    /// that [`OptionError`](crate::OptionError) before any handler shape runs, so a caller's own
+    /// decode failure is answered exactly like a slash decode failure.
     pub(crate) fn call(&self, ctx: CommandCtx, shared: Arc<Shared>) -> HandlerFuture {
+        if let Some(error) = ctx.input().error() {
+            return failed(HandlerError::new(error.clone()));
+        }
         (self.call)(ctx, shared)
     }
 }

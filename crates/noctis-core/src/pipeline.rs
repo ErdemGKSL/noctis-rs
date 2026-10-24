@@ -1379,6 +1379,14 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
 /// `contexts` or `nsfw` metadata (Discord enforces those only for real
 /// interactions): the caller must check them before `run_command`.
 ///
+/// The shipped caller is `noctis::prefix::PrefixPlugin` (the `prefix`
+/// feature), which parses `!warn <@5> 3` against the Command's options.
+/// A caller that fails to decode marks the input with
+/// [`CommandInput::with_error`]: the handler then does not run, and the
+/// user gets the same validation notice as for a failed slash decode.
+///
+/// A hand-written caller looks like this:
+///
 /// ```
 /// use noctis_core::events::{EventCtx, MessageCreate};
 /// use noctis_core::{CommandInput, CommandInvocation, HandlerResult, OptionValue};

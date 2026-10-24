@@ -718,6 +718,81 @@ impl Options for Days {
     }
 }
 
+/// A Command Error Sink keeping every reported [`OptionError`].
+#[derive(Default)]
+struct OptionErrors(Mutex<Vec<OptionError>>);
+
+impl crate::ErrorSink for OptionErrors {
+    fn report(&self, report: ErrorReport<'_>) {
+        if let ReportKind::Error(error) = report.kind
+            && let Some(error) = error.as_error().downcast_ref::<OptionError>()
+        {
+            self.0.lock().unwrap().push(error.clone());
+        }
+    }
+}
+
+/// Story 15.4 (D2): an input marked failed with `with_error` runs no
+/// handler, unit or with options; the Dispatcher answers with the public
+/// validation notice and the Command Error Sink gets the `OptionError`.
+#[tokio::test]
+async fn dispatcher_input_errors() {
+    let log = Log::default();
+    let days_log = log.clone();
+    let module = Module::new("m")
+        .__add(logging(&log, "m::ping", &["ping"]))
+        .__add(CommandHandler::__new_plain_with_options(
+            "m::warn",
+            &["warn"],
+            "d",
+            move |_: CommandCtx, _: CommandResponder, days: Days| {
+                days_log.push(format!("warn:{}", days.0));
+                async { Ok(v2("warned")) }
+            },
+        ));
+    let sink = Arc::new(OptionErrors::default());
+    let errors = Arc::clone(&sink);
+    let p = Pipeline::start_with(module, move |b| {
+        b.error_sink(ErrorOrigin::Command, errors);
+    })
+    .await;
+    let wrong = OptionError::WrongType {
+        option: "days".into(),
+        expected: OptionType::Integer,
+        found: OptionType::String,
+    };
+    let unexpected = OptionError::Malformed {
+        reason: "unexpected argument `x`".into(),
+    };
+    let input = CommandInput::new("warn")
+        .with_option("days", OptionValue::Integer(3))
+        .with_error(wrong.clone());
+    let invocation = |input| CommandInvocation::new(input, Id::new(5), Id::new(6), Id::new(3));
+    p.dispatcher().run_command(invocation(input)).await.unwrap();
+    p.dispatcher()
+        .run_command(invocation(
+            CommandInput::new("ping").with_error(unexpected.clone()),
+        ))
+        .await
+        .unwrap();
+    assert!(log.lines().is_empty(), "{:?}", log.lines());
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    for request in &requests {
+        assert_eq!(
+            (&request.0, request.1.as_str()),
+            (&Method::POST, "/api/v10/channels/5/messages")
+        );
+        assert_eq!(request.2["flags"], 32768, "public: {request:?}");
+        assert_eq!(request.2["components"][0]["content"], VALIDATION);
+        assert_eq!(
+            request.2["message_reference"],
+            json!({ "message_id": "6", "fail_if_not_exists": false })
+        );
+    }
+    assert_eq!(*sink.0.lock().unwrap(), [wrong, unexpected]);
+}
+
 /// Matrix 45-47 and 51: the Dispatcher.
 #[tokio::test]
 async fn dispatcher_runs_commands() {

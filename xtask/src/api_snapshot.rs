@@ -64,7 +64,8 @@ const TARGET_DIR: &str = "target/public-api";
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
 /// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, the static
 /// placement traits, `Ownership`, `IntoNodes` and `AppBuilderImageExt`, and
-/// the const-generic bounds of `LargeThreshold::new` and `MemberRequest::users`.
+/// the const-generic bounds of `LargeThreshold::new` and `MemberRequest::users`,
+/// and the `__SlashCommand` bound of `PrefixPlugin::command`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -139,6 +140,12 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_gateway::command::UserIdCount",
         "noctis::__private::core::gateway::__bounds::UserIdCount",
+    ),
+    // The bound of `PrefixPlugin::command` (Story 15.4): the hidden trait
+    // `#[derive(SlashCommand)]` implements.
+    (
+        "noctis_core::kind::__SlashCommand",
+        "noctis::__private::core::__SlashCommand",
     ),
 ];
 

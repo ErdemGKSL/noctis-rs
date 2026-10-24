@@ -343,6 +343,10 @@ pub use webhook::{
     Webhooks,
 };
 
+/// The rules crate, for internal crates that reach `noctis_rules` types
+/// through `noctis-core` (the prefix plugin); not public API.
+#[doc(hidden)]
+pub use noctis_rules as __rules;
 pub use noctis_rules::command::{IntegrationType, InteractionContext, MenuKind};
 pub use twilight_model::guild::Permissions;
 

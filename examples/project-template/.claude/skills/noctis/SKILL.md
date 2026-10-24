@@ -485,7 +485,7 @@ Read only what the task touches.
 | File | Read when you… |
 | --- | --- |
 | `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), lifecycle hooks, shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps and `Runtime` |
-| `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish |
+| `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `CommandInput::with_error`, `OptionError::Constraint`) |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |
 | `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`alt!`/`rgb!`; attachments: upload, keep-by-id edits, Upload Budget, rendered-image alt |

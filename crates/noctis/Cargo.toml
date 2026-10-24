@@ -26,8 +26,9 @@ image-emoji = []
 default-font = ["image", "noctis-image/default-font"]
 # Localization runtime (noctis-i18n).
 i18n = ["noctis-macros/i18n"]
-# Opt-in prefix commands (noctis-prefix, P2).
-prefix = []
+# Opt-in prefix commands (noctis-prefix, P2): `noctis::prefix::PrefixPlugin`.
+# Needs the privileged MESSAGE_CONTENT intent.
+prefix = ["dep:noctis-prefix"]
 # Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.
 testkit = ["dep:noctis-testkit"]
 
@@ -39,6 +40,7 @@ noctis-i18n.workspace = true
 noctis-image = { workspace = true, optional = true }
 noctis-macros.workspace = true
 noctis-ports.workspace = true
+noctis-prefix = { workspace = true, optional = true }
 noctis-rules.workspace = true
 noctis-testkit = { workspace = true, optional = true }
 noctis-ui.workspace = true

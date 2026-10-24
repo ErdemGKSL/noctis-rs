@@ -1,7 +1,8 @@
 # Commands
 
 Covers: `#[derive(SlashCommand)]` paths and patterns, options (struct fields, `derive(Choices)`),
-autocomplete, context menus, command metadata, merging across Modules, Publish.
+autocomplete, context menus, command metadata, merging across Modules, Publish, prefix
+commands (`prefix` feature, §9).
 Rules: CMD-01..15, OPT-01..14, CTX-01..03, META-01..05, REG-01..06, LOC-01..06.
 Doctrine: commands are **entry points** that open Views (UD-3).
 
@@ -476,6 +477,7 @@ error (downcast with `err.as_error().downcast_ref::<OptionError>()`), and the ha
 | `OutOfRange { option, value }` | ``[OPT-03] option `days`: 9223372036854775808 is not an i64`` |
 | `Unresolved { option, id }` | ``option `member`: id 42 is not in the resolved data`` |
 | `UnknownChoice { option, value }` | ``option `severity`: `zzz` is not one of its choices`` |
+| `Constraint { option, reason }` | ``option `days`: [OPT-05] 0 is below min_value 1`` (a limit Discord enforces for slash options, checked by a caller that decodes its own options, such as prefix commands; `reason` starts with the rule id: OPT-03, OPT-04, OPT-05, OPT-06 or OPT-13) |
 
 A failing validator gives `noctis::InvalidOption` (`option() -> &'static str`, `key() ->
 MessageKey`; ``option `days` failed validation: mod.warn.days.positive``). The handler does
@@ -485,6 +487,14 @@ failure (`OptionError`) shows `noctis.validation.failed` and does reach the Comm
 Sink. See `responder.md` §5.
 Discord enforces declared bounds itself; Noctis does not re-check `min_value`, `max_length`,
 `channel_types` at runtime (use a validator for custom checks).
+
+A caller that decodes its own options (the Dispatcher, §9) builds the input with
+`CommandInput::new(path)`, `.with_option(name, OptionValue::…)`,
+`.with_resolved(InteractionDataResolved)` (replaces the resolved users, members, roles,
+channels and attachments the `Resolved*` field types read) and `.with_error(OptionError)`
+(marks the input failed: the handler does not run and the run answers exactly like a
+failed slash decode; the first error wins, later ones are ignored). `error() ->
+Option<&OptionError>` reads it back.
 
 Traits: `Options` (`const OPTIONS: &[OptionDecl]`, `from_input(&CommandInput)`,
 `validate(&self, &CommandCtx)`), `CommandOption` (`const KIND: OptionType`, `const CHOICES:
@@ -894,3 +904,94 @@ message's (or the submit's) components Noctis does not model, verbatim
 `cache()` (Discord resources), `modules()`,
 `rate_limits()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
 Command-only: `attachment_size_limit()`.
+
+## 9. Prefix commands (`prefix` feature, P2)
+
+`noctis::prefix::PrefixPlugin` (Noctis feature `prefix`, off by default) runs opted-in
+slash Commands from messages such as `!warn <@5> 3 rude`, through the **same**
+`#[handler]`. With the feature off, `noctis::prefix` does not exist and no intent changes.
+
+```rust
+use noctis::prefix::PrefixPlugin;
+use noctis::twilight::model::gateway::Intents;
+
+let mut builder = App::builder();
+builder
+    .intents(Intents::MESSAGE_CONTENT)           // privileged: enable it in the Portal too
+    .module(Module::new("mod").add::<Warn>())    // still mounted as a slash Command
+    .plugin(PrefixPlugin::new("!").command::<Warn>());
+```
+
+- **Opt-in by type.** `PrefixPlugin::new(prefix)` then `.command::<T>()` per
+  `#[derive(SlashCommand)]` struct (every path of its Pattern; the same type twice is a
+  no-op). `T` must also be mounted in a Module: a Command not registered in the
+  message's guild scope or globally is ignored (`debug` log).
+- **Intent (GW-05).** The plugin mounts a `MESSAGE_CREATE` handler (Module
+  `noctis-prefix`) that needs `MESSAGE_CONTENT`; without `.intents(Intents::MESSAGE_CONTENT)`
+  the build fails with `[GW-05]` `MissingIntent` naming `MESSAGE_CREATE` and
+  `MESSAGE_CONTENT`. `GUILD_MESSAGES` is derived; DMs also need `DIRECT_MESSAGES`, which
+  you request yourself. Noctis never adds `MESSAGE_CONTENT` for you.
+- **Matching.** The prefix (1 to 32 Unicode scalars, no whitespace) matches exactly,
+  case-sensitively, and is followed directly by the Command Path; path words match
+  case-insensitively (`!WARN` runs `warn`) and are separated by any whitespace run
+  (`!config  set prefix ?`). `! warn`, `!!warn`, `!warn5` and a partial path
+  (`!config set` when only `config set prefix` is opted in) are ignored.
+- **Arguments.** Positional, in option declaration order, separated by whitespace; no
+  named arguments and no skipping: a missing argument leaves every later option absent.
+  `"two words"` is one argument (`\"` and `\\` escape; any other backslash is literal;
+  whitespace or the end must follow the closing quote). The **last non-ATTACHMENT
+  option, when it is a STRING**, takes the rest of the line verbatim, trimmed
+  (`!say hello  big world` → `"hello  big world"`), unquoted only when the rest is exactly
+  one quoted argument. ATTACHMENT options take the message's attachments in order and
+  consume no text. Anything left over is an error.
+- **Ignored messages** (no request, nothing above `debug`): bot authors, webhook
+  messages, system messages (only `Regular` and `Reply` kinds run), text without the
+  prefix or an opted-in path, and Commands whose `contexts` exclude the place (a guild
+  message needs `Guild`, a DM `BotDm`; no `contexts` allows both). Edited messages are
+  not handled.
+- **The answer** is the Dispatcher's message transport (`responder.md` §4.1): a public
+  reply to the invoking message. A Command declared `response = ephemeral` fails with
+  `EphemeralUnsupported`, so opt in only public Commands.
+
+| Option type | Accepted argument |
+| --- | --- |
+| STRING | the text (or the quoted text); choices by value (exact), else by name (ASCII case-insensitive); `min_length`/`max_length` counted like Discord (UTF-16 units) |
+| INTEGER | `[+-]?digits` (ASCII) in `i64`; choices by name or value; `min_value`/`max_value` |
+| NUMBER | decimal (`1.5`, `.5`, `-2.`, `1e3`); no `nan`/`inf`; choices; bounds |
+| BOOLEAN | `true`/`false`, `yes`/`no`, `on`/`off`, ASCII case-insensitive |
+| USER | `<@id>`, `<@!id>` or a bare id; resolved when it is a mention or the author |
+| ROLE | `<@&id>` or a bare id (never resolved) |
+| CHANNEL | `<#id>` or a bare id (never resolved) |
+| MENTIONABLE | `<@id>`, `<@!id>`, `<@&id>` or a bare id |
+| ATTACHMENT | the next message attachment; `file_types` checked (`.pdf`: case-insensitive filename suffix; `image`/`video`/`audio`: content-type family) |
+
+Every failure is the same `OptionError` a slash decode produces (the first in declaration
+order wins): the handler does not run, the user gets a **public** `noctis.validation.failed`
+reply, and the Command Error Sink gets the error.
+
+| Input (`warn`: `user: Id<UserMarker>`, `days: Option<i64>` 1..=30, `reason: Option<String>` ≤ 10) | `OptionError` |
+| --- | --- |
+| `!warn` | `Missing { option: "user" }` |
+| `!warn 5 abc` | `WrongType { option: "days", expected: Integer, found: String }` |
+| `!warn 5 1.5` | `WrongType { .., expected: Integer, found: Number }` |
+| `!warn 5 99999999999999999999` | `OutOfRange { option: "days", value: "99999999999999999999" }` |
+| INTEGER `9007199254740992` / NUMBER `1e400` | `Constraint { reason: "[OPT-03] …" }` / `"[OPT-04] …"` |
+| `!warn 5 0`, `!warn 5 31` | `Constraint { option: "days", reason: "[OPT-05] 0 is below min_value 1" }` |
+| `!warn 5 3 12345678901` | `Constraint { option: "reason", reason: "[OPT-06] length 11 is above max_length 10" }` |
+| a `.png` for `file_types = [".pdf"]` | `Constraint { reason: "[OPT-13] …" }` |
+| `!pick blue` (choices red/green) | `UnknownChoice { option: "color", value: "blue" }` |
+| `!warn <@&7>`, `!warn @everyone`, a 21-digit id | `WrongType { option: "user", expected: User, found: String }` |
+| `!warn 5 "3` / `!flag "true"x` | `Malformed { reason: "unclosed quote in the arguments" }` / ``Malformed { reason: "unexpected `x` after closing quote" }`` |
+| `!flag true 1.5 extra`, `!ping x` (unit Command) | ``Malformed { reason: "unexpected argument `extra`" }`` |
+
+**Refused at build** (`BuildViolation::Plugin` naming `PrefixPlugin`), because a message
+carries no data to enforce them: a Command declaring `permissions`, `nsfw = true`, or a
+CHANNEL option with `channel_types`; also an empty prefix, a prefix with whitespace or
+over 32 characters, no `.command::<T>()`, and two opted-in types sharing a Command Path
+(see `troubleshooting.md`).
+
+**Limits.** Only users (mentioned, or the author) and attachments are resolved: a
+`ResolvedRole`, `ResolvedChannel` or member-only field decodes as `Unresolved` over a
+prefix command, and `ResolvedUser.member` is `None`; take ids (`Id<RoleMarker>`,
+`Id<ChannelMarker>`) in Commands you opt in. No per-guild prefix, no mention as prefix,
+no named arguments, no help command, no autocomplete.

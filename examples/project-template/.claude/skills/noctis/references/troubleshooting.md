@@ -128,6 +128,11 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `State<T>` not registered | `.state(T)` on the builder |
 | locale key defined by Modules A and B | rename one key |
 | handler needs intent `GUILD_MEMBERS` | add `.intents(Intents::GUILD_MEMBERS)` and enable it in the portal |
+| ``[GW-05] event handler `noctis_prefix::PrefixPlugin` (Module `noctis-prefix`) handles MESSAGE_CREATE, which needs the privileged intent MESSAGE_CONTENT …`` | `PrefixPlugin` reads message text: add `.intents(Intents::MESSAGE_CONTENT)` and enable Message Content in the Developer Portal (`commands.md` §9) |
+| `` plugin `noctis_prefix::PrefixPlugin`: prefix is empty `` / `prefix contains whitespace` / `prefix is longer than 32 characters` | a prefix of 1 to 32 Unicode scalars without whitespace (`"!"`, `"?"`, `"ş>"`) |
+| `` plugin `noctis_prefix::PrefixPlugin`: no Command is opted in: add `.command::<T>()` `` | opt at least one `#[derive(SlashCommand)]` struct in |
+| `` `bot::Ban` cannot be a prefix command: it declares `permissions` `` (or `nsfw = true`, or ``its option `x` declares `channel_types` ``), `which a message cannot enforce` | do not opt that Command in; prefix commands cannot check member permissions, age gates or channel types |
+| ``Command Path `warn` is opted in by both `a::Warn` and `b::Warn` `` | opt in only one of the two types |
 | no font registered | enable `default-font` or `ImageConfig::font(..)` |
 | animation name `spin` redefined | rename your keyframes |
 | shard total must be at least 1 | remove `.shard_total(0)` / `NOCTIS_SHARD_TOTAL=0`, or set a positive total |

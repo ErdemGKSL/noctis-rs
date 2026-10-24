@@ -1607,6 +1607,7 @@ dependencies = [
  "noctis-image",
  "noctis-macros",
  "noctis-ports",
+ "noctis-prefix",
  "noctis-rules",
  "noctis-testkit",
  "noctis-ui",
@@ -1761,6 +1762,12 @@ dependencies = [
 [[package]]
 name = "noctis-prefix"
 version = "0.1.0"
+dependencies = [
+ "noctis-core",
+ "serde_json",
+ "tracing",
+ "twilight-model",
+]
 
 [[package]]
 name = "noctis-rules"

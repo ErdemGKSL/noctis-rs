@@ -583,7 +583,9 @@
 //!   Its locales drive the resolution of every run's
 //!   `ctx.user_locale()`/`ctx.guild_locale()` ([`Locales`]; override it
 //!   with a [`LocaleResolver`] or a before-Middleware).
-//! - `prefix`: opt-in prefix commands.
+//! - `prefix`: opt-in prefix commands: the [`prefix`] module's
+//!   `PrefixPlugin` runs opted-in slash Commands from messages such as
+//!   `!warn <@5> 3`; it needs the privileged `MESSAGE_CONTENT` intent.
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
 //!   simulated interactions, message snapshots and the memory check;
 //!   enable it in `[dev-dependencies]` only.
@@ -2397,6 +2399,82 @@ pub mod i18n {
     //! ```
 
     pub use noctis_i18n::{Catalog, format};
+}
+
+#[cfg(feature = "prefix")]
+pub mod prefix {
+    //! Prefix commands (feature `prefix`, P2, FR-14): [`PrefixPlugin`] runs
+    //! opted-in slash Commands from messages such as `!warn <@5> 3 rude`,
+    //! through the same `#[handler]`.
+    //!
+    //! - **Opt-in by type.** `PrefixPlugin::new("!").command::<Warn>()`: only
+    //!   opted-in Commands answer, and each must also be mounted in a Module.
+    //!   The prefix is 1 to 32 Unicode scalars without whitespace, matched
+    //!   case-sensitively and followed directly by the Command Path, whose
+    //!   words match case-insensitively (`!WARN` runs `warn`).
+    //! - **Intent.** The plugin's `MESSAGE_CREATE` handler needs the
+    //!   privileged `MESSAGE_CONTENT` intent: without
+    //!   `.intents(Intents::MESSAGE_CONTENT)` the build fails with `[GW-05]`
+    //!   `MissingIntent`. `GUILD_MESSAGES` is derived; DMs also need
+    //!   `DIRECT_MESSAGES`, requested by the bot.
+    //! - **Arguments.** Positional, in option declaration order, separated
+    //!   by whitespace. `"…"` makes one argument of several words (`\"`
+    //!   and `\\` escape). The last non-ATTACHMENT option, when it is a
+    //!   STRING, takes the rest of the line verbatim. ATTACHMENT options take
+    //!   the message's attachments in order. USER, ROLE, CHANNEL and
+    //!   MENTIONABLE take a mention (`<@5>`, `<@!5>`, `<@&7>`, `<#9>`) or a
+    //!   bare id; INTEGER, NUMBER and BOOLEAN (`true/false/yes/no/on/off`)
+    //!   are parsed; choices match by value, then by name.
+    //! - **Errors.** A bad argument is the same [`OptionError`](crate::OptionError)
+    //!   a slash decode produces (`WrongType`, `Missing`, `OutOfRange`,
+    //!   `UnknownChoice`, `Malformed` for grammar, `Constraint` for
+    //!   OPT-03/04/05/06/13 limits): the handler does not run, the user gets
+    //!   a public `noctis.validation.failed` reply and the Command Error Sink
+    //!   gets the error.
+    //! - **Ignored.** Messages from bots or webhooks, system messages, text
+    //!   without the prefix or an opted-in path, and Commands whose
+    //!   `contexts` exclude the place get no answer.
+    //! - **Limits.** A message carries no permission data, so a Command
+    //!   declaring `permissions`, `nsfw = true` or a CHANNEL option with
+    //!   `channel_types` cannot be opted in (build violation). Only users
+    //!   (mentioned or the author) and attachments are resolved:
+    //!   `ResolvedRole`, `ResolvedChannel` and member data are not, so such
+    //!   fields fail with `Unresolved`; take ids (`Id<RoleMarker>`) instead.
+    //!   No per-guild prefix, named arguments or edited messages.
+    //!
+    //! ```no_run
+    //! use noctis::prefix::PrefixPlugin;
+    //! use noctis::prelude::*;
+    //! use noctis::twilight::model::gateway::Intents;
+    //!
+    //! #[derive(SlashCommand)]
+    //! #[command("say", description = "Repeat a text")]
+    //! struct Say {
+    //!     #[option(description = "What to say")]
+    //!     text: String,
+    //! }
+    //!
+    //! impl Say {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+    //!         ctx.reply_text(self.text).await
+    //!     }
+    //! }
+    //!
+    //! # fn main() -> Result<(), noctis::BuildError> {
+    //! let mut builder = App::builder();
+    //! builder
+    //!     .intents(Intents::MESSAGE_CONTENT)
+    //!     .module(Module::new("fun").add::<Say>())
+    //!     // `!say hello world` runs the same handler as `/say`.
+    //!     .plugin(PrefixPlugin::new("!").command::<Say>());
+    //! let app = builder.build()?;
+    //! # let _ = app;
+    //! # Ok(())
+    //! # }
+    //! ```
+
+    pub use noctis_prefix::PrefixPlugin;
 }
 
 /// Paths the derive macros expand to; not public API.
