@@ -2,7 +2,8 @@
 title: 'Story 13.1: Module trees with unique path ids'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '82229f55fc10f5cea0d727a2e9724ad1956f9d2b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
