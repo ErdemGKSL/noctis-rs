@@ -2,8 +2,8 @@
 title: 'Story 15.3: Presence and gateway commands'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
-baseline_revision: 'c7bc02b36f584d72821538439cb5ce37fb0a63cb'
+status: 'in-progress'
+baseline_revision: 'be794b889665817a72a69f2eb8bb57380a475517'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

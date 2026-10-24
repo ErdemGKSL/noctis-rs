@@ -177,6 +177,6 @@ development_status:
   epic-15: backlog
   15-1-renderer-seam: backlog
   15-2-multiple-apps-per-process: backlog
-  15-3-presence-and-gateway-commands: backlog
+  15-3-presence-and-gateway-commands: in-progress
   15-4-prefix-commands: backlog
   epic-15-retrospective: optional
