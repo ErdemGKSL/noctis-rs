@@ -1,6 +1,0 @@
-error: [LOC-02] `../../fixtures/i18n/loc02/tr.yaml`: `cmdword.ban`: [CMD-03] limit lowercase, actual `Yasakla`
-         = help: use `yasakla`
- --> tests/ui-i18n/loc/LOC-02_localized_word_uppercase.rs:2:21
-  |
-2 | noctis::i18n!(dir = "../../fixtures/i18n/loc02", __dir_from_source_file);
-  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^

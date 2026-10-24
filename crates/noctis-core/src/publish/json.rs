@@ -1,16 +1,13 @@
 //! The Publish JSON, built only from the Registry (FR-11, FR-61, AD-7):
 //! one command object per base node and per context menu, in Registry
-//! order. Set metadata appears exactly as declared and unset fields are
-//! omitted. Localizations from the merged locale catalogs (FR-41) follow
-//! `name` and `description` as `name_localizations` /
-//! `description_localizations` objects keyed by locale code; an empty one
-//! is omitted, so an App without catalogs sends none.
+//! order. Set metadata appears exactly as declared, unset fields are
+//! omitted, and localizations are never sent.
 
 use noctis_rules::command::{ChoiceValue, NumericValue, OptionDecl};
 use serde_json::{Map, Value, json};
 
 use crate::metadata::CommandMetadata;
-use crate::registry::commands::{CommandNode, OptionTexts, ScopeCommands, Variants};
+use crate::registry::commands::{CommandNode, ScopeCommands};
 
 /// Every command object of one scope: the chat-input bases, then the
 /// context menus.
@@ -25,24 +22,10 @@ pub(crate) fn local(scope: &ScopeCommands) -> Vec<Value> {
         let mut object = Map::new();
         object.insert("type".into(), json!(handler.kind().value()));
         object.insert("name".into(), json!(handler.menu_name()));
-        add_localizations(&mut object, "name_localizations", &entry.name_localizations);
         add_metadata(&mut object, handler.metadata());
         Value::Object(object)
     });
     bases.chain(menus).collect()
-}
-
-/// Inserts `field` as a locale-code object, unless `variants` is empty.
-fn add_localizations(object: &mut Map<String, Value>, field: &str, variants: &Variants) {
-    let localized = variants.localized();
-    if localized.is_empty() {
-        return;
-    }
-    let map: Map<String, Value> = localized
-        .into_iter()
-        .map(|(locale, value)| (locale.as_str().to_owned(), json!(value)))
-        .collect();
-    object.insert(field.into(), Value::Object(map));
 }
 
 /// Removes `contexts` and `integration_types` (guild commands cannot carry
@@ -58,12 +41,10 @@ pub(super) fn strip_install(command: &mut Value) {
 /// group (2). It always carries `options` (FR-61).
 fn node(node: &CommandNode, kind: u8) -> Map<String, Value> {
     let options: Vec<Value> = if node.children.is_empty() {
-        let texts = node.options.iter().map(Some).chain(std::iter::repeat(None));
         node.handler
             .iter()
             .flat_map(|entry| entry.handler.options())
-            .zip(texts)
-            .map(|(decl, texts)| option(decl, texts))
+            .map(option)
             .collect()
     } else {
         node.children
@@ -77,13 +58,7 @@ fn node(node: &CommandNode, kind: u8) -> Map<String, Value> {
     let mut object = Map::new();
     object.insert("type".into(), json!(kind));
     object.insert("name".into(), json!(node.word));
-    add_localizations(&mut object, "name_localizations", &node.texts.name);
     object.insert("description".into(), json!(node.description));
-    add_localizations(
-        &mut object,
-        "description_localizations",
-        &node.texts.description,
-    );
     object.insert("options".into(), Value::Array(options));
     object
 }
@@ -117,19 +92,12 @@ fn numeric(value: NumericValue) -> Value {
     }
 }
 
-/// One option object: `type`, `name` and its localizations, `description`
-/// and its localizations, then each set field.
-fn option(decl: &OptionDecl<'_>, texts: Option<&OptionTexts>) -> Value {
+/// One option object: `type`, `name`, `description`, then each set field.
+fn option(decl: &OptionDecl<'_>) -> Value {
     let mut object = Map::new();
     object.insert("type".into(), json!(decl.kind.value()));
     object.insert("name".into(), json!(decl.name));
-    if let Some(texts) = texts {
-        add_localizations(&mut object, "name_localizations", &texts.name);
-    }
     object.insert("description".into(), json!(decl.description.default));
-    if let Some(texts) = texts {
-        add_localizations(&mut object, "description_localizations", &texts.description);
-    }
     if decl.required {
         object.insert("required".into(), json!(true));
     }
@@ -137,20 +105,13 @@ fn option(decl: &OptionDecl<'_>, texts: Option<&OptionTexts>) -> Value {
         let choices: Vec<Value> = decl
             .choices
             .iter()
-            .enumerate()
-            .map(|(j, choice)| {
+            .map(|choice| {
                 let value = match choice.value {
                     ChoiceValue::Str(v) => json!(v),
                     ChoiceValue::Int(v) => json!(v),
                     ChoiceValue::Float(v) => json!(v),
                 };
-                let mut object = Map::new();
-                object.insert("name".into(), json!(choice.name.default));
-                if let Some(names) = texts.and_then(|t| t.choices.get(j)) {
-                    add_localizations(&mut object, "name_localizations", names);
-                }
-                object.insert("value".into(), value);
-                Value::Object(object)
+                json!({ "name": choice.name.default, "value": value })
             })
             .collect();
         object.insert("choices".into(), Value::Array(choices));

@@ -24,7 +24,7 @@ image-emoji = []
 # Bundled default font for image Templates.
 default-font = []
 # Localization runtime (noctis-i18n).
-i18n = ["noctis-macros/i18n"]
+i18n = []
 # Opt-in prefix commands (noctis-prefix, P2).
 prefix = []
 # Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.

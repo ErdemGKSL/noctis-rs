@@ -514,11 +514,8 @@ pub mod __testing {
     ///
     /// The fold's violations, such as `DuplicateRoute`.
     pub fn route_table(modules: &[Module]) -> Result<RouteTable, Vec<BuildViolation>> {
-        let (registry, violations) = crate::registry::Registry::fold(
-            modules,
-            twilight_model::gateway::Intents::empty(),
-            None,
-        );
+        let (registry, violations) =
+            crate::registry::Registry::fold(modules, twilight_model::gateway::Intents::empty());
         if violations.is_empty() {
             Ok(RouteTable(registry))
         } else {

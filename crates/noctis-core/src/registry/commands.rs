@@ -1,20 +1,16 @@
 //! The merged command Registry: every Module's `#[command]`, context-menu and
 //! `base`/`group` declarations, lowered into `noctis_rules` declarations,
 //! checked once with `validate_merge` and folded into per-scope trees (FR-9,
-//! FR-56, FR-57, AD-4, AD-7, AD-8), with their localizations from the merged
-//! locale catalogs ([`localize`]; FR-41, AD-16).
-
-mod localize;
+//! FR-56, FR-57, AD-4, AD-7, AD-8).
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-use noctis_i18n::AppStrings;
 use noctis_rules::Limits;
 use noctis_rules::command::{
-    Choice, CommandDecl, CommandMeta, ContextMenuDecl, DeclKind, LocalizedField, LocalizedText,
-    MenuKind, OptionDecl, PathKind, Scope, measure_options, validate_merge,
+    CommandDecl, CommandMeta, ContextMenuDecl, DeclKind, LocalizedText, MenuKind, PathKind, Scope,
+    measure_options, validate_merge,
 };
 use twilight_model::guild::Permissions;
 
@@ -24,9 +20,6 @@ use crate::menu::ContextMenuHandler;
 use crate::metadata::CommandMetadata;
 use crate::middleware::Chain;
 use crate::module::{Module, NodeDecl};
-
-use self::localize::{Declared, Problems, Resolver, declared_descriptions};
-pub(crate) use self::localize::{NodeTexts, OptionTexts, Variants};
 
 /// One folded chat-input handler.
 pub(crate) struct CommandEntry {
@@ -62,8 +55,6 @@ pub(crate) struct MenuEntry {
     /// The Middleware chain of that Module.
     pub(crate) chain: Chain,
     pub(crate) handler: ContextMenuHandler,
-    /// The menu name's localizations (`ctxcmd.<key>.name`).
-    pub(crate) name_localizations: Variants,
 }
 
 /// One node of a merged chat-input tree: a base, a subcommand, a group or a
@@ -73,14 +64,8 @@ pub(crate) struct CommandNode {
     pub(crate) word: &'static str,
     /// The node's full Command Path.
     pub(crate) path: &'static str,
-    /// The resolved description (declared, from the default-locale file,
-    /// the handler's, or the fallback).
+    /// The resolved description (declared, the handler's, or the fallback).
     pub(crate) description: &'static str,
-    /// The localizations of the node's name and description.
-    pub(crate) texts: NodeTexts,
-    /// The localizations of the handler's options, parallel to its
-    /// `options()`; empty without a handler.
-    pub(crate) options: Vec<OptionTexts>,
     /// The resolved base metadata (guilds empty); unset below a base.
     pub(crate) metadata: CommandMetadata,
     /// The handler at exactly this path, if any.
@@ -182,41 +167,22 @@ fn scope_text(scope: Scope) -> String {
 
 impl Commands {
     /// Lowers the commands, menus and node declarations of `modules` (fold
-    /// order), resolves their localizations against `strings`, runs
-    /// `validate_merge` (whose CMD-05 budget counts the longest valid
-    /// variant per field, LOC-05), the declared-description check (CMD-04:
-    /// a declared description must equal its owner catalog's default-locale
-    /// text) and the LOC-02 / LOC-03 checks and, when all pass, logs the
+    /// order), runs `validate_merge` and, when it passes, logs the
     /// description fallbacks and builds the Registry. Otherwise the Registry
-    /// is empty and every violation is returned: each
-    /// [`BuildViolation::Command`] in `validate_merge` order, then the
-    /// declared-description ones (sorted by key), then each
-    /// [`BuildViolation::CommandLocalization`] (sorted by key, locale, rule).
-    pub(super) fn fold(
-        modules: &[Folded<'_>],
-        strings: Option<&AppStrings>,
-    ) -> (Self, Vec<BuildViolation>) {
+    /// is empty and every violation is returned as
+    /// [`BuildViolation::Command`], in `validate_merge` order.
+    pub(super) fn fold(modules: &[Folded<'_>]) -> (Self, Vec<BuildViolation>) {
         let limits = Limits::default();
-        let resolver = Resolver::new(strings);
-        let mut lowered = lower(modules, resolver, &limits);
-        let declared = declared_descriptions(resolver, declarations(&lowered));
-        let fallbacks = add_fallbacks(&mut lowered, resolver);
-        let table = Table::new(&lowered, resolver);
-        let localization = table.check(&lowered, &limits).finish(resolver);
-        let merged = {
-            let budget = table.budget(&limits);
-            let decls = table.decls(&lowered, &budget, &limits);
-            validate_merge(&decls, &lowered.menus, &limits)
-        };
-        let merged = merged.err().unwrap_or_default();
-        if !merged.is_empty() || !declared.is_empty() || !localization.is_empty() {
-            let mut out: Vec<BuildViolation> = merged
-                .into_iter()
-                .chain(declared)
-                .map(BuildViolation::Command)
-                .collect();
-            out.extend(localization);
-            return (Self::default(), out);
+        let mut lowered = lower(modules, &limits);
+        let fallbacks = add_fallbacks(&mut lowered);
+        if let Err(violations) = validate_merge(&lowered.commands, &lowered.menus, &limits) {
+            return (
+                Self::default(),
+                violations
+                    .into_iter()
+                    .map(BuildViolation::Command)
+                    .collect(),
+            );
         }
         for fallback in &fallbacks {
             tracing::warn!(
@@ -229,7 +195,7 @@ impl Commands {
                 fallback.from_module,
             );
         }
-        (Self::build(&lowered, &table), Vec::new())
+        (Self::build(&lowered), Vec::new())
     }
 
     /// Every scope, in first appearance (commands, then menus).
@@ -243,7 +209,7 @@ impl Commands {
     }
 
     /// Builds the per-scope trees and maps from checked declarations.
-    fn build(lowered: &Lowered, table: &Table) -> Self {
+    fn build(lowered: &Lowered) -> Self {
         let mut order: Vec<Scope> = Vec::new();
         for scope in lowered
             .commands
@@ -257,7 +223,7 @@ impl Commands {
         }
         let scopes = order
             .into_iter()
-            .map(|scope| build_scope(lowered, table, scope))
+            .map(|scope| build_scope(lowered, scope))
             .collect();
         Self { scopes }
     }
@@ -294,7 +260,7 @@ impl Commands {
 /// Lowers every Module in fold order: its commands (one declaration per path
 /// and scope, in `add` order), its menus (one per scope), then its node
 /// declarations (in call order, one per scope its node exists in).
-fn lower(modules: &[Folded<'_>], resolver: Resolver<'_>, limits: &Limits) -> Lowered {
+fn lower(modules: &[Folded<'_>], limits: &Limits) -> Lowered {
     // Node declarations follow the scopes of their node, which any Module's
     // handlers may create.
     let mut handler_scopes: Vec<(&'static str, Scope)> = Vec::new();
@@ -320,10 +286,10 @@ fn lower(modules: &[Folded<'_>], resolver: Resolver<'_>, limits: &Limits) -> Low
             let options = handler.options();
             let options_size = measure_options(options, limits);
             let metadata = handler.metadata();
-            for (&path, &description) in handler.paths().iter().zip(handler.descriptions()) {
+            for &path in handler.paths() {
                 for scope in metadata.scopes() {
                     let decl = CommandDecl::handler(module, path)
-                        .description(LocalizedText::new(description))
+                        .description(LocalizedText::new(handler.description()))
                         .with_options(options.len(), options_size)
                         .metadata(metadata.to_rules())
                         .scope(scope);
@@ -337,7 +303,6 @@ fn lower(modules: &[Folded<'_>], resolver: Resolver<'_>, limits: &Limits) -> Low
                 ancestors: Arc::clone(&folded.ancestors),
                 chain: folded.chain.clone(),
                 handler: handler.clone(),
-                name_localizations: resolver.menu(handler.key()),
             });
             for scope in handler.metadata().scopes() {
                 lowered.menus.push(
@@ -368,34 +333,6 @@ fn lower(modules: &[Folded<'_>], resolver: Resolver<'_>, limits: &Limits) -> Low
     lowered
 }
 
-/// Every declared description of `lowered` (before the fallbacks), in
-/// fold order: each declaration's own, then each option's of a handler
-/// declaration.
-fn declarations(lowered: &Lowered) -> impl Iterator<Item = Declared<'_>> {
-    lowered
-        .commands
-        .iter()
-        .zip(&lowered.entries)
-        .flat_map(|(decl, entry)| {
-            let own = decl.description.map(|text| Declared {
-                path: decl.path,
-                option: None,
-                text: text.default,
-                source: decl.source,
-            });
-            let options = entry
-                .iter()
-                .flat_map(|entry| entry.handler.options())
-                .map(|option| Declared {
-                    path: decl.path,
-                    option: Some(option.name),
-                    text: option.description.default,
-                    source: decl.source,
-                });
-            own.into_iter().chain(options)
-        })
-}
-
 /// The global meta declaration of one `base`/`group` call.
 fn node_decl(module: &'static str, node: NodeDecl) -> CommandDecl<'static> {
     match node {
@@ -413,11 +350,9 @@ fn node_decl(module: &'static str, node: NodeDecl) -> CommandDecl<'static> {
 }
 
 /// Appends one synthetic description per undescribed node (FR-57, AD-7) and
-/// returns the handler fallbacks in order: per scope (first appearance),
-/// per node (first appearance). A node whose `cmd.<path>.description` is in
-/// its owner catalog's default-locale file takes that text, declared by the
-/// catalog's origin and without a warning.
-fn add_fallbacks(lowered: &mut Lowered, resolver: Resolver<'_>) -> Vec<Fallback> {
+/// returns them in order: per scope (first appearance), per node (first
+/// appearance).
+fn add_fallbacks(lowered: &mut Lowered) -> Vec<Fallback> {
     let mut scopes: Vec<Scope> = Vec::new();
     for decl in &lowered.commands {
         if !scopes.contains(&decl.scope) {
@@ -453,14 +388,6 @@ fn add_fallbacks(lowered: &mut Lowered, resolver: Resolver<'_>) -> Vec<Fallback>
             if described {
                 continue;
             }
-            if let Some((text, origin)) = resolver.default_description(node) {
-                synthetic.push(
-                    CommandDecl::meta(origin, node)
-                        .description(LocalizedText::new(text))
-                        .scope(scope),
-                );
-                continue;
-            }
             let below = |d: &&&CommandDecl<'static>| {
                 d.path.len() > node.len() && is_word_prefix(node, d.path)
             };
@@ -494,233 +421,8 @@ fn add_fallbacks(lowered: &mut Lowered, resolver: Resolver<'_>) -> Vec<Fallback>
     fallbacks
 }
 
-/// The localizations of every registered node and handler declaration.
-struct Table {
-    /// Per node path (every handler path and its strict prefixes).
-    nodes: HashMap<&'static str, NodeTexts>,
-    /// The node paths, in first appearance (the check order).
-    node_order: Vec<&'static str>,
-    /// Parallel to `Lowered::commands`: the option localizations of a
-    /// handler declaration.
-    options: Vec<Option<Vec<OptionTexts>>>,
-}
-
-/// The LOC-02-valid localized names and descriptions of one node, which
-/// the CMD-05 budget counts.
-struct Budget {
-    names: Vec<&'static str>,
-    descriptions: Vec<&'static str>,
-}
-
-impl Table {
-    fn new(lowered: &Lowered, resolver: Resolver<'_>) -> Self {
-        let mut nodes: HashMap<&'static str, NodeTexts> = HashMap::new();
-        let mut node_order = Vec::new();
-        let mut options = Vec::with_capacity(lowered.commands.len());
-        for (decl, entry) in lowered.commands.iter().zip(&lowered.entries) {
-            let Some(entry) = entry else {
-                options.push(None);
-                continue;
-            };
-            for node in strict_prefixes(decl.path).chain([decl.path]) {
-                if !nodes.contains_key(node) {
-                    nodes.insert(node, resolver.node(node));
-                    node_order.push(node);
-                }
-            }
-            options.push(Some(resolver.options(decl.path, entry.handler.options())));
-        }
-        Self {
-            nodes,
-            node_order,
-            options,
-        }
-    }
-
-    /// LOC-02 over every value; LOC-03 over every options array and, per
-    /// scope, every children array.
-    fn check(&self, lowered: &Lowered, limits: &Limits) -> Problems {
-        let mut problems = Problems::default();
-        for path in &self.node_order {
-            let texts = &self.nodes[path];
-            problems.values(LocalizedField::Name, &texts.name, limits);
-            problems.values(LocalizedField::Description, &texts.description, limits);
-        }
-        for (texts, entry) in self.options.iter().zip(&lowered.entries) {
-            let (Some(texts), Some(entry)) = (texts, entry) else {
-                continue;
-            };
-            for option in texts {
-                problems.values(LocalizedField::Name, &option.name, limits);
-                problems.values(LocalizedField::Description, &option.description, limits);
-                for choice in &option.choices {
-                    problems.values(LocalizedField::ChoiceName, choice, limits);
-                }
-            }
-            let array: Vec<(&str, &Variants)> = entry
-                .handler
-                .options()
-                .iter()
-                .zip(texts)
-                .map(|(decl, texts)| (decl.name, &texts.name))
-                .collect();
-            problems.names(&array);
-        }
-        for children in children_arrays(lowered) {
-            let array: Vec<(&str, &Variants)> = children
-                .iter()
-                .filter_map(|child| {
-                    let word = child.rsplit(' ').next().unwrap_or_default();
-                    self.nodes.get(child).map(|texts| (word, &texts.name))
-                })
-                .collect();
-            problems.names(&array);
-        }
-        for entry in &lowered.menu_entries {
-            problems.values(
-                LocalizedField::ContextMenuName,
-                &entry.name_localizations,
-                limits,
-            );
-        }
-        problems
-    }
-
-    /// The per-node lists the CMD-05 budget counts.
-    fn budget(&self, limits: &Limits) -> HashMap<&'static str, Budget> {
-        self.nodes
-            .iter()
-            .map(|(&path, texts)| {
-                (
-                    path,
-                    Budget {
-                        names: texts.name.valid_values(LocalizedField::Name, limits),
-                        descriptions: texts
-                            .description
-                            .valid_values(LocalizedField::Description, limits),
-                    },
-                )
-            })
-            .collect()
-    }
-
-    /// The declarations `validate_merge` checks: the lowered ones with
-    /// their localized variants (LOC-05).
-    fn decls<'t>(
-        &self,
-        lowered: &Lowered,
-        budget: &'t HashMap<&'static str, Budget>,
-        limits: &Limits,
-    ) -> Vec<CommandDecl<'t>> {
-        lowered
-            .commands
-            .iter()
-            .zip(&lowered.entries)
-            .zip(&self.options)
-            .map(|((&decl, entry), texts)| {
-                let mut decl: CommandDecl<'t> = decl;
-                if let Some(lists) = budget.get(decl.path) {
-                    decl = decl.name_localized(&lists.names);
-                    if let Some(description) = decl.description {
-                        decl = decl.description(description.with_localized(&lists.descriptions));
-                    }
-                }
-                if let (Some(entry), Some(texts), DeclKind::Handler { options, .. }) =
-                    (entry, texts, decl.kind)
-                {
-                    let size = measure_localized(entry.handler.options(), texts, limits);
-                    decl = decl.with_options(options, size);
-                }
-                decl
-            })
-            .collect()
-    }
-}
-
-/// The CMD-05 share of `options` with their LOC-02-valid localized names,
-/// descriptions and choice names, over loop-local copies.
-fn measure_localized(options: &[OptionDecl<'_>], texts: &[OptionTexts], limits: &Limits) -> usize {
-    let names: Vec<Vec<&'static str>> = texts
-        .iter()
-        .map(|t| t.name.valid_values(LocalizedField::Name, limits))
-        .collect();
-    let descriptions: Vec<Vec<&'static str>> = texts
-        .iter()
-        .map(|t| {
-            t.description
-                .valid_values(LocalizedField::Description, limits)
-        })
-        .collect();
-    let choice_names: Vec<Vec<Vec<&'static str>>> = texts
-        .iter()
-        .map(|t| {
-            t.choices
-                .iter()
-                .map(|c| c.valid_values(LocalizedField::ChoiceName, limits))
-                .collect()
-        })
-        .collect();
-    let choices: Vec<Vec<Choice<'_>>> = options
-        .iter()
-        .zip(&choice_names)
-        .map(|(option, names)| {
-            option
-                .choices
-                .iter()
-                .zip(names)
-                .map(|(choice, names)| choice.name_localized(names))
-                .collect()
-        })
-        .collect();
-    let copies: Vec<OptionDecl<'_>> = options
-        .iter()
-        .zip(&names)
-        .zip(&descriptions)
-        .zip(&choices)
-        .map(|(((option, names), descriptions), choices)| {
-            option
-                .name_localized(names)
-                .description_localized(descriptions)
-                .choices(choices)
-        })
-        .collect();
-    measure_options(&copies, limits)
-}
-
-/// Per scope (first appearance) and parent node (first appearance), the
-/// paths of the parent's children (first appearance).
-fn children_arrays(lowered: &Lowered) -> Vec<Vec<&'static str>> {
-    let mut arrays: Vec<(Scope, &'static str, Vec<&'static str>)> = Vec::new();
-    for (decl, entry) in lowered.commands.iter().zip(&lowered.entries) {
-        if entry.is_none() {
-            continue;
-        }
-        let path = decl.path;
-        let mut parent: Option<&'static str> = None;
-        for node in strict_prefixes(path).chain([path]) {
-            if let Some(parent) = parent {
-                let found = arrays
-                    .iter()
-                    .position(|(s, p, _)| *s == decl.scope && *p == parent);
-                let at = found.unwrap_or_else(|| {
-                    arrays.push((decl.scope, parent, Vec::new()));
-                    arrays.len() - 1
-                });
-                if !arrays[at].2.contains(&node) {
-                    arrays[at].2.push(node);
-                }
-            }
-            parent = Some(node);
-        }
-    }
-    arrays
-        .into_iter()
-        .map(|(_, _, children)| children)
-        .collect()
-}
-
 /// The node tree, path map and menus of one checked scope.
-fn build_scope(lowered: &Lowered, table: &Table, scope: Scope) -> ScopeCommands {
+fn build_scope(lowered: &Lowered, scope: Scope) -> ScopeCommands {
     let in_scope: Vec<(&CommandDecl<'static>, Option<&Arc<CommandEntry>>)> = lowered
         .commands
         .iter()
@@ -731,32 +433,19 @@ fn build_scope(lowered: &Lowered, table: &Table, scope: Scope) -> ScopeCommands 
 
     let mut descriptions: HashMap<&'static str, &'static str> = HashMap::new();
     let mut paths: HashMap<&'static str, Arc<CommandEntry>> = HashMap::new();
-    let mut options: HashMap<&'static str, &[OptionTexts]> = HashMap::new();
-    for (index, (decl, entry)) in lowered.commands.iter().zip(&lowered.entries).enumerate() {
-        if decl.scope != scope {
-            continue;
-        }
+    for &(decl, entry) in &in_scope {
         if let Some(text) = decl.description {
             descriptions.entry(decl.path).or_insert(text.default);
         }
         if let Some(entry) = entry {
             paths.entry(decl.path).or_insert_with(|| Arc::clone(entry));
-            if let Some(texts) = &table.options[index] {
-                options.entry(decl.path).or_insert(texts.as_slice());
-            }
         }
     }
 
-    let level = Level {
-        descriptions: &descriptions,
-        handlers: &paths,
-        options: &options,
-        nodes: &table.nodes,
-    };
     let mut bases: Vec<CommandNode> = Vec::new();
     for &(decl, entry) in &in_scope {
         if entry.is_some() {
-            insert(&mut bases, decl.path, 0, &level);
+            insert(&mut bases, decl.path, 0, &descriptions, &paths);
         }
     }
     for base in &mut bases {
@@ -784,17 +473,15 @@ fn build_scope(lowered: &Lowered, table: &Table, scope: Scope) -> ScopeCommands 
     }
 }
 
-/// What [`insert`] reads per node path.
-struct Level<'a> {
-    descriptions: &'a HashMap<&'static str, &'static str>,
-    handlers: &'a HashMap<&'static str, Arc<CommandEntry>>,
-    options: &'a HashMap<&'static str, &'a [OptionTexts]>,
-    nodes: &'a HashMap<&'static str, NodeTexts>,
-}
-
 /// Inserts the nodes of `path` from word `from` on (byte offset of the word
 /// start) into `level`.
-fn insert(level: &mut Vec<CommandNode>, path: &'static str, from: usize, by_path: &Level<'_>) {
+fn insert(
+    level: &mut Vec<CommandNode>,
+    path: &'static str,
+    from: usize,
+    descriptions: &HashMap<&'static str, &'static str>,
+    handlers: &HashMap<&'static str, Arc<CommandEntry>>,
+) {
     let end = path[from..].find(' ').map_or(path.len(), |at| from + at);
     let node_path = &path[..end];
     let word = &path[from..end];
@@ -804,25 +491,21 @@ fn insert(level: &mut Vec<CommandNode>, path: &'static str, from: usize, by_path
         level.push(CommandNode {
             word,
             path: node_path,
-            description: by_path
-                .descriptions
-                .get(node_path)
-                .copied()
-                .unwrap_or_default(),
-            texts: by_path.nodes.get(node_path).cloned().unwrap_or_default(),
-            options: by_path
-                .options
-                .get(node_path)
-                .map(|texts| texts.to_vec())
-                .unwrap_or_default(),
+            description: descriptions.get(node_path).copied().unwrap_or_default(),
             metadata: CommandMetadata::new(),
-            handler: by_path.handlers.get(node_path).cloned(),
+            handler: handlers.get(node_path).cloned(),
             children: Vec::new(),
         });
         level.len() - 1
     };
     if end < path.len() {
-        insert(&mut level[index].children, path, end + 1, by_path);
+        insert(
+            &mut level[index].children,
+            path,
+            end + 1,
+            descriptions,
+            handlers,
+        );
     }
 }
 

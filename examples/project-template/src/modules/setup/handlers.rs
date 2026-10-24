@@ -23,6 +23,7 @@ use crate::strings::{Strings, keys};
 #[derive(SlashCommand, Debug)]
 #[command(
     "setup start",
+    description = "Configure the bot for this server, step by step",
     response = ephemeral,
     permissions = MANAGE_GUILD,
     contexts = [Guild],

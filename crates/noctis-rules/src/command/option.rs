@@ -515,6 +515,7 @@ fn check_option(option: &OptionDecl<'_>, p: &str, limits: &Limits, out: &mut Vec
 
 /// CMD-04 for the default and every localized description.
 fn check_description(option: &OptionDecl<'_>, p: &str, limits: &Limits, out: &mut Vec<Violation>) {
+    let max = limits.command_description_len;
     let text = option.description;
     let variants = std::iter::once((text.default, "in the default description".to_owned())).chain(
         text.localized
@@ -523,24 +524,19 @@ fn check_description(option: &OptionDecl<'_>, p: &str, limits: &Limits, out: &mu
             .map(|(i, t)| (*t, format!("in localized description #{i}"))),
     );
     for (variant, note) in variants {
-        if let Some(v) = description_violation(variant, p, limits) {
-            out.push(v.with_note(note));
+        let len = discord_len(variant);
+        if len == 0 || len > max {
+            out.push(
+                Violation::new(
+                    RuleId::CMD_04,
+                    p,
+                    Bound::Between { min: 1, max },
+                    Actual::Count(len),
+                )
+                .with_note(note),
+            );
         }
     }
-}
-
-/// The CMD-04 length violation of one description text at `path`, if any.
-pub(super) fn description_violation(text: &str, path: &str, limits: &Limits) -> Option<Violation> {
-    let max = limits.command_description_len;
-    let len = discord_len(text);
-    (len == 0 || len > max).then(|| {
-        Violation::new(
-            RuleId::CMD_04,
-            path,
-            Bound::Between { min: 1, max },
-            Actual::Count(len),
-        )
-    })
 }
 
 /// The bounds that passed their own checks.
@@ -684,6 +680,7 @@ fn check_choices(
 
 /// OPT-09 for the default and every localized choice name.
 fn check_choice_names(choice: &Choice<'_>, path: &str, limits: &Limits, out: &mut Vec<Violation>) {
+    let max = limits.choice_name_len;
     let name = choice.name;
     let variants = std::iter::once((name.default, "in the choice name".to_owned())).chain(
         name.localized
@@ -692,24 +689,19 @@ fn check_choice_names(choice: &Choice<'_>, path: &str, limits: &Limits, out: &mu
             .map(|(i, t)| (*t, format!("in localized choice name #{i}"))),
     );
     for (variant, note) in variants {
-        if let Some(v) = choice_name_violation(variant, path, limits) {
-            out.push(v.with_note(note));
+        let len = discord_len(variant);
+        if len == 0 || len > max {
+            out.push(
+                Violation::new(
+                    RuleId::OPT_09,
+                    path,
+                    Bound::Between { min: 1, max },
+                    Actual::Count(len),
+                )
+                .with_note(note),
+            );
         }
     }
-}
-
-/// The OPT-09 length violation of one choice name at `path`, if any.
-pub(super) fn choice_name_violation(text: &str, path: &str, limits: &Limits) -> Option<Violation> {
-    let max = limits.choice_name_len;
-    let len = discord_len(text);
-    (len == 0 || len > max).then(|| {
-        Violation::new(
-            RuleId::OPT_09,
-            path,
-            Bound::Between { min: 1, max },
-            Actual::Count(len),
-        )
-    })
 }
 
 /// OPT-09 type, else value length / OPT-03 / OPT-04, then OPT-05 against
@@ -857,57 +849,6 @@ fn check_unique_names(options: &[OptionDecl<'_>], out: &mut Vec<Violation>) {
             .with_note(format!("declared at positions {}", list.join(", "))),
         );
     }
-}
-
-/// Checks the localized names of one options array in one locale (LOC-03).
-///
-/// `defaults` are the options' default names and `localized` their names
-/// in that locale, by position (`None` where the option has none). Option
-/// `i`'s localized name `x` is a CMD-06 violation (path `x`) when `x`
-/// equals `defaults[j]` for some `j ≠ i`, or `localized[j]` for some
-/// `j < i`. A localized name equal to its own default is fine; the
-/// comparison is exact. Returns `(i, violation)` pairs in position order.
-///
-/// ```
-/// use noctis_rules::RuleId;
-/// use noctis_rules::command::validate_localized_option_names;
-///
-/// let defaults = ["user", "reason"];
-/// assert!(validate_localized_option_names(&defaults, &[Some("user"), Some("neden")]).is_empty());
-/// let errs = validate_localized_option_names(&defaults, &[None, Some("user")]);
-/// assert_eq!(errs.len(), 1);
-/// assert_eq!(errs[0].0, 1);
-/// assert_eq!(errs[0].1.rule, RuleId::CMD_06);
-/// assert_eq!(errs[0].1.path, "user");
-/// ```
-pub fn validate_localized_option_names(
-    defaults: &[&str],
-    localized: &[Option<&str>],
-) -> Vec<(usize, Violation)> {
-    let mut out = Vec::new();
-    for (i, name) in localized.iter().enumerate() {
-        let Some(name) = *name else {
-            continue;
-        };
-        let note = if let Some(j) = (0..defaults.len()).find(|&j| j != i && defaults[j] == name) {
-            format!("equals the default name of the option at position {j}")
-        } else if let Some(j) = (0..i).find(|&j| localized[j] == Some(name)) {
-            format!("equals the localized name of the option at position {j}")
-        } else {
-            continue;
-        };
-        out.push((
-            i,
-            Violation::new(
-                RuleId::CMD_06,
-                name,
-                Bound::Describe("unique option names"),
-                Actual::Text(name.to_owned()),
-            )
-            .with_note(note),
-        ));
-    }
-    out
 }
 
 /// The CMD-05 share of one options array, for
@@ -1965,49 +1906,5 @@ mod tests {
                 prop_assert_eq!(rules(&errs), [RuleId::OPT_03]);
             }
         }
-    }
-
-    /// Story 11.4 Matrix 34-38 at rule level: localized option names must
-    /// differ from the other defaults and from earlier localized names.
-    #[test]
-    fn loc_03_localized_option_names() {
-        let defaults = ["user", "reason"];
-        // 34: equals another option's default.
-        let errs = validate_localized_option_names(&defaults, &[None, Some("user")]);
-        assert_eq!(
-            errs,
-            [(
-                1,
-                Violation::new(
-                    RuleId::CMD_06,
-                    "user",
-                    Bound::Describe("unique option names"),
-                    Actual::Text("user".into())
-                )
-                .with_note("equals the default name of the option at position 0")
-            )]
-        );
-        // 35: two localized names collide; the later one is reported.
-        let errs = validate_localized_option_names(&["a", "b"], &[Some("x"), Some("x")]);
-        assert_eq!(errs.len(), 1);
-        assert_eq!(errs[0].0, 1);
-        assert_eq!(
-            errs[0].1.notes,
-            ["equals the localized name of the option at position 0"]
-        );
-        // 36: equal to its own default.
-        assert_eq!(
-            validate_localized_option_names(&defaults, &[Some("user"), Some("reason")]),
-            []
-        );
-        // Exact comparison.
-        assert_eq!(
-            validate_localized_option_names(&defaults, &[None, Some("User")]),
-            []
-        );
-        assert_eq!(
-            validate_localized_option_names(&defaults, &[None, None]),
-            []
-        );
     }
 }

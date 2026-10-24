@@ -1,4 +1,0 @@
-# Story 11.4: LOC-02 fixture; a localized Command word must be lowercase.
-greeting: Merhaba
-cmdword:
-  ban: Yasakla

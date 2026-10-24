@@ -1,7 +1,0 @@
-# Story 11.4: LOC-03 fixture (default locale).
-cmd:
-  ban:
-    description: Ban a member
-    opt:
-      user:
-        description: Who to ban

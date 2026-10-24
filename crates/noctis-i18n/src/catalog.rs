@@ -232,53 +232,6 @@ impl AppStrings {
     pub fn catalogs(&self) -> &[Catalog] {
         &self.catalogs
     }
-
-    /// The catalog that defines `key` (in any of its files), if any.
-    ///
-    /// ```
-    /// use noctis_i18n::{AppStrings, Catalog};
-    /// use noctis_rules::Locale;
-    ///
-    /// static BOT: Catalog = Catalog::__new(
-    ///     "bot/locales",
-    ///     Locale::EnUs,
-    ///     &[(Locale::Tr, &[("cmdword.ban", "yasakla")])],
-    ///     &[],
-    /// );
-    ///
-    /// let strings = AppStrings::new(&[BOT]).unwrap();
-    /// assert_eq!(strings.owner("cmdword.ban").map(Catalog::origin), Some("bot/locales"));
-    /// assert!(strings.owner("cmdword.kick").is_none());
-    /// ```
-    pub fn owner(&self, key: &str) -> Option<&Catalog> {
-        self.owners.get(key).map(|&i| &self.catalogs[i])
-    }
-
-    /// The text `key` has in `locale`'s own file of the catalog that
-    /// defines it, without fallback (neither the sibling, the default
-    /// locale nor [`Builtin`]).
-    ///
-    /// ```
-    /// use noctis_i18n::{AppStrings, Catalog};
-    /// use noctis_rules::Locale;
-    ///
-    /// static BOT: Catalog = Catalog::__new(
-    ///     "bot/locales",
-    ///     Locale::EnUs,
-    ///     &[
-    ///         (Locale::EnUs, &[("cmd.ban.description", "Ban a member")]),
-    ///         (Locale::Tr, &[("cmdword.ban", "yasakla")]),
-    ///     ],
-    ///     &[],
-    /// );
-    ///
-    /// let strings = AppStrings::new(&[BOT]).unwrap();
-    /// assert_eq!(strings.get(Locale::Tr, "cmdword.ban"), Some("yasakla"));
-    /// assert_eq!(strings.get(Locale::EnGb, "cmd.ban.description"), None);
-    /// ```
-    pub fn get(&self, locale: Locale, key: &str) -> Option<&'static str> {
-        self.owner(key)?.get(locale, key)
-    }
 }
 
 impl Translate for AppStrings {
@@ -430,34 +383,6 @@ mod tests {
         );
         let twice = AppStrings::new(&[BASIC, BASIC]).unwrap_or_default();
         assert_eq!(twice.catalogs().len(), 1);
-    }
-
-    /// Story 11.4: `get` and `owner` look in the owner catalog's own file.
-    #[test]
-    fn app_strings_get_and_owner() {
-        static WORDS: Catalog = Catalog::__new(
-            "words/locales",
-            Locale::EnUs,
-            &[(Locale::Tr, &[("cmdword.ban", "yasakla")])],
-            &[],
-        );
-        let strings = AppStrings::new(&[BASIC, WORDS]).unwrap_or_default();
-        assert_eq!(
-            strings.owner("cmdword.ban").map(Catalog::origin),
-            Some("words/locales")
-        );
-        assert_eq!(
-            strings.owner("common.refresh").map(Catalog::origin),
-            Some("bot/locales")
-        );
-        assert!(strings.owner("nope").is_none());
-        assert_eq!(strings.get(Locale::Tr, "cmdword.ban"), Some("yasakla"));
-        assert_eq!(strings.get(Locale::EnUs, "cmdword.ban"), None);
-        assert_eq!(strings.get(Locale::Tr, "common.refresh"), Some("Yenile"));
-        // No fallback to the sibling or the default locale.
-        assert_eq!(strings.get(Locale::EnGb, "cmd.setup.description"), None);
-        assert_eq!(strings.get(Locale::De, "common.refresh"), None);
-        assert_eq!(strings.get(Locale::Tr, "noctis.expired"), None);
     }
 
     /// `FRAMEWORK_KEYS` lists `keys::ALL` with each `Builtin` template's

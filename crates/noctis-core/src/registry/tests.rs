@@ -546,7 +546,6 @@ fn every_parsed_type_has_a_slot() {
                 let (registry, _) = Registry::fold(
                     &[Module::new("m").__add(noop::<$ty>(stringify!($ty)))],
                     Intents::all(),
-            None,
                 );
                 let slots: Vec<EventType> = TABLE
                     .iter()
@@ -747,7 +746,7 @@ mod routes {
     use crate::test_support::{TBuy, button, modal};
 
     fn fold(roots: &[Module]) -> (Registry, Vec<BuildViolation>) {
-        Registry::fold(roots, Intents::empty(), None)
+        Registry::fold(roots, Intents::empty())
     }
 
     fn duplicate(
@@ -937,7 +936,7 @@ mod extensions {
     }
 
     fn fold(roots: &[Module]) -> Vec<BuildViolation> {
-        Registry::fold(roots, Intents::empty(), None).1
+        Registry::fold(roots, Intents::empty()).1
     }
 
     fn missing(module: &'static str, handler: &'static str, ty: &'static str) -> BuildViolation {
@@ -1076,7 +1075,7 @@ mod extensions {
                     .__add(noop::<MessageCreate>("bot::child")),
             );
         assert!(format!("{tree:?}").contains("before: [\""));
-        let (registry, violations) = Registry::fold(&[tree], Intents::empty(), None);
+        let (registry, violations) = Registry::fold(&[tree], Intents::empty());
         assert_eq!(violations, []);
         let names = |entry: &Entry| -> Vec<&str> {
             entry
@@ -1161,7 +1160,6 @@ mod templates {
         let (registry, violations) = Registry::fold(
             &[Module::new("a").template::<CardA>().template::<CardA>()],
             Intents::empty(),
-            None,
         );
         let name = std::any::type_name::<CardA>();
         assert_eq!(
@@ -1195,7 +1193,6 @@ mod templates {
                 Module::new("z").template::<Badge>(),
             ],
             Intents::empty(),
-            None,
         );
         assert!(violations.is_empty());
         assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);

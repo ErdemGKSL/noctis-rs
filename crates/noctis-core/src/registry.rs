@@ -136,8 +136,6 @@ impl Registry {
     /// is not in `requested`, in fold order, then one
     /// [`BuildViolation::Command`] per command rule broken after merging
     /// every Module's commands (`validate_merge` order), then one
-    /// [`BuildViolation::CommandLocalization`] per localized command text
-    /// from `strings` that breaks LOC-02 or LOC-03, then one
     /// [`BuildViolation::DuplicateRoute`] per extra handler of a Route id
     /// and one [`BuildViolation::UnmountedRoute`] per (Module, Route) a
     /// Module `uses` without a mounted handler, each in fold order, then
@@ -145,11 +143,7 @@ impl Registry {
     /// that no before-Middleware on the handler's Module path provides,
     /// then one [`BuildViolation::DuplicateTemplate`] per extra
     /// registration of a Template id, in fold order.
-    pub(crate) fn fold(
-        roots: &[Module],
-        requested: Intents,
-        strings: Option<&noctis_i18n::AppStrings>,
-    ) -> (Self, Vec<BuildViolation>) {
+    pub(crate) fn fold(roots: &[Module], requested: Intents) -> (Self, Vec<BuildViolation>) {
         let mut entries = Vec::new();
         let mut folded = Vec::new();
         let mut route_entries = Vec::new();
@@ -228,7 +222,7 @@ impl Registry {
             }
         }
         let droppable = droppable_events(&by_dispatch, !entries.is_empty());
-        let (commands, command_violations) = Commands::fold(&folded, strings);
+        let (commands, command_violations) = Commands::fold(&folded);
         violations.extend(command_violations);
         let (routes, signed) = fold_routes(route_entries, &mut violations);
         check_uses(&folded, &routes, &mut violations);

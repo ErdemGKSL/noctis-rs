@@ -540,5 +540,3 @@ fn errors_name_route_and_code() {
         text.contains("PUT /applications/7/commands") && text.contains("HTTP 400 (code 50035)")
     );
 }
-
-mod localize;

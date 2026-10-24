@@ -1,4 +1,0 @@
-# Story 11.4: the default-locale file of the `#[command]` trybuild fixtures.
-cmd:
-  ping:
-    description: Pong

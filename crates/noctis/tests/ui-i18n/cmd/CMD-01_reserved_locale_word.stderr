@@ -1,7 +1,0 @@
-error: [CMD-01] config opt: limit a word other than `name`, `description` or `opt` when locale files are read, actual `opt`
-         = note: `opt` is ambiguous in the `cmd.<path>` keys of `../../fixtures/i18n/cmdkeys/en-US.yaml`
-         = help: rename the word `opt`
- --> tests/ui-i18n/cmd/CMD-01_reserved_locale_word.rs:7:5
-  |
-7 |     "config opt",
-  |     ^^^^^^^^^^^^

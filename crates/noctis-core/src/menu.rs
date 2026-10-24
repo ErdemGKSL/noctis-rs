@@ -109,8 +109,6 @@ pub struct ContextMenuHandler {
     call: Arc<ErasedMenu>,
     /// The Extension types its `Ext<T>` parameters require.
     requires: &'static [crate::kind::__ExtType],
-    /// The `ctxcmd.<key>.name` locale key segment.
-    key: Option<&'static str>,
 }
 
 impl ContextMenuHandler {
@@ -143,7 +141,6 @@ impl ContextMenuHandler {
             auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
             requires: &[],
-            key: None,
         }
     }
 
@@ -176,7 +173,6 @@ impl ContextMenuHandler {
             auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
             requires: &[],
-            key: None,
         }
     }
 
@@ -212,32 +208,6 @@ impl ContextMenuHandler {
     /// `CommandResponder<Manual>` (INT-05).
     pub fn auto_defer(&self) -> bool {
         self.auto_defer
-    }
-
-    /// The declared `key = "…"`: the segment of its `ctxcmd.<key>.name`
-    /// locale key, which Publish localizes the menu name with; `None`
-    /// without one (the name is never localized).
-    pub fn key(&self) -> Option<&'static str> {
-        self.key
-    }
-
-    /// Sets the locale key segment; what the macros bind for
-    /// `key = "…"`.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn __with_key(self, key: &'static str) -> Self {
-        Self {
-            key: Some(key),
-            ..self
-        }
-    }
-
-    /// [`__with_key`](Self::__with_key) when `key` is `Some`.
-    pub(crate) fn __with_key_opt(self, key: Option<&'static str>) -> Self {
-        match key {
-            Some(key) => self.__with_key(key),
-            None => self,
-        }
     }
 
     /// Replaces the ephemerality; what the macros append for
@@ -283,7 +253,6 @@ impl fmt::Debug for ContextMenuHandler {
             .field("ephemerality", &self.ephemerality)
             .field("auto_defer", &self.auto_defer)
             .field("metadata", &self.metadata)
-            .field("key", &self.key)
             .finish_non_exhaustive()
     }
 }

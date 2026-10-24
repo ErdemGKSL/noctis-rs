@@ -1,8 +1,0 @@
-# Story 11.4: a catalog whose localized option name collides at App-build
-# (row 34): `i18n!` cannot see `user`, whose description is a literal.
-cmd:
-  clash:
-    description: Clash
-    opt:
-      reason:
-        description: Why
