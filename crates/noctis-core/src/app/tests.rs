@@ -3581,7 +3581,7 @@ fn shard_range_violation_messages() {
             total: 4
         }
         .to_string(),
-        "shard range 2..5 exceeds the shard total 4: shard ids run from 0 to 4-1"
+        "shard range 2..5 exceeds the shard total 4: the end must be at most 4"
     );
 }
 

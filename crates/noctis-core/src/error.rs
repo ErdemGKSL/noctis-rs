@@ -263,8 +263,8 @@ pub enum BuildViolation {
     /// assert!(violation.to_string().contains("exceeds the shard total 4"));
     /// ```
     #[error(
-        "shard range {start}..{end} exceeds the shard total {total}: shard ids run from 0 to \
-         {total}-1"
+        "shard range {start}..{end} exceeds the shard total {total}: the end must be at most \
+         {total}"
     )]
     ShardRangeOutOfBounds {
         /// The range's first shard id.

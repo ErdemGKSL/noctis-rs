@@ -2,7 +2,7 @@
 title: 'Story 12.1: Shard Ranges and Cluster-wide identify'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'bac31939debd24efd45f52ffb56cda814a75d1b1'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -162,6 +162,35 @@ Publisher:
 
 ## Review Triage Log
 
+### 2026-10-23 — Review pass
+- verdicts: 25 findings — high 0, medium 2, low 9, false 14, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` Skill Cluster example hard-codes a 16-bucket shared `MemoryIdentifyQueue` — confirmed: `memory/identify.rs` rejects buckets >= size with `PortError::InvalidValue` and `queue.rs` retries forever, so bots with `max_concurrency` > 16 (the big bots Clusters are for) never identify those shards; patch: Skill states the queue needs at least `max_concurrency` buckets (grouped with the edge finding on the same line).
+  - `[low]` `[patch]` GW-02 check is per process only and the docs do not say so — `sharding::plan` compares `remaining` with the range length per process; the Cluster total is unchecked; patch: one clause in `docs/discord-rules.md` GW-02 How text and the Skill §4 bullet.
+  - `[low]` `[reject]` Range-misalignment warning fires when `max_concurrency >= total` though no bucket is split — real spurious warning, but the alignment formula is fixed by the intent contract (P4/P6) and Design Notes, Clusters are for totals far above `max_concurrency`, and the fix adds branches.
+  - `[low]` `[patch]` `ShardRangeOutOfBounds` message prints "0 to 4-1" — confirmed by the `shard_range_violation_messages` assertion; patch: message ends "the end must be at most {total}", test updated.
+  - `[low]` `[reject]` `ShardConfigError::InvalidShardRange` is a unit variant without context — `App` validates the range at `build()` first, so only direct `noctis-gateway` callers can see it; adding fields adds public surface.
+  - `[false]` `[reject]` `noctis-rules` not updated for changed GW-01/02/03 text — `crates/noctis-rules/src/rule.rs` holds only the rule ids; no limit value changed and no rule id was added, so `rules-catalog` has nothing to update.
+  - `[false]` `[reject]` Startup info line `starting shards a..b of n` has no test — the line exists (`app.rs:995`), so the Skill's promise holds; the bad outcome (missing/wrong line) does not occur.
+  - `[false]` `[reject]` `shard_range_runs_only_its_shards` does not prove G3 — G3 is proven by the unit test `startup_waits_only_for_the_shard_range` (`app/tests.rs:3624`); the integration test only adds G1/P7.
+  - `[false]` `[reject]` C1 test may flake on a 200 ms sleep and never runs App B past READY — `start_run` waits for READY on each App's gateway before returning, and publishing precedes `GET /gateway/bot`, so all asserted requests are recorded before the sleep and B has passed READY.
+  - `[low]` `[reject]` "all N shards ready" log lacks the range — the intent contract (G3) specifies `all 2 shards ready`, and the preceding `starting shards a..b of n` INFO line gives the range.
+  - `[low]` `[reject]` Unrelated `tools/story-loop/gates.sh` change in the diff — a one-line tooling export the story loop needs; it changes no product behaviour, so separating it buys nothing.
+  - `[low]` `[patch]` Skill Cluster example calls `App::from_env()` twice, so App `b` inherits `NOCTIS_PUBLISHER` — confirmed; patch: `.publisher(false)` on `b`.
+  - `[low]` `[reject]` `GatewayOptions` gains a required public field — mandated by the Code Map, recorded in `xtask/public-api.txt`; a constructor helper would add public surface for a sub-crate struct only noctis-core builds.
+  - `[false]` `[reject]` No test for a `from_env` range without total failing at `build()` — `from_env_shard_range_reaches_the_app` shows the env value reaches the builder, and the B3/B9 builder tests cover the same `build()` path; no failure mode exists between them.
+  - `[medium]` `[patch]` (edge) Shared `MemoryIdentifyQueue` sized 16 below `max_concurrency` starves buckets >= 16 — same root cause and fix as the first row.
+  - `[low]` `[reject]` (edge) No warning when a Shard Range runs with the default per-App `IdentifyQueue` — real misconfiguration risk, but the Skill's Cluster checklist names `IdentifyQueue` as a shared Adapter, FR-3 leaves the adapter to the operator, Discord answers bucket over-concurrency with a retryable invalid session, and the fix adds a new runtime guard.
+  - `[false]` `[reject]` (intent 1) Paused-clock proof not at App level — deliberately and correctly settled in Design Notes: `App::run` needs a multi-thread runtime and tokio's paused clock needs `current_thread`; G6/G7 plus G9 cover the AC.
+  - `[false]` `[reject]` (intent 2) In-process sharing only, not cross-process — the epics AC itself uses "two in-process Apps standing in for two processes"; cross-process sharing is an operator Adapter per FR-3/FR-38.
+  - `[false]` `[reject]` (intent 3) Half-open notation vs the AC's "32-63" — settled in Design Notes; the same shards run.
+  - `[false]` `[reject]` (intent 4) Range requires a fixed total — settled in Design Notes with a correct rationale (recommended totals can change between process starts).
+  - `[false]` `[reject]` (intent 5) Alignment definition R3b — settled in the intent contract (P4) and Design Notes.
+  - `[false]` `[reject]` (intent 6) No Cluster-configuration entity / 200 ms window — the AC's Given is that exactly one process sets the flag; `start_run` waits for READY, so the window covers READY.
+  - `[false]` `[reject]` (intent 7) Diff cannot show `skill-check` passes — a gate result, verified by the gate run, not a diff defect.
+  - `[false]` `[reject]` (intent 8) Rules catalog not touched — see the `noctis-rules` row: only rule ids live there, none changed.
+  - `[false]` `[reject]` (intent 9) Readiness/gauges scoped to the range — follows directly from "runs only its shards"; covered by unit tests.
+
 ## Design Notes
 
 - **Half-open notation** (decision): `start..end` matches Rust's `Range<u32>` and the Skill's existing Cluster example; "shards 32–63 of 128" is `32..64` with total 128. One notation for builder and env avoids off-by-one translation.
@@ -192,3 +221,12 @@ Run from `/home/claude/lanes/c/noctis-rs`, release only:
 - `cargo run --release -p xtask -- deps-check` / `-- rules-catalog` / `-- api-snapshot --bless` then `-- api-snapshot` / `-- skill-check` -- expected: exit 0; SKILL.md `API hash` equals the printed hash
 - `cargo deny check` -- expected: exit 0
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
+
+## Auto Run Result
+
+- **Summary:** Shard Ranges (`App::builder().shard_range(start..end)` / `NOCTIS_SHARD_RANGE`, half-open, requires a fixed total, validated at `build()`) so one process runs a slice of a Cluster; startup readiness and gauges scoped to the range; misalignment warning against `max_concurrency`; `Arc<dyn IdentifyQueue>` shareable so several processes share one cluster-wide identify queue; only one App with `publisher(true)` publishes commands.
+- **Files changed:** `crates/noctis-core/src/{app.rs,sharding.rs,error.rs}` (range builder/env, plan, errors); `crates/noctis-gateway/src/{gateway.rs,queue.rs,shard_config.rs,lib.rs}` (range-aware shard start, shared PortQueue); `crates/noctis-ports/src/{identify.rs,lib.rs}` (Arc impl); testkit `cluster.rs`, `shard_range_warning.rs`, `sharding.rs`, `publish.rs` plus field updates; `docs/discord-rules.md` GW-01/02/03; project-template Skill, references, `.env.example`, `AGENTS.md`, `README.md`; `xtask/public-api.txt`; `tools/story-loop/gates.sh` (one export).
+- **Review findings:** 25 (high 0, medium 2, low 9, false 14). Patched: 2 medium (shared `MemoryIdentifyQueue` must have at least `max_concurrency` buckets, Skill example fixed), 3 low (GW-02 per-process note, `ShardRangeOutOfBounds` message, `.publisher(false)` on second App). Deferred: none. Rejected: misalignment warning when `max_concurrency >= total` (formula fixed by contract); unit `InvalidShardRange` variant (App validates first); no default-queue warning for ranges (operator adapter per FR-3); log text per G3; gates.sh tooling line; `GatewayOptions` required field (Code Map); 14 false positives with reasons in the triage log.
+- **Follow-up review recommended:** false (patched: high 0, medium 2 on a follow-up-pass basis; no unverified risk named; orchestrator runs follow-ups only after a patched high).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** Cluster total of `remaining` identifies is not checked across processes (documented); cross-process identify sharing needs an operator Adapter; paused-clock proof is at PortQueue level, App level uses real clock with 4.5 s tolerance.

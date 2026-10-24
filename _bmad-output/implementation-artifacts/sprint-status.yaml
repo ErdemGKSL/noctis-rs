@@ -145,8 +145,8 @@ development_status:
   11-5-runtime-locale-overlays-through-localesource: backlog
   epic-11-retrospective: optional
 
-  epic-12: backlog
-  12-1-shard-ranges-and-cluster-wide-identify: in-progress
+  epic-12: in-progress
+  12-1-shard-ranges-and-cluster-wide-identify: done
   12-2-session-resume-through-the-sessionstore: backlog
   12-3-resumable-shutdown: backlog
   12-4-shared-http-rate-limiting-through-a-proxy: backlog

@@ -453,7 +453,8 @@ max_concurrency` on every process.
   processes`), and startup continues.
 - Startup refuses with `StartError::SessionStartLimit { required, remaining,
   reset_after }` when `session_start_limit.remaining` can't cover the shards this
-  process identifies (its Shard Range, or the whole total; GW-02). It is returned
+  process identifies (its Shard Range, or the whole total; GW-02); the check is per
+  process and does not cover the Cluster's total session starts. It is returned
   before any connection opens. GW-03 (`ShardTotalTooSmall`) still checks the total,
   and runs first.
 - Each Shard is its own task: it reads, parses, filters and enqueues; it never awaits a
@@ -493,7 +494,10 @@ all:       NOCTIS_HTTP_PROXY=http://proxy:3000  NOCTIS_PAYLOAD_KEY=<same>  NOCTI
 Every process identifies through one shared `IdentifyQueue` (`.identify_queue(..)`), so
 each bucket identifies once per 5 s across the whole Cluster. Across processes that is
 an Adapter backed by a shared store (`adapters.md`); for several Apps in one process,
-hand each the same instance behind an `Arc`:
+hand each the same instance behind an `Arc`. A queue you supply (shared or not) must
+have at least Discord's `max_concurrency` buckets (from `GET /gateway/bot`): a shard
+whose bucket is past the queue's size never identifies. The `16` below stands for that
+value:
 
 ```rust
 use std::sync::Arc;
@@ -503,7 +507,7 @@ let queue = Arc::new(MemoryIdentifyQueue::new(std::num::NonZeroU16::new(16).unwr
 let a = App::from_env()?.shard_total(128).shard_range(0..64)
     .identify_queue(Arc::clone(&queue)).publisher(true).build()?;
 let b = App::from_env()?.shard_total(128).shard_range(64..128)
-    .identify_queue(queue).build()?;
+    .identify_queue(queue).publisher(false).build()?;
 ```
 
 `.identify_queue(..)` never takes `Shared::new(..)`: the queue is keyed by bucket, not
