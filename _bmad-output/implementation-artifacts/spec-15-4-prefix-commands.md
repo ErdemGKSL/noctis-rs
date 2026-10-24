@@ -2,16 +2,23 @@
 title: 'Story 15.4: Prefix commands'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '10675ec451c684adbc8bf3183eb3a99e2066b0c0'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-15-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template's new `prefix` feature path (`examples/project-template/src/lib.rs` `#[cfg(feature = "prefix")]` block, `prefix` feature, `Profile`/`Badge` re-exports) is compiled by no gate.
+    evidence: |-
+      The template is excluded from the workspace, `cargo hack --each-feature` does not reach it, and the disabled `template-build` CI job is tracking-only (`continue-on-error: true`) and builds default features only. A triage check with the workspace lock showed the template already fails to build for pre-existing reasons (planned `rate_limit`, remote `#[asset]`, `noctis::id`), so the prefix block cannot be verified until Story 14.2 makes `template-build` blocking; that job should then also build with `--features prefix`.
+    location: >-
+      examples/project-template/src/lib.rs:65-76
+    severity: medium
 ---
 
 <intent-contract>
@@ -152,6 +159,36 @@ Setup unless noted: prefix `!`; opted-in `Warn` at path `warn` with options `use
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 26 findings — high 0, medium 8, low 7, false 11, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) `resolve_user` drops `Mention.member`/`message.member`, so `ResolvedUser.member` is always `None` — the intent's Never list settles it ("`members` in the resolved data stay empty"); `InteractionMember` needs `permissions`, which a message lacks; the skill documents `ResolvedUser.member` is `None`.
+  - `[false]` `[reject]` (blind) DM-allowed Commands need `DIRECT_MESSAGES`, not added by the plugin — spec D6 deliberately leaves it to the author and `commands.md` §9 says "DMs also need `DIRECT_MESSAGES`, which you request yourself".
+  - `[false]` `[reject]` (blind) opted-in but unmounted Command is not a build violation — intent row R40 and D1 settle it: `UnknownCommand` is ignored with a `debug` log (also needed for guild-scoped mounts in other guilds).
+  - `[medium]` `[patch]` (blind) `response = ephemeral` Commands pass build checks but fail every prefix run with `EphemeralUnsupported` — verified: `Opted` does not read `T::EPHEMERALITY`, `violations` has no check, the message Responder returns `EphemeralUnsupported` (`responder.rs`), so the user gets no answer; fix: refuse at build like the other unenforceable metadata.
+  - `[low]` `[reject]` (blind) `integration_types` ignored, a UserInstall-only Command runs from a guild message — the bot receiving `MESSAGE_CREATE` is guild-installed there and the Command must be opted in and mounted by the author; unlikely in everyday use and the fix adds a new check branch.
+  - `[medium]` `[defer]` (blind) the template's `prefix` feature is compiled by no gate — real; grouped with the vgap template finding; deferred to Story 14.2 (template already fails to build for pre-existing reasons).
+  - `[low]` `[patch]` (blind) `!pick red extra` reports `UnknownChoice { value: "red extra" }` because a rest-of-line STRING with choices compares the whole remainder — verified in `Binder::bind`/`string`; behaviour follows spec D3, so the fix documents it in `commands.md` §9.
+  - `[false]` `[reject]` (blind) path words lowercase by Unicode, choice names by ASCII — both rules are fixed by the intent (rule "`str::to_lowercase`" for paths, R25 "name ASCII-case-insensitive" for choices); a localized-name clash is an author-declared ambiguity the slash client shares.
+  - `[false]` `[reject]` (blind) OPT-03 reported by two variants (`OutOfRange` beyond i64, `Constraint` within i64) — intent rows R16 and R17 select exactly these two variants.
+  - `[low]` `[patch]` (blind) `commands.md` §9 says "Anything left over is an error" while extra message attachments are silently ignored — verified: `Binder::bind` consumes attachments only per ATTACHMENT option; fix: say extra attachments are ignored.
+  - `[low]` `[reject]` (blind) parse tests miss extra attachments, several ATTACHMENT options, bare author id for MENTIONABLE, `<#id>` for MENTIONABLE, missing-after-present — the code paths behave correctly on reading (`Binder::value`, `bind`); test-only additions with no observed defect.
+  - `[medium]` `[patch]` (blind) e2e covers only one guild success, one `WrongType`, a bot message, and asserts absence after a fixed 100 ms sleep — grouped with the vgap wiring finding (same root cause: `on_message` wiring not exercised end to end); fix below.
+  - `[low]` `[reject]` (blind) `is_ignored` does not check `author.system` — Discord system-user messages reaching a bot with the prefix text are not met in everyday use; the docs' "system messages" means non-Regular kinds, which are ignored.
+  - `[medium]` `[patch]` (edge) ephemeral Command opted in builds, then fails every run — same defect as the blind ephemeral finding; same fix.
+  - `[low]` `[reject]` (edge) `""` binds an empty STRING to a required option — real but needs a user to type an explicit empty quote; the fix adds a branch with an open design question (absent vs. error vs. skipping, which spec D3 forbids).
+  - `[low]` `[reject]` (edge) `image`/`video`/`audio` `file_types` reject an attachment without `content_type` — Discord sets `content_type` for media uploads; unlikely in practice and the fix adds an extension-family table.
+  - `[medium]` `[patch]` (vgap, pre-verified) `on_message`'s `contexts` argument and `guild_id` forwarding are verified by no test (inverting `allowed(..)` or dropping `.guild_id(..)` passes every test) — fix: e2e test with a `contexts = [Guild]` guild-scoped Command, a guild message (reply + recorded `Some(guild)`) and a DM message (no request), absence asserted after a later served message instead of a sleep.
+  - `[medium]` `[defer]` (vgap, pre-verified) template `prefix` path compiled by no gate — deferred as filed (Story 14.2 makes `template-build` blocking); recorded in `deferred`.
+  - `[false]` `[reject]` (intent D1) opt-in by type on the plugin instead of a Command flag — the intent contract's Approach and Never list (no macro argument) select R1b deliberately.
+  - `[false]` `[reject]` (intent D2) core gains seams — the intent contract lists exactly these prefix-agnostic seams; no parsing code is in core.
+  - `[false]` `[reject]` (intent D3) new `OptionError::Constraint` — intent contract and D2 select it for limits Discord enforces only on slash; delivered through the same notice/sink path.
+  - `[false]` `[reject]` (intent D4) `MissingIntent` whenever the plugin is installed, even with zero Commands — with zero Commands P4 already fails the build, so the observable outcome (build fails) is the same under either reading.
+  - `[medium]` `[patch]` (intent D5) Commands accepted at build that cannot run the same way — the ephemeral part is the real defect (grouped with the ephemeral entry); `Resolved*`/member limits and `contexts` handling are settled by spec D5 and the intent rules.
+  - `[false]` `[reject]` (intent D6) no prefix test exercises stages 3-10 — the plugin enters the same `Dispatcher::run_command` whose Story 6.5 tests cover those stages; no prefix-specific stage logic exists.
+  - `[false]` `[reject]` (intent D7) feature-off AC holds only by construction — the optional dependency makes it hold, and the spec's Verification runs `cargo tree -p noctis -e normal | grep -c noctis-prefix` (0).
+  - `[medium]` `[defer]` (intent D8) feature-matrix AC and template prefix feature not built — `prefix` alone is the epic-last `cargo hack` gate by maintainer decision (2026-10-23); the template part is the deferred template entry.
+
 ## Design Notes
 
 Decisions (log each as a `(decision)` line in the architecture memlog):
@@ -184,3 +221,15 @@ b.intents(Intents::MESSAGE_CONTENT)
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- pass
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run by the gate script (last story of Epic 15), not by the implementer.
+
+## Auto Run Result
+
+- **Summary:** Implemented `PrefixPlugin` in `noctis-prefix` (facade feature `prefix`, off by default). Authors opt slash Commands in by type (`PrefixPlugin::new("!").command::<T>()`). `install` validates the config (P1-P6, plus ephemeral Commands) and mounts a `MESSAGE_CREATE` handler that requires `MESSAGE_CONTENT` (GW-05). The handler parses the prefix, the Command Path and positional arguments against `OptionDecl`s and runs `Dispatcher::run_command`. Core gains only prefix-agnostic seams: `CommandInput::with_error`/`error`/`with_resolved`, `OptionError::Constraint`, the hidden `EventHandler::__with_intents`, a privileged/non-privileged intent fold split, and a hidden `__rules` re-export.
+- **Files changed:** `crates/noctis-core/src/{options,command,handler,registry,pipeline,lib}.rs` and tests (seams, handler short-circuit, GW-05 mixed-intent fold); `crates/noctis-prefix/{Cargo.toml,src/lib.rs,src/parse.rs,src/parse/tests.rs}` (the plugin, tokenizer/binder, matrix tests); `crates/noctis/{Cargo.toml,src/lib.rs,tests/prefix_e2e.rs}` (optional dependency, `noctis::prefix`, e2e); `docs/discord-rules.md` (GW-05 row); `examples/project-template/` (Cargo feature, lib.rs block, AGENTS.md, Usage Skill commands/app-and-sharding/responder/troubleshooting, API hash); `xtask/{public-api.txt,src/api_snapshot.rs}`; `.github/workflows-disabled/ci.yml` (prefix feature test lines); architecture memlog.
+- **Review findings:** 26 (high 0, medium 8, low 7, false 11).
+  - Patched (medium 4 entries, low 2): ephemeral Commands are now an install violation, because the message Responder cannot send ephemeral replies (blind, edge and intent D5 entries grouped). A new e2e covers the `contexts` and `guild_id` forwarding wiring (vgap entry and blind e2e-coverage entry grouped). Docs: a rest-of-line STRING with choices compares the whole remainder, and extra attachments are ignored.
+  - Deferred (medium 3): the template `prefix` feature path is compiled by no gate and goes to Story 14.2 (`template-build` blocking, also with `--features prefix`). The feature-matrix AC is covered by the epic-last `cargo hack` gate.
+  - Rejected: member data in the resolved users (the intent says members stay empty); `DIRECT_MESSAGES` not added (D6); unmounted Command not a violation (R40); `integration_types` ignored; Unicode vs ASCII case rules (fixed by the intent); two OPT-03 variants (R16/R17); extra parse tests with no defect; `author.system`; an explicit `""` empty STRING; media `file_types` without `content_type`; intent D1-D4, D6 and D7 (each settled by the intent contract).
+- **Follow-up review recommended:** true. The first pass patched 4 medium entries and no high. Named risk: a second review has not checked the new ephemeral-Command install violation or the new contexts/guild_id e2e wiring test.
+- **Verification:** all local gates passed in `tools/story-loop/gates.sh` (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI is paused by the maintainer.
+- **Residual risks:** no gate builds the template's prefix block until Story 14.2. `""` binds an empty STRING. `image`/`video`/`audio` file_type filters depend on `content_type`.

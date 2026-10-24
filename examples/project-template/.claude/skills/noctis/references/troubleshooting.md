@@ -132,6 +132,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `` plugin `noctis_prefix::PrefixPlugin`: prefix is empty `` / `prefix contains whitespace` / `prefix is longer than 32 characters` | a prefix of 1 to 32 Unicode scalars without whitespace (`"!"`, `"?"`, `"ş>"`) |
 | `` plugin `noctis_prefix::PrefixPlugin`: no Command is opted in: add `.command::<T>()` `` | opt at least one `#[derive(SlashCommand)]` struct in |
 | `` `bot::Ban` cannot be a prefix command: it declares `permissions` `` (or `nsfw = true`, or ``its option `x` declares `channel_types` ``), `which a message cannot enforce` | do not opt that Command in; prefix commands cannot check member permissions, age gates or channel types |
+| `` `bot::Secret` cannot be a prefix command: it declares `response = ephemeral`, which a message cannot enforce `` | drop `response = ephemeral` or do not opt that Command in; a prefix command answers with a public message reply |
 | ``Command Path `warn` is opted in by both `a::Warn` and `b::Warn` `` | opt in only one of the two types |
 | no font registered | enable `default-font` or `ImageConfig::font(..)` |
 | animation name `spin` redefined | rename your keyframes |

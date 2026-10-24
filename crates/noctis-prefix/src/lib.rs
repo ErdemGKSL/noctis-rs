@@ -17,7 +17,7 @@ use noctis_core::__rules::command::{OptionDecl, OptionType};
 use noctis_core::events::{EventCtx, MessageCreate};
 use noctis_core::{
     __SlashCommand, AppBuilder, BuildViolation, CommandInvocation, CommandMetadata, DispatchError,
-    EventHandler, HandlerResult, Module, Plugin,
+    Ephemerality, EventHandler, HandlerResult, Module, Plugin,
 };
 use twilight_model::channel::Message;
 use twilight_model::gateway::Intents;
@@ -77,6 +77,8 @@ struct Opted {
     paths: &'static [&'static str],
     options: &'static [OptionDecl<'static>],
     metadata: CommandMetadata,
+    /// The declared `response`.
+    ephemerality: Ephemerality,
 }
 
 impl PrefixPlugin {
@@ -92,9 +94,10 @@ impl PrefixPlugin {
     /// Opts the slash Command `T` in: each of its Command Paths can be
     /// typed after the prefix. Opting the same type in twice is a no-op.
     ///
-    /// A Command that declares `permissions`, `nsfw = true` or a CHANNEL
-    /// option with `channel_types` cannot be opted in (a build violation),
-    /// because a message carries no data to enforce them.
+    /// A Command that declares `permissions`, `nsfw = true`,
+    /// `response = ephemeral` or a CHANNEL option with `channel_types`
+    /// cannot be opted in (a build violation), because a message cannot
+    /// enforce them.
     #[must_use]
     pub fn command<T: __SlashCommand>(self) -> Self {
         self.opt(Opted {
@@ -103,6 +106,7 @@ impl PrefixPlugin {
             paths: T::PATHS,
             options: T::OPTIONS,
             metadata: T::METADATA,
+            ephemerality: T::EPHEMERALITY,
         })
     }
 
@@ -146,6 +150,9 @@ impl PrefixPlugin {
             }
             if opted.metadata.nsfw == Some(true) {
                 out.push(refuse("it declares `nsfw = true`".to_owned()));
+            }
+            if opted.ephemerality == Ephemerality::Ephemeral {
+                out.push(refuse("it declares `response = ephemeral`".to_owned()));
             }
             for option in opted.options {
                 if option.kind == OptionType::Channel && !option.channel_types.is_empty() {
@@ -242,6 +249,7 @@ mod tests {
             paths,
             options: &[],
             metadata: CommandMetadata::new(),
+            ephemerality: Ephemerality::Public,
         }
     }
 
@@ -307,17 +315,22 @@ mod tests {
         nsfw.metadata = CommandMetadata::new().nsfw(true);
         let mut channel = opted::<u8>("bot::Move", &["move"]);
         channel.options = &CHANNEL;
+        let mut ephemeral = opted::<u16>("bot::Secret", &["secret"]);
+        ephemeral.ephemerality = Ephemerality::Ephemeral;
         let violations = PrefixPlugin::new("!")
             .opt(perms)
             .opt(nsfw)
             .opt(channel)
+            .opt(ephemeral)
             .violations();
-        assert_eq!(violations.len(), 3, "{violations:?}");
+        assert_eq!(violations.len(), 4, "{violations:?}");
         assert!(violations[0].starts_with("`bot::Ban` cannot be a prefix command"));
         assert!(violations[0].contains("`permissions`"));
         assert!(violations[1].starts_with("`bot::Lewd`") && violations[1].contains("nsfw"));
         assert!(violations[2].starts_with("`bot::Move`"));
         assert!(violations[2].contains("`where` declares `channel_types`"));
+        assert!(violations[3].starts_with("`bot::Secret` cannot be a prefix command"));
+        assert!(violations[3].contains("`response = ephemeral`"));
 
         let mut fine = opted::<A>("bot::Fine", &["fine"]);
         fine.metadata = CommandMetadata::new()

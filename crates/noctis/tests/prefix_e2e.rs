@@ -169,9 +169,17 @@ async fn prefix_runs_the_slash_handler() {
     );
     assert_eq!(SEEN.lock().unwrap().len(), 1);
 
-    // The bot's message never got an answer.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(wait_sent(&app, 2).await.len(), 2);
+    // The bot's message never got an answer: a later message is served,
+    // and nothing replied to message 5.
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(8, "!warn <@5> 4", &person()));
+    let sent = wait_sent(&app, 3).await;
+    assert_eq!(sent.len(), 3);
+    assert_eq!(body(&sent[2])["message_reference"]["message_id"], "8");
+    assert!(
+        sent.iter()
+            .all(|r| body(r)["message_reference"]["message_id"] != "5")
+    );
     app.stop().await.unwrap();
 }
 
@@ -255,4 +263,54 @@ async fn plugin_violations() {
     assert!(messages[0].starts_with("prefix is empty"));
     assert!(messages[1].contains("Ban` cannot be a prefix command"));
     assert!(messages[1].contains("`permissions`"));
+}
+
+/// What the guild-only handler saw as `ctx.guild_id()`.
+static GUILD_SEEN: Mutex<Vec<Option<u64>>> = Mutex::new(Vec::new());
+
+#[derive(SlashCommand)]
+#[command("here", description = "Guild only", contexts = [Guild])]
+struct Here;
+
+impl Here {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        GUILD_SEEN.lock().unwrap().push(ctx.guild_id().map(Id::get));
+        ctx.reply_text("here").await
+    }
+}
+
+/// `contexts` gates the place (a DM is ignored) and the guild id reaches the
+/// handler.
+#[tokio::test(flavor = "multi_thread")]
+async fn prefix_contexts_and_guild_id() {
+    let mut builder = App::builder();
+    builder
+        .intents(Intents::MESSAGE_CONTENT | Intents::DIRECT_MESSAGES)
+        .module(Module::new("mod").add::<Here>())
+        .plugin(PrefixPlugin::new("!").command::<Here>());
+    let app = TestApp::build(&mut builder).await.unwrap();
+    app.http_fake().route(
+        Method::POST,
+        CHANNEL,
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
+    );
+
+    let mut dm = message(10, "!here", &person());
+    dm.as_object_mut().unwrap().remove("guild_id");
+    dm["channel_id"] = json!("8");
+    app.gateway_fake().dispatch("MESSAGE_CREATE", dm);
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(11, "!here", &person()));
+    let sent = wait_sent(&app, 1).await;
+    assert_eq!(sent.len(), 1);
+    assert_eq!(body(&sent[0])["message_reference"]["message_id"], "11");
+    assert_eq!(*GUILD_SEEN.lock().unwrap(), [Some(9)]);
+    assert!(
+        app.http_fake()
+            .requests()
+            .iter()
+            .all(|r| r.route_path() != Some("/channels/8/messages"))
+    );
+    app.stop().await.unwrap();
 }

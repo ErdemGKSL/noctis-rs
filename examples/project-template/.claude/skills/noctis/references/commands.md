@@ -943,15 +943,17 @@ builder
   option, when it is a STRING**, takes the rest of the line verbatim, trimmed
   (`!say hello  big world` → `"hello  big world"`), unquoted only when the rest is exactly
   one quoted argument. ATTACHMENT options take the message's attachments in order and
-  consume no text. Anything left over is an error.
+  consume no text. Leftover text is an error; attachments beyond the ATTACHMENT options
+  are ignored. A rest-of-line STRING with choices compares the whole remainder
+  (`!pick red extra` → `UnknownChoice { value: "red extra" }`, not `Malformed`).
 - **Ignored messages** (no request, nothing above `debug`): bot authors, webhook
   messages, system messages (only `Regular` and `Reply` kinds run), text without the
   prefix or an opted-in path, and Commands whose `contexts` exclude the place (a guild
   message needs `Guild`, a DM `BotDm`; no `contexts` allows both). Edited messages are
   not handled.
 - **The answer** is the Dispatcher's message transport (`responder.md` §4.1): a public
-  reply to the invoking message. A Command declared `response = ephemeral` fails with
-  `EphemeralUnsupported`, so opt in only public Commands.
+  reply to the invoking message. A Command declared `response = ephemeral` is refused at
+  build (below), because a message reply cannot be ephemeral.
 
 | Option type | Accepted argument |
 | --- | --- |
@@ -985,8 +987,8 @@ reply, and the Command Error Sink gets the error.
 | `!flag true 1.5 extra`, `!ping x` (unit Command) | ``Malformed { reason: "unexpected argument `extra`" }`` |
 
 **Refused at build** (`BuildViolation::Plugin` naming `PrefixPlugin`), because a message
-carries no data to enforce them: a Command declaring `permissions`, `nsfw = true`, or a
-CHANNEL option with `channel_types`; also an empty prefix, a prefix with whitespace or
+cannot enforce them: a Command declaring `permissions`, `nsfw = true`,
+`response = ephemeral`, or a CHANNEL option with `channel_types`; also an empty prefix, a prefix with whitespace or
 over 32 characters, no `.command::<T>()`, and two opted-in types sharing a Command Path
 (see `troubleshooting.md`).
 

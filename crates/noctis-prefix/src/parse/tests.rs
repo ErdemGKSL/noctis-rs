@@ -471,6 +471,7 @@ fn opted<T: 'static>(
         name: "bot::T",
         paths,
         options,
+        ephemerality: noctis_core::Ephemerality::Public,
         metadata: CommandMetadata::new(),
     }
 }
