@@ -137,7 +137,7 @@ development_status:
   10-11-pixel-snapshots-and-the-reference-card-benchmark: backlog
   epic-10-retrospective: optional
 
-  epic-11: in-progress
+  epic-11: done
   11-1-i18n-typed-content-strings: done
   11-2-module-scoped-locale-catalogs: done
   11-3-user-and-guild-locale-resolution: done
