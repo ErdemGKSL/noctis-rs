@@ -2,7 +2,8 @@
 title: 'Story 13.3: Runtime Module enable and disable'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '1b919f03e784dfda74056690fa928e149571edc0'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
