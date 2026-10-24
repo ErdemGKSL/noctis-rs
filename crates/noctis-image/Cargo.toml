@@ -22,6 +22,15 @@ render = [
   "dep:tokio",
   "dep:bytes",
   "dep:image",
+  "dep:serde",
+  "dep:twilight-model",
+  "dep:futures-util",
+  "dep:hyper",
+  "dep:hyper-util",
+  "dep:hyper-rustls",
+  "dep:http-body-util",
+  "dep:rustls",
+  "dep:rustls-platform-verifier",
 ]
 # GIF and APNG output (the facade's `image-gif`). takumi-raster always links
 # its GIF/PNG encoders, so this gates Noctis code only.
@@ -35,12 +44,35 @@ default-font = ["render"]
 blake3.workspace = true
 bytes = { workspace = true, optional = true }
 cssparser.workspace = true
+futures-util = { workspace = true, optional = true }
+# `render`: the AssetFetcher's HTTP client (IMG-03, AD-15; deps-check
+# `asset-http`): hyper-util's legacy `Client` over hyper-rustls, ring and the
+# platform verifier. It never follows redirects.
+http-body-util = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true, features = ["client", "http1", "http2"] }
+hyper-rustls = { workspace = true, optional = true, features = [
+  "http1",
+  "http2",
+  "ring",
+  "tls12",
+  "rustls-platform-verifier",
+] }
+hyper-util = { workspace = true, optional = true, features = [
+  "client-legacy",
+  "http1",
+  "http2",
+  "tokio",
+] }
 # `render`: resamples rendered frames for the size budget's size steps, and
 # reads static image headers (PNG, JPEG, WebP) before they are decoded.
 image = { workspace = true, optional = true, features = ["png", "jpeg", "webp"] }
 noctis-core = { workspace = true, optional = true }
 noctis-ports = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-platform-verifier = { workspace = true, optional = true }
+# `render`: `RemoteImage` is Template data.
+serde = { workspace = true, optional = true }
 # `rayon`: takumi's internal parallelism runs on whichever pool executes the
 # job, which is the render pool. `woff2` loads WOFF2 fonts (the bundled Inter);
 # `png`, `jpeg` and `webp` decode static images. No `woff`, `gif` or
@@ -55,13 +87,23 @@ takumi = { workspace = true, optional = true, features = [
 ] }
 takumi-core = { workspace = true, optional = true }
 thiserror.workspace = true
-tokio = { workspace = true, optional = true, features = ["sync"] }
+tokio = { workspace = true, optional = true, features = ["sync", "rt", "time"] }
 tracing = { workspace = true, optional = true }
+# `render`: `RemoteImage::avatar(&User, ..)` and `guild_icon(&Guild, ..)`.
+twilight-model = { workspace = true, optional = true }
 
 [dev-dependencies]
 png.workspace = true
 serde.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "time",
+] }
 
 [lints]
 workspace = true

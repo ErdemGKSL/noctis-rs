@@ -17,6 +17,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::BoxFuture;
+use crate::store::AssetStore;
 use crate::value::{ValueError, decode_postcard};
 
 /// An image Template: a typed value plus its fixed render settings.
@@ -369,11 +370,13 @@ pub enum RenderCap {
     Duration,
     /// The frame rate of an animation, capped per animated format.
     Fps,
+    /// The distinct remote images one job declares (IMG-03).
+    RemoteImages,
 }
 
 impl RenderCap {
     /// The cap's stable name: `job_pixels`, `frame_pixels`, `frames`,
-    /// `duration_ms` or `fps`.
+    /// `duration_ms`, `fps` or `remote_images`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -382,6 +385,7 @@ impl RenderCap {
             Self::Frames => "frames",
             Self::Duration => "duration_ms",
             Self::Fps => "fps",
+            Self::RemoteImages => "remote_images",
         }
     }
 }
@@ -494,12 +498,60 @@ pub enum RenderError {
         /// The static image id.
         image: String,
     },
+    /// A remote image of an `#[asset(required)]` field could not be fetched,
+    /// was blocked or could not be decoded (IMG-03).
+    #[error(
+        "[IMG-03] template `{id}` requires remote image `{image}`, which could not be used: \
+         {reason}"
+    )]
+    RemoteImage {
+        /// The Template id.
+        id: String,
+        /// The image's display form (never a URL query).
+        image: String,
+        /// Why the image could not be used.
+        reason: String,
+    },
+    /// A Template drew a remote image that no `#[asset]` field declares
+    /// (IMG-03); Noctis never fetches an undeclared image.
+    #[error(
+        "[IMG-03] template `{id}` draws remote image `{image}`, which no `#[asset]` field \
+         declares"
+    )]
+    UndeclaredImage {
+        /// The Template id.
+        id: String,
+        /// The image's display form (never a URL query).
+        image: String,
+    },
 }
 
 impl RenderError {
     /// A render failure; use it as `map_err(RenderError::failed)`.
     pub fn failed(err: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
         Self::Failed(err.into())
+    }
+}
+
+/// The App's ports core hands a [`Renderer`] once they are resolved
+/// ([`Renderer::bind`]).
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct RendererPorts {
+    /// The App's namespaced [`AssetStore`]: fetched remote images.
+    pub asset_store: Arc<dyn AssetStore>,
+}
+
+impl RendererPorts {
+    /// The ports of an App whose asset store is `asset_store`.
+    pub fn new(asset_store: Arc<dyn AssetStore>) -> Self {
+        Self { asset_store }
+    }
+}
+
+impl fmt::Debug for RendererPorts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RendererPorts").finish_non_exhaustive()
     }
 }
 
@@ -514,6 +566,12 @@ pub trait Renderer: Send + Sync + 'static {
     ///
     /// A [`RenderError`] when a Template cannot be registered.
     fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError>;
+
+    /// Hands the Renderer the App's resolved ports; core calls it once,
+    /// when the App builds. The default ignores them.
+    fn bind(&self, ports: RendererPorts) {
+        let _ = ports;
+    }
 }
 
 #[cfg(test)]
@@ -811,6 +869,56 @@ mod tests {
              `ImageConfig::image(..)`"
         );
         assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn img_03_remote_image_messages() {
+        let err = RenderError::RemoteImage {
+            id: "card".into(),
+            image: "avatar/1/abc@256".into(),
+            reason: "HTTP 404".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "[IMG-03] template `card` requires remote image `avatar/1/abc@256`, which could not \
+             be used: HTTP 404"
+        );
+        let err = RenderError::UndeclaredImage {
+            id: "card".into(),
+            image: "placeholder".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "[IMG-03] template `card` draws remote image `placeholder`, which no `#[asset]` field \
+             declares"
+        );
+        assert_eq!(RenderCap::RemoteImages.as_str(), "remote_images");
+        let err = RenderError::OverCap {
+            id: "card".into(),
+            cap: RenderCap::RemoteImages,
+            limit: 16,
+            actual: 17,
+        };
+        assert_eq!(
+            err.to_string(),
+            "template `card` exceeds the remote_images cap: 17 is over the limit 16"
+        );
+    }
+
+    #[test]
+    fn img_03_renderer_bind_defaults_to_a_no_op() {
+        struct Plain;
+        impl Renderer for Plain {
+            fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+                Box::pin(async { Err(RenderError::QueueFull) })
+            }
+            fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+                Ok(())
+            }
+        }
+        let ports = RendererPorts::new(Arc::new(crate::memory::MemoryAssetStore::new()));
+        assert_eq!(format!("{ports:?}"), "RendererPorts { .. }");
+        Plain.bind(ports);
     }
 
     #[test]

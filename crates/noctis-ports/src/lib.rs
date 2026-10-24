@@ -88,8 +88,8 @@ pub use identify::{IdentifyQueue, Lease};
 pub use locale::LocaleSource;
 pub use render::{
     AnimatedFormat, AnimationSpec, EncodeSettings, ErasedView, Format, Frame, OutputFormat,
-    RenderCap, RenderError, RenderJob, RenderOutput, Renderer, Size, Template, TemplateDescriptor,
-    decode_template,
+    RenderCap, RenderError, RenderJob, RenderOutput, Renderer, RendererPorts, Size, Template,
+    TemplateDescriptor, decode_template,
 };
 pub use store::{
     AssetStore, CacheStore, ModuleStateStore, RateLimitStore, RefStore, RenderCache, SessionStore,

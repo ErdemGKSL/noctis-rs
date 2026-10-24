@@ -1,0 +1,437 @@
+//! The `AssetFetcher` against a loopback HTTP/1.1 server (IMG-03): fetch,
+//! caps, statuses, redirects, timeouts, bodies, the allow-list, the cache,
+//! concurrency and cancellation.
+
+use std::sync::Mutex;
+use std::time::{Duration, Instant as StdInstant};
+
+use noctis_ports::PortError;
+use noctis_ports::memory::MemoryAssetStore;
+
+use super::*;
+use crate::remote::test_server::{Reply, Server, png};
+
+const RED: [u8; 4] = [255, 0, 0, 255];
+
+/// A fetcher allowing `server` (and building CDN URLs on it).
+fn fetcher_for(server: &Server, config: RemoteConfig) -> AssetFetcher {
+    AssetFetcher::new(&config.discord_cdn(server.origin())).unwrap()
+}
+
+fn fetcher(server: &Server) -> AssetFetcher {
+    fetcher_for(server, RemoteConfig::new())
+}
+
+fn image(server: &Server, path: &str) -> RemoteImage {
+    RemoteImage::url(&server.url(path)).unwrap()
+}
+
+/// The reason one image fails.
+async fn reason(fetcher: &AssetFetcher, image: &RemoteImage) -> String {
+    fetcher.fetch(None, "t", image, false).await.unwrap_err()
+}
+
+fn declared(field: &'static str, required: bool, image: RemoteImage) -> Declared {
+    Declared {
+        field: field.into(),
+        required,
+        image,
+    }
+}
+
+#[tokio::test]
+async fn img_03_fetches_and_decodes_a_png() {
+    let server = Server::start(|_| Reply::Ok(png(2, 2, RED))).await;
+    let fetcher = fetcher(&server);
+    let source = fetcher
+        .fetch(None, "t", &image(&server, "/a.png?x=1"), false)
+        .await
+        .unwrap();
+    assert!(matches!(source, ImageSource::Bitmap(_)), "{source:?}");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].target, "/a.png?x=1");
+    let head = &requests[0].head;
+    assert!(head.starts_with("get /a.png?x=1 http/1.1\r\n"), "{head}");
+    assert!(
+        head.contains(&format!(
+            "user-agent: noctis/{}\r\n",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{head}"
+    );
+    assert!(!head.contains("accept-encoding"), "{head}");
+    assert!(!head.contains("cookie"), "{head}");
+}
+
+#[tokio::test]
+async fn img_03_byte_cap() {
+    let exact = png(2, 2, RED);
+    let cap = 1024_u64;
+    let padded = {
+        // A PNG padded to exactly the cap with trailing bytes.
+        let mut body = exact.clone();
+        body.resize(usize::try_from(cap).unwrap(), 0);
+        body
+    };
+    let over = {
+        let mut body = padded.clone();
+        body.push(0);
+        body
+    };
+    let (ok_body, over_body) = (padded.clone(), over.clone());
+    let server = Server::start(move |target| match target {
+        "/exact" => Reply::Ok(ok_body.clone()),
+        "/over" => Reply::Unsized(over_body.clone()),
+        "/over-sized" => Reply::Ok(over.clone()),
+        _ => Reply::Claim(cap + 1),
+    })
+    .await;
+    let fetcher = fetcher_for(&server, RemoteConfig::new().max_bytes(cap));
+    assert!(
+        fetcher
+            .fetch(None, "t", &image(&server, "/exact"), false)
+            .await
+            .is_ok()
+    );
+    let message = "over the byte cap of 1024 bytes";
+    assert_eq!(reason(&fetcher, &image(&server, "/over")).await, message);
+    assert_eq!(
+        reason(&fetcher, &image(&server, "/over-sized")).await,
+        message
+    );
+    // A `content-length` over the cap fails before the body is read: the
+    // server never sends one, so only the header check can end this.
+    let started = StdInstant::now();
+    assert_eq!(reason(&fetcher, &image(&server, "/claim")).await, message);
+    assert!(started.elapsed() < Duration::from_secs(4));
+}
+
+#[tokio::test]
+async fn img_03_statuses_and_redirects() {
+    let second = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let location = second.url("/x.png");
+    let server = Server::start(move |target| match target {
+        "/404" => Reply::Status(404),
+        "/500" => Reply::Status(500),
+        _ => Reply::Redirect(location.clone()),
+    })
+    .await;
+    let fetcher = fetcher_for(&server, RemoteConfig::new().allow_origin(second.origin()));
+    assert_eq!(reason(&fetcher, &image(&server, "/404")).await, "HTTP 404");
+    assert_eq!(reason(&fetcher, &image(&server, "/500")).await, "HTTP 500");
+    assert_eq!(
+        reason(&fetcher, &image(&server, "/301")).await,
+        "redirect not followed"
+    );
+    assert_eq!(second.requests().len(), 0, "a redirect is never followed");
+}
+
+#[tokio::test]
+async fn img_03_timeout() {
+    let server = Server::start(|_| {
+        Reply::After(Duration::from_secs(5), Box::new(Reply::Ok(png(1, 1, RED))))
+    })
+    .await;
+    let fetcher = fetcher_for(
+        &server,
+        RemoteConfig::new().timeout(Duration::from_millis(100)),
+    );
+    let started = StdInstant::now();
+    assert_eq!(
+        reason(&fetcher, &image(&server, "/slow")).await,
+        "timed out after 100ms"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn img_03_bad_bodies() {
+    let truncated = {
+        let mut body = png(8, 8, RED);
+        body.truncate(body.len() - 20);
+        body
+    };
+    let big = png(3000, 2000, RED);
+    let server = Server::start(move |target| match target {
+        "/html" => Reply::Ok(b"<!doctype html><html></html>".to_vec()),
+        "/gif" => Reply::Ok(b"GIF89a\x01\x00\x01\x00\x00\x00\x00".to_vec()),
+        "/svg" => Reply::Ok(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec()),
+        "/truncated" => Reply::Ok(truncated.clone()),
+        _ => Reply::Ok(big.clone()),
+    })
+    .await;
+    let fetcher = fetcher_for(&server, RemoteConfig::new().max_pixels(4_194_304));
+    for path in ["/html", "/gif", "/svg"] {
+        assert_eq!(
+            reason(&fetcher, &image(&server, path)).await,
+            "unsupported format: use PNG, JPEG or WebP",
+            "{path}"
+        );
+    }
+    let truncated = reason(&fetcher, &image(&server, "/truncated")).await;
+    assert!(
+        truncated.starts_with("could not be decoded: "),
+        "{truncated}"
+    );
+    assert_eq!(
+        reason(&fetcher, &image(&server, "/big")).await,
+        "is 3000x2000: over 4194304 pixels"
+    );
+}
+
+#[tokio::test]
+async fn img_03_unreachable_names_the_io_error() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let fetcher = AssetFetcher::new(&RemoteConfig::new().allow_origin(origin.clone())).unwrap();
+    let image = RemoteImage::url(&format!("{origin}/x.png")).unwrap();
+    let reason = reason(&fetcher, &image).await;
+    assert!(reason.to_ascii_lowercase().contains("connect"), "{reason}");
+    assert!(reason.contains("refused"), "{reason}");
+}
+
+#[tokio::test]
+async fn img_03_not_allow_listed_is_never_fetched() {
+    let server = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let unlisted = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let fetcher = fetcher(&server);
+    assert_eq!(
+        reason(
+            &fetcher,
+            &RemoteImage::url("https://example.com/x.png").unwrap()
+        )
+        .await,
+        "origin `https://example.com` is not allow-listed"
+    );
+    assert_eq!(
+        reason(&fetcher, &image(&unlisted, "/x.png")).await,
+        format!("origin `{}` is not allow-listed", unlisted.origin())
+    );
+    assert_eq!(unlisted.requests().len(), 0);
+    assert_eq!(server.requests().len(), 0);
+}
+
+#[tokio::test]
+async fn img_03_resolve_draws_the_fallback_or_fails_required() {
+    let server = Server::start(|target| match target {
+        "/ok" => Reply::Ok(png(1, 1, RED)),
+        _ => Reply::Status(404),
+    })
+    .await;
+    let fetcher = fetcher(&server);
+    let (ok, missing) = (image(&server, "/ok"), image(&server, "/missing?token=1"));
+    let resolved = fetcher
+        .resolve(
+            None,
+            "card",
+            vec![
+                declared("a", false, ok.clone()),
+                declared("b", false, missing.clone()),
+            ],
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(resolved.get(&ok).is_some());
+    assert!(
+        resolved.get(&missing).is_some(),
+        "a failed image draws the fallback"
+    );
+    let error = fetcher
+        .resolve(None, "card", vec![declared("b", true, missing)], false)
+        .await
+        .unwrap_err();
+    let RenderError::RemoteImage { id, image, reason } = error else {
+        panic!("expected RemoteImage, got {error:?}");
+    };
+    assert_eq!(
+        (id.as_str(), image, reason.as_str()),
+        ("card", format!("{}/missing", server.origin()), "HTTP 404")
+    );
+}
+
+#[tokio::test]
+async fn img_03_plan_dedupes_and_caps_the_count() {
+    let server = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let fetcher = fetcher(&server);
+    let a = image(&server, "/a");
+    let plan = fetcher
+        .plan(
+            "card",
+            vec![
+                declared("a", false, a.clone()),
+                declared("b", true, a.clone()),
+                declared("p", true, RemoteImage::placeholder()),
+            ],
+        )
+        .unwrap();
+    assert_eq!(plan, [declared("a", true, a)]);
+    let many: Vec<Declared> = (0..17)
+        .map(|i| declared("v", false, image(&server, &format!("/{i}"))))
+        .collect();
+    assert!(matches!(
+        fetcher.plan("card", many),
+        Err(RenderError::OverCap {
+            id,
+            cap: RenderCap::RemoteImages,
+            limit: 16,
+            actual: 17,
+        }) if id == "card"
+    ));
+    assert_eq!(server.requests().len(), 0);
+}
+
+/// An `AssetStore` that records its calls and can fail them.
+#[derive(Default)]
+struct Recording {
+    inner: MemoryAssetStore,
+    puts: Mutex<Vec<(String, Option<Duration>)>>,
+    fail_get: bool,
+    fail_put: bool,
+}
+
+impl AssetStore for Recording {
+    fn get<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> noctis_ports::BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+        if self.fail_get {
+            return Box::pin(async { Err(PortError::Unavailable { why: "down".into() }) });
+        }
+        self.inner.get(key)
+    }
+
+    fn put<'a>(
+        &'a self,
+        key: &'a str,
+        value: Bytes,
+        ttl: Option<Duration>,
+    ) -> noctis_ports::BoxFuture<'a, Result<(), PortError>> {
+        self.puts.lock().unwrap().push((key.to_owned(), ttl));
+        if self.fail_put {
+            return Box::pin(async { Err(PortError::Unavailable { why: "down".into() }) });
+        }
+        self.inner.put(key, value, ttl)
+    }
+}
+
+#[tokio::test]
+async fn img_03_cache_hits_and_revalidation() {
+    let server = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let fetcher = fetcher_for(
+        &server,
+        RemoteConfig::new().cache_ttl(Duration::from_mins(1)),
+    );
+    let store = Recording::default();
+    let image = image(&server, "/a.png");
+    let key = image.target(&fetcher.cdn, false).unwrap().unwrap().key;
+    for _ in 0..2 {
+        fetcher
+            .fetch(Some(&store), "t", &image, false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        server.requests().len(),
+        1,
+        "the second fetch is a cache hit"
+    );
+    assert_eq!(
+        *store.puts.lock().unwrap(),
+        [(key.clone(), Some(Duration::from_mins(1)))]
+    );
+    // Garbage in the store is a miss: refetched and rewritten.
+    store
+        .inner
+        .put(&key, Bytes::from_static(b"not an image"), None)
+        .await
+        .unwrap();
+    fetcher
+        .fetch(Some(&store), "t", &image, false)
+        .await
+        .unwrap();
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(store.puts.lock().unwrap().len(), 2);
+    // A failed fetch is never cached.
+    let missing = Server::start(|_| Reply::Status(404)).await;
+    let other = fetcher_for(&missing, RemoteConfig::new());
+    let image = RemoteImage::url(&missing.url("/x")).unwrap();
+    assert!(other.fetch(Some(&store), "t", &image, false).await.is_err());
+    assert_eq!(store.puts.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn img_03_cache_port_errors_never_fail_the_fetch() {
+    let server = Server::start(|_| Reply::Ok(png(1, 1, RED))).await;
+    let fetcher = fetcher(&server);
+    let image = image(&server, "/a.png");
+    let failing = Recording {
+        fail_get: true,
+        fail_put: true,
+        ..Recording::default()
+    };
+    for _ in 0..2 {
+        fetcher
+            .fetch(Some(&failing), "t", &image, false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(server.requests().len(), 2);
+    // Unbound: fetched every time.
+    fetcher.fetch(None, "t", &image, false).await.unwrap();
+    assert_eq!(server.requests().len(), 3);
+}
+
+#[tokio::test]
+async fn img_03_concurrency_is_bounded_per_fetcher() {
+    for (concurrency, expected) in [(1, 1), (2, 2)] {
+        let server = Server::start(|_| {
+            Reply::After(
+                Duration::from_millis(100),
+                Box::new(Reply::Ok(png(1, 1, RED))),
+            )
+        })
+        .await;
+        let fetcher = fetcher_for(&server, RemoteConfig::new().concurrency(concurrency));
+        let plan = (0..3)
+            .map(|i| declared("v", false, image(&server, &format!("/{i}"))))
+            .collect();
+        fetcher.resolve(None, "t", plan, false).await.unwrap();
+        assert_eq!(server.requests().len(), 3);
+        assert_eq!(
+            server.max_in_flight(),
+            expected,
+            "concurrency {concurrency}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn img_03_dropping_the_resolve_aborts_the_fetch() {
+    let server = Server::start(|_| {
+        Reply::After(Duration::from_secs(30), Box::new(Reply::Ok(png(1, 1, RED))))
+    })
+    .await;
+    let fetcher = fetcher(&server);
+    let plan = vec![declared("a", false, image(&server, "/stall"))];
+    let resolve = fetcher.resolve(None, "t", plan, false);
+    let dropped = tokio::time::timeout(Duration::from_millis(200), resolve).await;
+    assert!(dropped.is_err(), "the server stalls");
+    let deadline = StdInstant::now() + Duration::from_secs(5);
+    while server.aborted() == 0 {
+        assert!(StdInstant::now() < deadline, "the fetch was not aborted");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn img_03_the_builtin_fallback_is_one_slate_pixel() {
+    let ImageSource::Bitmap(buffer) = builtin_fallback().unwrap() else {
+        panic!("expected a bitmap");
+    };
+    assert_eq!((buffer.width(), buffer.height()), (1, 1));
+    assert_eq!(buffer.pixel(0, 0), [0x47, 0x55, 0x69, 0xFF]);
+}

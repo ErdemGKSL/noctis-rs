@@ -1,0 +1,19 @@
+error[E0277]: [IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>`
+  --> tests/ui-image/img/IMG-03_asset_field_type.rs:11:13
+   |
+11 |     avatar: String,
+   |             ^^^^^^ not a remote image field
+   |
+   = help: the trait `noctis::__private::noctis_image::remote::declare::AssetField` is not implemented for `std::string::String`
+   = note: declare remote images as `#[asset] avatar: RemoteImage` (`#[asset(required)]` fails the render instead of drawing the fallback)
+help: the following other types implement trait `noctis::__private::noctis_image::remote::declare::AssetField`
+  --> $WORKSPACE/crates/noctis-image/src/remote/declare.rs
+   |
+   | impl AssetField for RemoteImage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::image::RemoteImage`
+...
+   | impl AssetField for Option<RemoteImage> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<noctis::image::RemoteImage>`
+...
+   | impl AssetField for Vec<RemoteImage> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<noctis::image::RemoteImage>`

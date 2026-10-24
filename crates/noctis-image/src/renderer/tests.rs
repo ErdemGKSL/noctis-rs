@@ -37,6 +37,9 @@ macro_rules! template {
             }
         }
 
+        impl crate::TemplateAssets for $name {}
+
+
         impl TemplateView for $name {
             fn view(&self, _: Frame) -> Node {
                 let view: fn(&Self) -> Node = $view;
@@ -124,6 +127,8 @@ impl Template for Gated {
     }
 }
 
+impl crate::TemplateAssets for Gated {}
+
 impl TemplateView for Gated {
     fn view(&self, _: Frame) -> Node {
         if let Some(gate) = GATE.lock().unwrap().as_ref() {
@@ -152,6 +157,8 @@ impl Template for Spinner {
         erased_view::<Self>()
     }
 }
+
+impl crate::TemplateAssets for Spinner {}
 
 impl TemplateView for Spinner {
     fn view(&self, _: Frame) -> Node {
@@ -223,6 +230,7 @@ fn renderer_budget(
         size_target: crate::plugin::DEFAULT_SIZE_TARGET,
         still_fallback,
         caps: RenderCaps::new(),
+        remote: AssetFetcher::new(&crate::RemoteConfig::new()).unwrap(),
     });
     renderer
         .register(&[
@@ -574,6 +582,8 @@ impl Template for Noise {
     }
 }
 
+impl crate::TemplateAssets for Noise {}
+
 impl TemplateView for Noise {
     fn view(&self, frame: Frame) -> Node {
         // xorshift32 with a fixed, never-zero seed.
@@ -612,6 +622,8 @@ impl Template for Recorder {
     }
 }
 
+impl crate::TemplateAssets for Recorder {}
+
 impl TemplateView for Recorder {
     fn view(&self, frame: Frame) -> Node {
         let name = std::thread::current().name().unwrap_or("").to_owned();
@@ -644,13 +656,18 @@ fn with_budget(job: RenderJob, upload_budget: u64) -> RenderJob {
     }
 }
 
+/// No resolved remote image.
+fn no_remote(r: &TakumiRenderer) -> Resolved {
+    Resolved::empty(r.shared.remote.fallback().clone())
+}
+
 /// The length the renderer's per-attempt encoder gives `attempt` of `job`.
 fn encoded_len(r: &TakumiRenderer, job: &RenderJob, attempt: &Attempt) -> u64 {
     let view = r.view_of(job).unwrap();
     let requester = present();
     let bytes = r
         .shared
-        .encoder(view, job, &requester)
+        .encoder(view, job, &no_remote(r), &requester)
         .encode(attempt)
         .unwrap();
     bytes.len() as u64
@@ -861,7 +878,8 @@ fn still_only_budget(r: &TakumiRenderer, job: &RenderJob) -> u64 {
     // Draw at the fps the fallback follows (the last animated attempt's).
     let view = r.view_of(job).unwrap();
     let requester = present();
-    let mut encoder = r.shared.encoder(view, job, &requester);
+    let remote = no_remote(r);
+    let mut encoder = r.shared.encoder(view, job, &remote, &requester);
     encoder.encode(animated.last().unwrap()).unwrap();
     let still_len = encoder.encode(still).unwrap().len() as u64;
     assert!(
@@ -902,7 +920,10 @@ fn a_size_step_keeps_translucent_edges_their_colour() {
     let r = renderer();
     let job = RenderJob::of(&Edge {}).unwrap();
     let view = r.view_of(&job).unwrap();
-    let full = r.shared.frame(view, &job, Frame::STILL, 0).unwrap();
+    let full = r
+        .shared
+        .frame(view, &job, &no_remote(&r), Frame::STILL, 0)
+        .unwrap();
     let small = resized(&full, Size::new(2, 1)).unwrap();
     let edges: Vec<&[u8]> = small
         .as_raw()
@@ -1062,6 +1083,8 @@ macro_rules! probe {
                 erased_view::<Self>()
             }
         }
+
+        impl crate::TemplateAssets for $name {}
 
         impl TemplateView for $name {
             fn view(&self, frame: Frame) -> Node {
@@ -1234,6 +1257,8 @@ impl Template for Fade {
     }
 }
 
+impl crate::TemplateAssets for Fade {}
+
 impl TemplateView for Fade {
     fn view(&self, frame: Frame) -> Node {
         FADE_FRAMES.lock().unwrap().push(frame);
@@ -1266,7 +1291,10 @@ template!(
 /// The alpha at (0, 0) of `job`'s frame at `time_ms`.
 fn alpha_at(r: &TakumiRenderer, job: &RenderJob, time_ms: u64) -> u8 {
     let view = r.view_of(job).unwrap();
-    let bitmap = r.shared.frame(view, job, Frame::STILL, time_ms).unwrap();
+    let bitmap = r
+        .shared
+        .frame(view, job, &no_remote(r), Frame::STILL, time_ms)
+        .unwrap();
     bitmap.as_raw()[3]
 }
 
@@ -1395,6 +1423,8 @@ impl Template for RootSized {
     }
 }
 
+impl crate::TemplateAssets for RootSized {}
+
 impl TemplateView for RootSized {
     fn view(&self, frame: Frame) -> Node {
         let classes = |c: &'static str| div(Classes::__literal(c));
@@ -1465,6 +1495,7 @@ fn img_01_register_without_font_fails() {
         size_target: crate::plugin::DEFAULT_SIZE_TARGET,
         still_fallback: true,
         caps: RenderCaps::new(),
+        remote: AssetFetcher::new(&crate::RemoteConfig::new()).unwrap(),
     });
     assert!(renderer.register(&[]).is_ok());
     let err = renderer
@@ -1476,3 +1507,5 @@ fn img_01_register_without_font_fails() {
             .starts_with("[IMG-01] no font is registered")
     );
 }
+
+mod remote;

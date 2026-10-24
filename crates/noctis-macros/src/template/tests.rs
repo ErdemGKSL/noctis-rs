@@ -335,13 +335,64 @@ fn template_rejects_hash_collections() {
 }
 
 #[test]
-fn template_asset_is_planned() {
+fn img_03_asset_attribute_errors() {
     let attr = quote!(#[template(id = "a", version = 1, size = (1, 1), format = Png)]);
-    let errors = derive_errors(&quote!(#attr struct S { #[asset] a: u8 }));
-    assert_eq!(
-        errors,
-        ["`#[asset]` remote images are planned (Story 10.8)"]
+    for field in [
+        quote!(#[asset(optional)] a: RemoteImage),
+        quote!(#[asset = 1] a: RemoteImage),
+        quote!(#[asset(required, required)] a: RemoteImage),
+        quote!(#[asset()] a: RemoteImage),
+    ] {
+        let errors = derive_errors(&quote!(#attr struct S { #field }));
+        assert_eq!(
+            errors,
+            ["[IMG-03] `#[asset]` takes no argument or `required`: `#[asset(required)]`"],
+            "{field}"
+        );
+    }
+    let errors = derive_errors(&quote!(#attr struct S { #[asset] #[asset] a: RemoteImage }));
+    assert_eq!(errors, ["[IMG-03] `#[asset]` appears twice on this field"]);
+}
+
+/// The expansion of a Template whose fields are `fields`.
+fn expanded(fields: TokenStream) -> String {
+    let input: DeriveInput = syn::parse2(quote! {
+        #[template(id = "a", version = 1, size = (1, 1), format = Png)]
+        struct S #fields
+    })
+    .unwrap();
+    expand(&input).unwrap().to_string()
+}
+
+#[test]
+fn img_03_asset_fields_emit_template_assets() {
+    let out = expanded(quote!({
+        #[asset] a: RemoteImage,
+        #[asset(required)] b: Option<RemoteImage>,
+        c: String,
+        #[asset] r#type: Vec<RemoteImage>,
+    }));
+    for needle in [
+        "impl :: noctis :: __private :: image :: TemplateAssets for S",
+        "const DECLARES : bool = true ;",
+        "< RemoteImage as :: noctis :: __private :: image :: AssetField > :: declare (& self . a , \"a\" , false , out) ;",
+        "< Option < RemoteImage > as :: noctis :: __private :: image :: AssetField > :: declare (& self . b , \"b\" , true , out) ;",
+        "declare (& self . r#type , \"type\" , false , out) ;",
+    ] {
+        assert!(out.contains(needle), "{needle} not in {out}");
+    }
+    assert!(!out.contains("self . c"), "{out}");
+    let tuple = expanded(quote!((#[asset] RemoteImage, u8);));
+    assert!(
+        tuple.contains("declare (& self . 0 , \"0\" , false , out) ;"),
+        "{tuple}"
     );
+    let plain = expanded(quote!({ name: String }));
+    assert!(
+        plain.contains("impl :: noctis :: __private :: image :: TemplateAssets for S { }"),
+        "{plain}"
+    );
+    assert!(!plain.contains("DECLARES"), "{plain}");
 }
 
 #[test]

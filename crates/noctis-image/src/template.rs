@@ -4,6 +4,7 @@
 use noctis_ports::{ErasedView, Frame, RenderError, Template, decode_template};
 
 use crate::Node;
+use crate::remote::{Declared, DeclaredImages, TemplateAssets};
 
 /// How a Template draws itself: `view` returns the node tree of one frame.
 ///
@@ -38,18 +39,25 @@ pub trait TemplateView {
 /// # impl TemplateView for Card {
 /// #     fn view(&self, _: Frame) -> Node { Node::text(self.level.to_string()) }
 /// # }
+/// # impl noctis_image::TemplateAssets for Card {}
 /// let view = <Card as Template>::view();
 /// let decode = view.downcast_ref::<ViewFn>().expect("a derived view");
 /// let job = RenderJob::of(&Card { level: 3 })?;
 /// assert_eq!(decode.call(&job.data, Frame::STILL)?, Node::text("3"));
 /// assert!(!decode.is_animated());
+/// assert!(!decode.declares_assets());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ViewFn {
     decode: fn(&[u8], Frame) -> Result<Node, RenderError>,
     animated: bool,
+    /// The declared remote images of a Template with `#[asset]` fields.
+    assets: Option<DeclareFn>,
 }
+
+/// Decodes a Template value and collects its declared remote images.
+type DeclareFn = fn(&[u8]) -> Result<Vec<Declared>, RenderError>;
 
 impl ViewFn {
     /// Decodes `data` and returns the view of `frame`.
@@ -66,16 +74,38 @@ impl ViewFn {
     pub fn is_animated(&self) -> bool {
         self.animated
     }
+
+    /// Whether the Template has `#[asset]` fields, so its remote images
+    /// are resolved before its job is admitted.
+    pub fn declares_assets(&self) -> bool {
+        self.assets.is_some()
+    }
+
+    /// The declared remote images of `data`; `None` for a Template without
+    /// `#[asset]` fields.
+    pub(crate) fn assets(&self) -> Option<DeclareFn> {
+        self.assets
+    }
 }
 
-/// The [`ErasedView`] of `T`: a [`ViewFn`] running [`decode_view::<T>`];
+/// The [`ErasedView`] of `T`: a [`ViewFn`] running [`decode_view::<T>`]
+/// (and, with `#[asset]` fields, collecting the declared remote images);
 /// what `#[derive(Template)]` returns from `Template::view`.
 #[doc(hidden)]
-pub fn erased_view<T: Template + TemplateView>() -> ErasedView {
+pub fn erased_view<T: Template + TemplateView + TemplateAssets>() -> ErasedView {
     ErasedView::new(ViewFn {
         decode: decode_view::<T>,
         animated: T::ANIMATION.is_some(),
+        assets: T::DECLARES.then_some(declared_of::<T> as DeclareFn),
     })
+}
+
+/// Decodes a `T` from `data` and collects its declared remote images.
+fn declared_of<T: Template + TemplateAssets>(data: &[u8]) -> Result<Vec<Declared>, RenderError> {
+    let value = decode_template::<T>(data).map_err(RenderError::failed)?;
+    let mut out = DeclaredImages::default();
+    value.declare(&mut out);
+    Ok(out.into_vec())
 }
 
 /// Decodes a `T` from `data` and returns its view of `frame`.

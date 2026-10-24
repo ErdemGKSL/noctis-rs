@@ -2969,6 +2969,7 @@ pub fn noctis::image::ImageConfig::font(self, noctis::image::Font) -> Self
 pub fn noctis::image::ImageConfig::image(self, noctis::image::StaticImage) -> Self
 pub fn noctis::image::ImageConfig::new() -> Self
 pub fn noctis::image::ImageConfig::queue_capacity(self, usize) -> Self
+pub fn noctis::image::ImageConfig::remote(self, noctis::image::RemoteConfig) -> Self
 pub fn noctis::image::ImageConfig::size_target(self, u64) -> Self
 pub fn noctis::image::ImageConfig::still_fallback(self, bool) -> Self
 pub fn noctis::image::ImageConfig::threads(self, usize) -> Self
@@ -2987,6 +2988,33 @@ impl core::fmt::Debug for noctis::image::ImagePlugin
 pub fn noctis::image::ImagePlugin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::Plugin for noctis::image::ImagePlugin
 pub fn noctis::image::ImagePlugin::install(&self, &mut noctis::AppBuilder)
+pub enum noctis::image::ImageSrc
+pub noctis::image::ImageSrc::Remote(noctis::image::RemoteImage)
+pub noctis::image::ImageSrc::Static(noctis::image::StaticImage)
+impl core::clone::Clone for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ImageSrc
+impl core::cmp::PartialEq for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::eq(&self, &Self) -> bool
+impl core::convert::From<&noctis::image::RemoteImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(&noctis::image::RemoteImage) -> Self
+impl core::convert::From<&noctis::image::StaticImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(&noctis::image::StaticImage) -> Self
+impl core::convert::From<noctis::image::RemoteImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(noctis::image::RemoteImage) -> Self
+impl core::convert::From<noctis::image::StaticImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(noctis::image::StaticImage) -> Self
+impl core::fmt::Debug for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ImageSrc
+impl core::convert::From<&noctis::image::RemoteImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(&noctis::image::RemoteImage) -> Self
+impl core::convert::From<noctis::image::RemoteImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(noctis::image::RemoteImage) -> Self
+impl core::convert::From<&noctis::image::StaticImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(&noctis::image::StaticImage) -> Self
+impl core::convert::From<noctis::image::StaticImage> for noctis::image::ImageSrc
+pub fn noctis::image::ImageSrc::from(noctis::image::StaticImage) -> Self
 pub trait noctis::image::IntoNodes: noctis::__private::image::sealed::Sealed
 impl<T: noctis::__private::image::sealed::Sealed> noctis::image::IntoNodes for T
 #[non_exhaustive] pub struct noctis::image::InvalidClasses
@@ -3009,7 +3037,7 @@ pub fn noctis::image::Node::child(self, impl noctis::image::IntoNodes) -> Self
 pub fn noctis::image::Node::children<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: noctis::image::IntoNodes
 pub fn noctis::image::Node::classes(self, noctis::image::Classes) -> Self
 pub fn noctis::image::Node::element(noctis::image::Tag) -> Self
-pub fn noctis::image::Node::image(noctis::image::StaticImage) -> Self
+pub fn noctis::image::Node::image(impl core::convert::Into<noctis::image::ImageSrc>) -> Self
 pub fn noctis::image::Node::style(self, noctis::image::Style) -> Self
 pub fn noctis::image::Node::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl core::clone::Clone for noctis::image::Node
@@ -3046,12 +3074,80 @@ impl core::hash::Hash for noctis::image::OutputFormat
 pub fn noctis::image::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::OutputFormat
 impl core::marker::StructuralPartialEq for noctis::image::OutputFormat
+pub struct noctis::image::RemoteConfig
+impl noctis::image::RemoteConfig
+pub fn noctis::image::RemoteConfig::allow_origin(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::image::RemoteConfig::cache_ttl(self, core::time::Duration) -> Self
+pub fn noctis::image::RemoteConfig::concurrency(self, usize) -> Self
+pub fn noctis::image::RemoteConfig::discord_cdn(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::image::RemoteConfig::fallback(self, noctis::image::StaticImage) -> Self
+pub fn noctis::image::RemoteConfig::max_bytes(self, u64) -> Self
+pub fn noctis::image::RemoteConfig::max_per_job(self, usize) -> Self
+pub fn noctis::image::RemoteConfig::max_pixels(self, u64) -> Self
+pub fn noctis::image::RemoteConfig::new() -> Self
+pub fn noctis::image::RemoteConfig::timeout(self, core::time::Duration) -> Self
+impl core::clone::Clone for noctis::image::RemoteConfig
+pub fn noctis::image::RemoteConfig::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RemoteConfig
+impl core::cmp::PartialEq for noctis::image::RemoteConfig
+pub fn noctis::image::RemoteConfig::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::RemoteConfig
+pub fn noctis::image::RemoteConfig::default() -> Self
+impl core::fmt::Debug for noctis::image::RemoteConfig
+pub fn noctis::image::RemoteConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::RemoteConfig
+pub struct noctis::image::RemoteImage
+impl noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::avatar(&twilight_model::user::User, u16) -> Self
+pub fn noctis::image::RemoteImage::guild_icon(&twilight_model::guild::Guild, u16) -> Self
+pub fn noctis::image::RemoteImage::placeholder() -> Self
+pub fn noctis::image::RemoteImage::url(&str) -> core::result::Result<Self, noctis::image::RemoteUrlError>
+impl core::clone::Clone for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RemoteImage
+impl core::cmp::PartialEq for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::image::RemoteImage
+impl serde_core::ser::Serialize for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for noctis::image::RemoteImage
+pub fn noctis::image::RemoteImage::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+#[non_exhaustive] pub enum noctis::image::RemoteUrlError
+pub noctis::image::RemoteUrlError::Empty
+pub noctis::image::RemoteUrlError::Fragment
+pub noctis::image::RemoteUrlError::InvalidCharacter
+pub noctis::image::RemoteUrlError::InvalidCharacter::index: usize
+pub noctis::image::RemoteUrlError::InvalidHost
+pub noctis::image::RemoteUrlError::Malformed
+pub noctis::image::RemoteUrlError::NoHost
+pub noctis::image::RemoteUrlError::Scheme
+pub noctis::image::RemoteUrlError::TooLong
+pub noctis::image::RemoteUrlError::TooLong::len: usize
+pub noctis::image::RemoteUrlError::UserInfo
+impl core::clone::Clone for noctis::image::RemoteUrlError
+pub fn noctis::image::RemoteUrlError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RemoteUrlError
+impl core::cmp::PartialEq for noctis::image::RemoteUrlError
+pub fn noctis::image::RemoteUrlError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::image::RemoteUrlError
+impl core::fmt::Debug for noctis::image::RemoteUrlError
+pub fn noctis::image::RemoteUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::RemoteUrlError
+pub fn noctis::image::RemoteUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::RemoteUrlError
 #[non_exhaustive] pub enum noctis::image::RenderCap
 pub noctis::image::RenderCap::Duration
 pub noctis::image::RenderCap::Fps
 pub noctis::image::RenderCap::FramePixels
 pub noctis::image::RenderCap::Frames
 pub noctis::image::RenderCap::JobPixels
+pub noctis::image::RenderCap::RemoteImages
 impl noctis::image::RenderCap
 pub const fn noctis::image::RenderCap::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::image::RenderCap
@@ -3100,11 +3196,18 @@ pub noctis::image::RenderError::OverCap::limit: u64
 pub noctis::image::RenderError::Panicked
 pub noctis::image::RenderError::Panicked::message: alloc::string::String
 pub noctis::image::RenderError::QueueFull
+pub noctis::image::RenderError::RemoteImage
+pub noctis::image::RenderError::RemoteImage::id: alloc::string::String
+pub noctis::image::RenderError::RemoteImage::image: alloc::string::String
+pub noctis::image::RenderError::RemoteImage::reason: alloc::string::String
 pub noctis::image::RenderError::SizeMismatch
 pub noctis::image::RenderError::SizeMismatch::declared: (u32, u32)
 pub noctis::image::RenderError::SizeMismatch::expected: noctis::image::Size
 pub noctis::image::RenderError::SizeMismatch::frame: u32
 pub noctis::image::RenderError::SizeMismatch::id: alloc::string::String
+pub noctis::image::RenderError::UndeclaredImage
+pub noctis::image::RenderError::UndeclaredImage::id: alloc::string::String
+pub noctis::image::RenderError::UndeclaredImage::image: alloc::string::String
 pub noctis::image::RenderError::UnknownImage
 pub noctis::image::RenderError::UnknownImage::id: alloc::string::String
 pub noctis::image::RenderError::UnknownImage::image: alloc::string::String
@@ -3463,7 +3566,7 @@ impl core::fmt::Display for noctis::image::UnknownClass
 pub fn noctis::image::UnknownClass::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::UnknownClass
 pub fn noctis::image::div(noctis::image::Classes) -> noctis::image::Node
-pub fn noctis::image::img(noctis::image::StaticImage, noctis::image::Classes) -> noctis::image::Node
+pub fn noctis::image::img(impl core::convert::Into<noctis::image::ImageSrc>, noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::span(noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::image::Classes) -> noctis::image::Node
 pub proc macro noctis::image::theme!()
@@ -3491,6 +3594,7 @@ impl core::marker::StructuralPartialEq for noctis::image::unstable::ClassCheckMo
 pub struct noctis::image::unstable::ViewFn
 impl noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::call(&self, &[u8], noctis::image::Frame) -> core::result::Result<noctis::image::Node, noctis::image::RenderError>
+pub fn noctis::image::unstable::ViewFn::declares_assets(&self) -> bool
 pub fn noctis::image::unstable::ViewFn::is_animated(&self) -> bool
 impl core::clone::Clone for noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::clone(&self) -> Self
@@ -3816,6 +3920,7 @@ pub noctis::ports::RenderCap::Fps
 pub noctis::ports::RenderCap::FramePixels
 pub noctis::ports::RenderCap::Frames
 pub noctis::ports::RenderCap::JobPixels
+pub noctis::ports::RenderCap::RemoteImages
 impl noctis::ports::RenderCap
 pub const fn noctis::ports::RenderCap::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::ports::RenderCap
@@ -3846,11 +3951,18 @@ pub noctis::ports::RenderError::OverCap::limit: u64
 pub noctis::ports::RenderError::Panicked
 pub noctis::ports::RenderError::Panicked::message: alloc::string::String
 pub noctis::ports::RenderError::QueueFull
+pub noctis::ports::RenderError::RemoteImage
+pub noctis::ports::RenderError::RemoteImage::id: alloc::string::String
+pub noctis::ports::RenderError::RemoteImage::image: alloc::string::String
+pub noctis::ports::RenderError::RemoteImage::reason: alloc::string::String
 pub noctis::ports::RenderError::SizeMismatch
 pub noctis::ports::RenderError::SizeMismatch::declared: (u32, u32)
 pub noctis::ports::RenderError::SizeMismatch::expected: noctis::image::Size
 pub noctis::ports::RenderError::SizeMismatch::frame: u32
 pub noctis::ports::RenderError::SizeMismatch::id: alloc::string::String
+pub noctis::ports::RenderError::UndeclaredImage
+pub noctis::ports::RenderError::UndeclaredImage::id: alloc::string::String
+pub noctis::ports::RenderError::UndeclaredImage::image: alloc::string::String
 pub noctis::ports::RenderError::UnknownImage
 pub noctis::ports::RenderError::UnknownImage::id: alloc::string::String
 pub noctis::ports::RenderError::UnknownImage::image: alloc::string::String
@@ -3901,8 +4013,17 @@ impl core::fmt::Debug for noctis::ports::RenderOutput
 pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
 pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::Renderer::bind(&self, noctis::ports::RendererPorts)
 pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
 pub fn noctis::ports::Renderer::render(&self, noctis::image::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::RenderOutput, noctis::image::RenderError>>
+#[non_exhaustive] pub struct noctis::ports::RendererPorts
+pub noctis::ports::RendererPorts::asset_store: alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>
+impl noctis::ports::RendererPorts
+pub fn noctis::ports::RendererPorts::new(alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>) -> Self
+impl core::clone::Clone for noctis::ports::RendererPorts
+pub fn noctis::ports::RendererPorts::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ports::RendererPorts
+pub fn noctis::ports::RendererPorts::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
@@ -5395,6 +5516,7 @@ pub const noctis::rules::RuleId::GW_06: noctis::rules::RuleId
 pub const noctis::rules::RuleId::GW_07: noctis::rules::RuleId
 pub const noctis::rules::RuleId::IMG_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::IMG_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::IMG_03: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_03: noctis::rules::RuleId

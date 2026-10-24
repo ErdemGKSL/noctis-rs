@@ -824,6 +824,10 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
 /// `never` for every thread, and the event this test waits for is lost.
 /// A second live dispatcher keeps every interest computed against all
 /// registered dispatchers, the capturing one included.
+///
+/// It also holds a second live dispatcher for the test's duration and
+/// rebuilds the interest cache after `set_default`, which drops any
+/// `Interest::never` a parallel test without a subscriber cached first.
 fn capture_lines() -> (Lines, impl Sized) {
     use std::sync::OnceLock;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -831,13 +835,15 @@ fn capture_lines() -> (Lines, impl Sized) {
     static KEEPER: OnceLock<tracing::Dispatch> = OnceLock::new();
     KEEPER.get_or_init(|| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default()));
     let lines = Lines::default();
+    let second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let guard = tracing_subscriber::fmt()
         .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
         .with_ansi(false)
         .with_writer(lines.clone())
         .finish()
         .set_default();
-    (lines, guard)
+    tracing::callsite::rebuild_interest_cache();
+    (lines, (guard, second))
 }
 
 /// F3: a failing delete identifies at once.

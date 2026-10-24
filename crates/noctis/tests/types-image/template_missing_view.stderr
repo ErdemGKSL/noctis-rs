@@ -13,6 +13,6 @@ help: the trait `TemplateView` is not implemented for `Card`
 note: required by a bound in `noctis::__private::noctis_image::template::erased_view`
  --> $WORKSPACE/crates/noctis-image/src/template.rs
   |
-  | pub fn erased_view<T: Template + TemplateView>() -> ErasedView {
+  | pub fn erased_view<T: Template + TemplateView + TemplateAssets>() -> ErasedView {
   |                                  ^^^^^^^^^^^^ required by this bound in `erased_view`
   = note: this error originates in the derive macro `Template` (in Nightly builds, run with -Z macro-backtrace for more info)

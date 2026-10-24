@@ -3,17 +3,24 @@
 //!
 //! Every key is checked at expansion: a wrong key, form, variant, duplicate,
 //! missing key or out-of-range value is a compile error spanned on the
-//! offending token. The derive also rejects generic structs, `HashMap` /
+//! offending token. The derive also rejects generic structs and `HashMap` /
 //! `HashSet` fields (Template data is part of the render cache key and must
-//! serialize deterministically) and `#[asset]` fields (Story 10.8).
+//! serialize deterministically).
+//!
+//! `#[asset]` / `#[asset(required)]` fields declare remote images (IMG-03):
+//! the derive always emits the hidden `TemplateAssets` impl, which collects
+//! them through the sealed `AssetField` trait, so a field of another type is
+//! an `[IMG-03]` compile error at its type.
 
 use proc_macro2::{Literal, Span, TokenStream};
+use quote::quote_spanned;
 use quote::{ToTokens, quote};
 use syn::ext::IdentExt;
 use syn::parse::ParseStream;
+use syn::spanned::Spanned;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, ExprStruct, GenericArgument, Ident, Lit, LitInt,
-    LitStr, Member, PathArguments, Token, Type, parenthesized,
+    Attribute, Data, DeriveInput, Expr, ExprLit, ExprStruct, GenericArgument, Ident, Index, Lit,
+    LitInt, LitStr, Member, Meta, PathArguments, Token, Type, parenthesized,
 };
 
 use crate::common::combine;
@@ -124,12 +131,23 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     };
-    for field in &data.fields {
-        for attr in field.attrs.iter().filter(|a| a.path().is_ident("asset")) {
-            errors.push(syn::Error::new_spanned(
-                attr,
-                "`#[asset]` remote images are planned (Story 10.8)",
-            ));
+    let mut assets = Vec::new();
+    for (index, field) in data.fields.iter().enumerate() {
+        match parse_asset(&field.attrs) {
+            Ok(Some(required)) => {
+                let (member, name) = match &field.ident {
+                    Some(ident) => (Member::Named(ident.clone()), ident.unraw().to_string()),
+                    None => (Member::Unnamed(Index::from(index)), index.to_string()),
+                };
+                assets.push(Asset {
+                    member,
+                    name,
+                    ty: field.ty.clone(),
+                    required,
+                });
+            }
+            Ok(None) => {}
+            Err(err) => errors.push(err),
         }
         scan_type(&field.ty, &mut errors);
     }
@@ -137,7 +155,79 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Some(settings) = settings else {
         return Err(syn::Error::new(Span::call_site(), "unreachable: settings"));
     };
-    Ok(emit(&input.ident, &settings))
+    let mut out = emit(&input.ident, &settings);
+    out.extend(emit_assets(&input.ident, &assets));
+    Ok(out)
+}
+
+/// One `#[asset]` field.
+struct Asset {
+    member: Member,
+    /// The field's name in logs (`avatar`, or `0` for a tuple field).
+    name: String,
+    ty: Type,
+    required: bool,
+}
+
+const ASSET_FORM: &str =
+    "[IMG-03] `#[asset]` takes no argument or `required`: `#[asset(required)]`";
+
+/// `Some(required)` for a field with one `#[asset]` / `#[asset(required)]`.
+fn parse_asset(attrs: &[Attribute]) -> syn::Result<Option<bool>> {
+    let mut found = None;
+    for attr in attrs.iter().filter(|a| a.path().is_ident("asset")) {
+        if found.is_some() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "[IMG-03] `#[asset]` appears twice on this field",
+            ));
+        }
+        let required = match &attr.meta {
+            Meta::Path(_) => false,
+            Meta::List(list) => {
+                let ident: Ident = syn::parse2(list.tokens.clone())
+                    .map_err(|_| syn::Error::new_spanned(attr, ASSET_FORM))?;
+                if ident != "required" {
+                    return Err(syn::Error::new_spanned(attr, ASSET_FORM));
+                }
+                true
+            }
+            Meta::NameValue(_) => return Err(syn::Error::new_spanned(attr, ASSET_FORM)),
+        };
+        found = Some(required);
+    }
+    Ok(found)
+}
+
+/// The hidden `TemplateAssets` impl: empty without `#[asset]` fields, else
+/// one sealed `AssetField::declare` call per field, spanned on its type so a
+/// wrong type is an `[IMG-03]` error there.
+fn emit_assets(ident: &Ident, assets: &[Asset]) -> TokenStream {
+    let image = quote!(::noctis::__private::image);
+    if assets.is_empty() {
+        return quote!(impl #image::TemplateAssets for #ident {});
+    }
+    let calls = assets.iter().map(|asset| {
+        let Asset {
+            member,
+            name,
+            ty,
+            required,
+        } = asset;
+        let name = LitStr::new(name, Span::call_site());
+        quote_spanned! {ty.span()=>
+            <#ty as #image::AssetField>::declare(&self.#member, #name, #required, out);
+        }
+    });
+    quote! {
+        impl #image::TemplateAssets for #ident {
+            const DECLARES: bool = true;
+
+            fn declare(&self, out: &mut #image::DeclaredImages) {
+                #(#calls)*
+            }
+        }
+    }
 }
 
 fn emit(ident: &Ident, settings: &Settings) -> TokenStream {

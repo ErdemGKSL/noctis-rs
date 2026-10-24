@@ -29,6 +29,15 @@
 //! port) must not call `get`, `put` or `delete` on a `session_store` field
 //! or through `SessionStore::`. Files named `tests.rs` and files under a
 //! `tests` directory are exempt.
+//!
+//! The `asset-http` rule (AD-15) keeps the `AssetFetcher` the only
+//! non-Discord HTTP client of the workspace: no member depends, in any kind,
+//! on another HTTP client crate (`reqwest`, `ureq`, `isahc`, `surf`,
+//! `attohttpc`, `curl`, `awc`, `minreq`, `hyper-tls`); only `noctis-image`
+//! depends on `hyper-rustls`, as an optional normal dependency that only the
+//! `render` feature turns on; and among the `noctis-image` sources
+//! (`src/**/*.rs`, test files exempt) only `src/remote/fetch.rs` names the
+//! hyper-util legacy client.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -63,6 +72,37 @@ const HTTP_CLIENT_DEPENDENTS: [&str; 3] = ["noctis-core", "noctis-gateway", FACA
 const HTTP_CLIENT_SCANNED: [&str; 2] = ["noctis-gateway", FACADE];
 /// Source text that constructs a twilight HTTP client.
 const CLIENT_CONSTRUCTORS: [&str; 3] = ["Client::new(", "Client::builder(", "ClientBuilder"];
+
+/// The TLS connector of the `AssetFetcher` (AD-15).
+const HYPER_RUSTLS: &str = "hyper-rustls";
+/// HTTP client crates no member may depend on: the `AssetFetcher` is the
+/// only non-Discord HTTP (AD-15).
+const BANNED_HTTP: [&str; 9] = [
+    "reqwest",
+    "ureq",
+    "isahc",
+    "surf",
+    "attohttpc",
+    "curl",
+    "awc",
+    "minreq",
+    "hyper-tls",
+];
+/// The one `noctis-image` source that may name the legacy client.
+const ASSET_FETCHER: &str = "src/remote/fetch.rs";
+/// The hyper-util legacy client, split so this file never holds the
+/// whole name.
+const LEGACY_CLIENT: [&str; 2] = ["legacy::", "Client"];
+
+/// Whether `name` is a crate the `asset-http` rule tracks.
+fn is_asset_http(name: &str) -> bool {
+    name == HYPER_RUSTLS || BANNED_HTTP.contains(&name)
+}
+
+/// Whether `line` names the hyper-util legacy client.
+fn names_legacy_client(line: &str) -> bool {
+    line.contains(&LEGACY_CLIENT.concat())
+}
 
 /// The crates that may call the `SessionStore` (AD-21): the gateway, and the
 /// ports crate that defines it.
@@ -268,6 +308,9 @@ pub(crate) struct Workspace {
     crates: Vec<Member>,
     client_sites: Vec<SourceSite>,
     session_sites: Vec<SourceSite>,
+    /// `noctis-image` source lines (other than the `AssetFetcher`'s) that
+    /// name the legacy client.
+    legacy_client_sites: Vec<SourceSite>,
 }
 
 impl Workspace {
@@ -303,6 +346,18 @@ impl Workspace {
                 scan_session_sites(p.name.as_str(), &src, root)
             })
             .collect();
+        let legacy_client_sites = packages
+            .iter()
+            .filter(|p| p.name.as_str() == IMAGE)
+            .flat_map(|p| {
+                let src = p
+                    .manifest_path
+                    .parent()
+                    .map(|dir| dir.as_std_path().join("src"))
+                    .unwrap_or_default();
+                scan_legacy_client_sites(p.name.as_str(), &src, root)
+            })
+            .collect();
         let crates = packages
             .iter()
             .map(|p| Member {
@@ -316,6 +371,7 @@ impl Workspace {
                             || is_internal(&d.name)
                             || d.name == TWILIGHT_HTTP
                             || is_takumi(&d.name)
+                            || is_asset_http(&d.name)
                     })
                     .map(|d| Dep {
                         name: d.name.clone(),
@@ -332,6 +388,7 @@ impl Workspace {
             crates,
             client_sites,
             session_sites,
+            legacy_client_sites,
         }
     }
 
@@ -372,6 +429,7 @@ pub(crate) enum Rule {
     BotDependency,
     HttpClient,
     SessionStore,
+    AssetHttp,
 }
 
 impl Rule {
@@ -388,6 +446,7 @@ impl Rule {
             Self::BotDependency => "bot-dependency",
             Self::HttpClient => "http-client",
             Self::SessionStore => "session-store",
+            Self::AssetHttp => "asset-http",
         }
     }
 }
@@ -458,6 +517,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
     }
     check_http_client(ws, &mut out);
     check_session_store(ws, &mut out);
+    check_asset_http(ws, &mut out);
     for member in &ws.crates {
         if !is_internal(&member.name) {
             check_non_internal(member, facade, &mut out);
@@ -476,7 +536,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
         for dep in member
             .deps
             .iter()
-            .filter(|d| d.name != TWILIGHT_HTTP && !is_takumi(&d.name))
+            .filter(|d| d.name != TWILIGHT_HTTP && !is_takumi(&d.name) && !is_asset_http(&d.name))
         {
             if let Some(v) = check_edge(&member.name, dep) {
                 out.insert(v);
@@ -533,6 +593,88 @@ fn check_session_store(ws: &Workspace, out: &mut BTreeSet<Violation>) {
             ),
         ));
     }
+}
+
+/// The `AssetFetcher` is the only non-Discord HTTP client (AD-15): no other
+/// client crate, `hyper-rustls` only on `noctis-image` behind `render`, and
+/// the legacy client named only in its source.
+fn check_asset_http(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for member in &ws.crates {
+        for dep in member
+            .deps
+            .iter()
+            .filter(|d| BANNED_HTTP.contains(&d.name.as_str()))
+        {
+            out.insert(Violation::edge(
+                Rule::AssetHttp,
+                &member.name,
+                &dep.name,
+                dep.kind,
+                "is another HTTP client; the AssetFetcher (hyper-util + hyper-rustls in \
+                 noctis-image) is the only non-Discord HTTP (AD-15)"
+                    .to_owned(),
+            ));
+        }
+        for dep in member.deps.iter().filter(|d| d.name == HYPER_RUSTLS) {
+            let reason = if member.name != IMAGE {
+                Some(format!(
+                    "only `{IMAGE}` may depend on {HYPER_RUSTLS}, for the AssetFetcher (AD-15)"
+                ))
+            } else if dep.kind != Kind::Normal || !dep.optional {
+                Some(format!(
+                    "must be an optional normal dependency enabled only by `{RENDER}` (AD-15)"
+                ))
+            } else {
+                member
+                    .features
+                    .keys()
+                    .find(|feature| {
+                        let closure = member.closure(feature);
+                        closure.activated.contains(HYPER_RUSTLS)
+                            && !closure.features.contains(RENDER)
+                    })
+                    .map(|feature| {
+                        format!("feature `{feature}` enables it without `{RENDER}` (AD-15)")
+                    })
+            };
+            if let Some(reason) = reason {
+                out.insert(Violation::edge(
+                    Rule::AssetHttp,
+                    &member.name,
+                    &dep.name,
+                    dep.kind,
+                    reason,
+                ));
+            }
+        }
+    }
+    for site in &ws.legacy_client_sites {
+        out.insert(Violation::krate(
+            Rule::AssetHttp,
+            &site.krate,
+            format!(
+                "{} names the hyper-util legacy client; only {ASSET_FETCHER} (the \
+                 AssetFetcher) may (AD-15)",
+                site.location
+            ),
+        ));
+    }
+}
+
+/// Every line of the `noctis-image` sources under `src` that names the
+/// legacy client, outside the `AssetFetcher` and test files.
+fn scan_legacy_client_sites(krate: &str, src: &Path, root: &Path) -> Vec<SourceSite> {
+    let mut files = Vec::new();
+    collect_rs_files(src, &mut files);
+    let fetcher = src.join(ASSET_FETCHER.trim_start_matches("src/"));
+    files.retain(|file| {
+        let relative = file.strip_prefix(src).unwrap_or(file);
+        *file != fetcher
+            && !relative
+                .components()
+                .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "tests.rs")
+    });
+    scan_lines(krate, files, root, names_legacy_client)
 }
 
 /// Every line of `src/**/*.rs` under `src` that contains a client
@@ -1013,6 +1155,7 @@ mod tests {
                 .to_vec(),
             client_sites: Vec::new(),
             session_sites: Vec::new(),
+            legacy_client_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -1038,6 +1181,7 @@ mod tests {
                 location: "crates/noctis-gateway/src/lib.rs:3".to_owned(),
             }],
             session_sites: Vec::new(),
+            legacy_client_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -1053,6 +1197,7 @@ mod tests {
             crates: vec![image],
             client_sites: Vec::new(),
             session_sites: Vec::new(),
+            legacy_client_sites: Vec::new(),
         };
         check(&ws)
             .into_iter()
@@ -1216,6 +1361,7 @@ mod tests {
                 krate: "noctis-core".to_owned(),
                 location: "crates/noctis-core/src/app.rs:7".to_owned(),
             }],
+            legacy_client_sites: Vec::new(),
         };
         let found: Vec<String> = check(&ws)
             .into_iter()
@@ -1254,6 +1400,154 @@ mod tests {
         ] {
             assert!(!calls_session_store(line), "{line}");
         }
+    }
+
+    fn asset_http_rule(crates: Vec<Member>, legacy_client_sites: Vec<SourceSite>) -> Vec<String> {
+        let ws = Workspace {
+            crates,
+            client_sites: Vec::new(),
+            session_sites: Vec::new(),
+            legacy_client_sites,
+        };
+        check(&ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::AssetHttp)
+            .map(|v| v.to_string())
+            .collect()
+    }
+
+    /// `noctis-image` with `hyper-rustls` behind `render`.
+    fn image_with_rustls(dep: Dep) -> Member {
+        image_with(&[("render", &["dep:hyper-rustls"])], vec![dep])
+    }
+
+    #[test]
+    fn asset_http_other_client_crates_fail() {
+        let reqwest = Member {
+            name: "noctis-ui".to_owned(),
+            deps: vec![
+                Dep {
+                    optional: false,
+                    ..dep("reqwest")
+                },
+                Dep {
+                    kind: Kind::Dev,
+                    ..dep("ureq")
+                },
+            ],
+            ..member(&[])
+        };
+        assert_eq!(
+            asset_http_rule(vec![reqwest], Vec::new()),
+            [
+                "deps-check: noctis-ui -> reqwest (normal): is another HTTP client; the \
+                 AssetFetcher (hyper-util + hyper-rustls in noctis-image) is the only \
+                 non-Discord HTTP (AD-15) [asset-http]",
+                "deps-check: noctis-ui -> ureq (dev): is another HTTP client; the AssetFetcher \
+                 (hyper-util + hyper-rustls in noctis-image) is the only non-Discord HTTP \
+                 (AD-15) [asset-http]",
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_http_hyper_rustls_only_on_image_behind_render() {
+        assert_eq!(
+            asset_http_rule(vec![image_with_rustls(dep(HYPER_RUSTLS))], Vec::new()),
+            Vec::<String>::new()
+        );
+        let core = Member {
+            name: "noctis-core".to_owned(),
+            deps: vec![dep(HYPER_RUSTLS)],
+            ..member(&[])
+        };
+        assert_eq!(
+            asset_http_rule(vec![core], Vec::new()),
+            [
+                "deps-check: noctis-core -> hyper-rustls (normal): only `noctis-image` may \
+                 depend on hyper-rustls, for the AssetFetcher (AD-15) [asset-http]"
+            ]
+        );
+        let required = image_with_rustls(Dep {
+            optional: false,
+            ..dep(HYPER_RUSTLS)
+        });
+        assert_eq!(
+            asset_http_rule(vec![required], Vec::new()),
+            [
+                "deps-check: noctis-image -> hyper-rustls (normal): must be an optional normal \
+                 dependency enabled only by `render` (AD-15) [asset-http]"
+            ]
+        );
+        let ungated = image_with(
+            &[("render", &[]), ("net", &["dep:hyper-rustls"])],
+            vec![dep(HYPER_RUSTLS)],
+        );
+        assert_eq!(
+            asset_http_rule(vec![ungated], Vec::new()),
+            [
+                "deps-check: noctis-image -> hyper-rustls (normal): feature `net` enables it \
+                 without `render` (AD-15) [asset-http]"
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_http_legacy_client_outside_the_fetcher_fails() {
+        let site = SourceSite {
+            krate: IMAGE.to_owned(),
+            location: "crates/noctis-image/src/plugin.rs:9".to_owned(),
+        };
+        assert_eq!(
+            asset_http_rule(Vec::new(), vec![site]),
+            [
+                "deps-check: noctis-image: crates/noctis-image/src/plugin.rs:9 names the \
+                 hyper-util legacy client; only src/remote/fetch.rs (the AssetFetcher) may \
+                 (AD-15) [asset-http]"
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_http_scan_skips_the_fetcher_and_tests() {
+        let root = std::env::temp_dir().join(format!("deps-check-legacy-{}", std::process::id()));
+        let src = root.join("src");
+        std::fs::create_dir_all(src.join("remote/fetch")).unwrap();
+        let line = format!("use hyper_util::client::{};\n", LEGACY_CLIENT.concat());
+        std::fs::write(src.join("plugin.rs"), format!("fn a() {{}}\n{line}")).unwrap();
+        std::fs::write(src.join("remote/fetch.rs"), &line).unwrap();
+        std::fs::write(src.join("remote/fetch/tests.rs"), &line).unwrap();
+        std::fs::write(src.join("remote/tests.rs"), &line).unwrap();
+        let sites = scan_legacy_client_sites(IMAGE, &src, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        let locations: Vec<&str> = sites.iter().map(|s| s.location.as_str()).collect();
+        assert_eq!(locations, ["src/plugin.rs:2"]);
+    }
+
+    #[test]
+    fn asset_http_the_workspace_passes() {
+        let metadata = MetadataCommand::new()
+            .manifest_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.toml"))
+            .no_deps()
+            .exec()
+            .expect("cargo metadata on the repo");
+        let ws = Workspace::from_metadata(&metadata);
+        let image = ws.member(IMAGE).expect("noctis-image is a member");
+        assert!(
+            image
+                .deps
+                .iter()
+                .any(|d| d.name == HYPER_RUSTLS && d.optional),
+            "noctis-image lists hyper-rustls"
+        );
+        assert_eq!(
+            check(&ws)
+                .into_iter()
+                .filter(|v| v.rule == Rule::AssetHttp)
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `cb96e5663d69d3689707f68ebb7657fb5772e1a2f716774010e871f02df3cb5a` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `4653c0803c19d27a44f78179b74ed8f099530510f522c9cf6a1d911795da88ec` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -271,7 +271,9 @@ impl TemplateView for ProfileCard {
 // registered with `.image(ImageConfig::new().image(LOGO))`, drawn with `<img src={LOGO} tw="w-16 h-16" />`.
 // Text needs a font: the `default-font` feature (bundled Inter, last resort) and/or
 // `ImageConfig::new().font(Font::from_static(..))` in priority order ([IMG-01]).
-// `#[asset] avatar: RemoteImage` is [planned, Story 10.8].
+// remote images: `#[asset] avatar: RemoteImage` (or `#[asset(required)]`), built with
+// `RemoteImage::avatar(&user, 256)`, drawn with `<img src={&self.avatar} />`; fetched from
+// the Discord CDN allow-list before the render ([IMG-03], `references/images.md` §7).
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);

@@ -192,7 +192,7 @@ impl fmt::Debug for StaticImages {
 }
 
 /// Sniffs, size-checks and decodes one image.
-fn decode(image: &StaticImage) -> Result<ImageSource, String> {
+pub(crate) fn decode(image: &StaticImage) -> Result<ImageSource, String> {
     let id = image.id;
     if sniff(image.bytes).is_none() {
         return Err(format!(

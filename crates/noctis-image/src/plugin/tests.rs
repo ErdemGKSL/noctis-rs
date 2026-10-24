@@ -125,3 +125,66 @@ async fn img_01_test_runtimes_get_their_own_registry() {
         .unwrap();
     assert!(!Arc::ptr_eq(&a, &b));
 }
+
+/// The plugin violation messages of a failed build.
+fn plugin_violations(err: &noctis_core::BuildError) -> Vec<String> {
+    err.violations()
+        .iter()
+        .map(ToString::to_string)
+        .filter(|v| v.contains("[IMG-03]"))
+        .collect()
+}
+
+#[tokio::test]
+async fn img_03_remote_config_is_checked_at_build() {
+    let runtime = noctis_core::Runtime::for_test();
+    let config = ImageConfig::new().font(Font::from_static(INTER)).remote(
+        RemoteConfig::new()
+            .allow_origin("https://*.h")
+            .allow_origin("http://example.com")
+            .concurrency(0)
+            .timeout(Duration::from_secs(61)),
+    );
+    assert_eq!(
+        config.remote,
+        RemoteConfig::new()
+            .allow_origin("https://*.h")
+            .allow_origin("http://example.com")
+            .concurrency(0)
+            .timeout(Duration::from_secs(61))
+    );
+    let err = build(&runtime, config).unwrap_err();
+    let violations = plugin_violations(&err);
+    assert_eq!(violations.len(), 4, "{err}");
+    for needle in [
+        "[IMG-03] remote origin `https://*.h` is invalid: the host must be",
+        "[IMG-03] remote origin `http://example.com` is invalid: plain http is only for loopback hosts",
+        "[IMG-03] remote concurrency 0 is out of range: use 1..=256",
+        "[IMG-03] remote timeout 61s is out of range: use 100ms..=60s",
+    ] {
+        assert!(
+            violations.iter().any(|v| v.contains(needle)),
+            "{needle}: {violations:?}"
+        );
+    }
+    // A valid config builds.
+    let ok = ImageConfig::new()
+        .font(Font::from_static(INTER))
+        .remote(RemoteConfig::new().allow_origin("http://127.0.0.1:9"));
+    build(&runtime, ok).unwrap();
+}
+
+#[tokio::test]
+async fn img_03_a_bad_fallback_is_an_img_02_violation() {
+    let runtime = noctis_core::Runtime::for_test();
+    let config = ImageConfig::new()
+        .font(Font::from_static(INTER))
+        .remote(RemoteConfig::new().fallback(StaticImage::new("fallback", b"GIF89a")));
+    let err = build(&runtime, config).unwrap_err();
+    assert!(
+        err.to_string().contains(
+            "[IMG-02] static image `fallback`: unsupported format: use PNG, JPEG or WebP"
+        ),
+        "{err}"
+    );
+}

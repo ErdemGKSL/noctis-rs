@@ -1,7 +1,9 @@
 //! The node tree a Template view returns: Noctis-owned and takumi-free.
 //!
 //! A [`Node`] is an element ([`Tag`], [`Classes`], [`Style`] and children),
-//! a text node or an image node (a registered [`StaticImage`]). User data enters a tree only as text: text children are never
+//! a text node or an image node (an [`ImageSrc`]: a registered
+//! [`StaticImage`] or a declared [`RemoteImage`]). User data enters a tree
+//! only as text: text children are never
 //! parsed, [`Classes`] come from `tw!` literals or [`Classes::dynamic`], and no
 //! constructor turns a string into markup. Dynamic values (widths, colours,
 //! percentages) use the typed [`Style`] setters, which override class values
@@ -30,7 +32,7 @@ use std::borrow::Cow;
 
 use noctis_ports::Size;
 
-use crate::StaticImage;
+use crate::{RemoteImage, StaticImage};
 
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
@@ -70,7 +72,42 @@ pub struct Node {
 pub(crate) enum Kind {
     Element { tag: Tag, children: Vec<Node> },
     Text(Cow<'static, str>),
-    Image(StaticImage),
+    Image(ImageSrc),
+}
+
+/// What an image node draws: a static image the App registered with
+/// `ImageConfig::image`, or a remote image an `#[asset]` field of the
+/// Template declares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImageSrc {
+    /// A registered [`StaticImage`].
+    Static(StaticImage),
+    /// A declared [`RemoteImage`].
+    Remote(RemoteImage),
+}
+
+impl From<StaticImage> for ImageSrc {
+    fn from(image: StaticImage) -> Self {
+        Self::Static(image)
+    }
+}
+
+impl From<&StaticImage> for ImageSrc {
+    fn from(image: &StaticImage) -> Self {
+        Self::Static(*image)
+    }
+}
+
+impl From<RemoteImage> for ImageSrc {
+    fn from(image: RemoteImage) -> Self {
+        Self::Remote(image)
+    }
+}
+
+impl From<&RemoteImage> for ImageSrc {
+    fn from(image: &RemoteImage) -> Self {
+        Self::Remote(image.clone())
+    }
 }
 
 impl Node {
@@ -95,13 +132,15 @@ impl Node {
         }
     }
 
-    /// An image node drawing `src`, which the App must register with
-    /// `ImageConfig::image` (else the render fails with
-    /// `RenderError::UnknownImage`). Without a size it takes the image's
-    /// own; classes and [`Style`] size it like any node.
-    pub fn image(src: StaticImage) -> Self {
+    /// An image node drawing `src`: a [`StaticImage`] the App must register
+    /// with `ImageConfig::image` (else the render fails with
+    /// `RenderError::UnknownImage`), or a [`RemoteImage`] an `#[asset]`
+    /// field declares (else `RenderError::UndeclaredImage`; the placeholder
+    /// always draws). Without a size it takes the image's own; classes and
+    /// [`Style`] size it like any node.
+    pub fn image(src: impl Into<ImageSrc>) -> Self {
         Self {
-            kind: Kind::Image(src),
+            kind: Kind::Image(src.into()),
             classes: Classes::default(),
             style: Style::new(),
         }
@@ -258,8 +297,9 @@ pub fn text(text: impl Into<Cow<'static, str>>, classes: Classes) -> Node {
     Node::text(text).classes(classes)
 }
 
-/// An `<img>` drawing the static image `src` with `classes`; what `view!`
-/// expands `<img src={..} />` to.
-pub fn img(src: StaticImage, classes: Classes) -> Node {
+/// An `<img>` drawing `src` (a [`StaticImage`] or a [`RemoteImage`], by
+/// value or by reference) with `classes`; what `view!` expands
+/// `<img src={..} />` to.
+pub fn img(src: impl Into<ImageSrc>, classes: Classes) -> Node {
     Node::image(src).classes(classes)
 }

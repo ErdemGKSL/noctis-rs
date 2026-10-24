@@ -314,8 +314,14 @@ pub trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {
 pub trait Renderer: Send + Sync + 'static {
     fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>>;
     fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError>;
+    /// Called once by `App::build` with the App's resolved ports; the default ignores them.
+    fn bind(&self, ports: RendererPorts) {}
 }
 ```
+
+`RendererPorts` is `#[non_exhaustive]` with `pub asset_store: Arc<dyn AssetStore>` (the
+App's namespaced `AssetStore`, where the takumi Renderer caches fetched remote images)
+and `RendererPorts::new(asset_store)`; its `Debug` hides the ports.
 
 | Type | Shape |
 | --- | --- |
@@ -331,7 +337,7 @@ pub trait Renderer: Send + Sync + 'static {
 | `OutputFormat` | `Png`, `Jpeg`, `Webp`, `Gif`, `Apng`; `extension()` → `"png"`, `"jpg"`, `"webp"`, `"gif"`, `"png"` (Discord shows APNG as `.png`); `From<Format>`, `From<AnimatedFormat>` |
 | `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }` |
 | `EncodeSettings` | `{ size: Size, quality: Option<u8>, fps: Option<u16>, frames: u32 }` |
-| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`; `RenderError::failed(err)` |
+| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, …, `RemoteImage { id, image, reason }`, `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
 
 The render enums are closed (exhaustive `match` is fine); the render structs have
 public fields, except `Size`, which validates.

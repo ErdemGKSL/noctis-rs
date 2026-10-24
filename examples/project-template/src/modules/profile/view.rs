@@ -5,7 +5,6 @@
 
 use noctis::id::marker::UserMarker;
 use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
-// [planned, Story 10.8] `RemoteImage` and `#[asset]` (remote images).
 use noctis::image::RemoteImage;
 use noctis::prelude::*;
 use noctis::ui::{
@@ -76,9 +75,10 @@ pub struct ProfileCard {
     /// Progress to the next level, 0.0..=1.0. Applied with a typed style setter, never by
     /// formatting a class string (FR-66).
     pub progress: f32,
-    /// Declared remote image: fetched from the Discord CDN and cached before rendering.
-    /// On failure the built-in placeholder is used (add `required` to fail instead).
-    #[asset] // [planned, Story 10.8]
+    /// Declared remote image: fetched from the Discord CDN and cached in the `AssetStore`
+    /// before rendering ([IMG-03]). On failure the fallback is drawn with a warning (add
+    /// `required` to fail instead).
+    #[asset]
     pub avatar: RemoteImage,
 }
 
@@ -91,7 +91,7 @@ impl TemplateView for ProfileCard {
         // Gradient stops take palette colours only, never theme tokens.
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
-                // `<img>` ships for static images; `RemoteImage` is [planned, Story 10.8].
+                // A remote `<img>` draws only a declared `#[asset]` field.
                 <img src={&self.avatar} tw="w-40 h-40 rounded-full border-4 border-brand" />
                 <div tw="flex flex-col gap-3 flex-1">
                     <span tw="text-5xl font-bold text-white">{&self.name}</span>

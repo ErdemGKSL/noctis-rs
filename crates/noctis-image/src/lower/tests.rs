@@ -1,13 +1,19 @@
 //! Lowering a Noctis tree into takumi nodes.
 
-use takumi::prelude::NodeKind;
+use takumi::prelude::{ImageSource, NodeKind};
 
 use super::*;
-use crate::{StaticImage, Tag, div, img, text};
+use crate::remote::Resolved;
+use crate::{RemoteImage, StaticImage, Tag, div, img, text};
 
-/// `lower` without static images.
+/// No resolved remote image; the placeholder draws a red pixel.
+fn no_remote() -> Resolved {
+    Resolved::empty(ImageSource::from_bytes(png()).unwrap())
+}
+
+/// `lower` without static or remote images.
 fn plain(node: &Node) -> Result<takumi::prelude::Node, RenderError> {
-    lower(node, &StaticImages::default(), "t")
+    lower(node, &StaticImages::default(), &no_remote(), "t")
 }
 
 #[test]
@@ -102,7 +108,13 @@ fn png_of(rgba: [u8; 4]) -> &'static [u8] {
 fn img_02_image_becomes_an_image_node_over_the_decoded_source() {
     let logo = StaticImage::new("logo", png());
     let images = StaticImages::decode(&[logo]).unwrap();
-    let lowered = lower(&img(logo, Classes::dynamic("w-4")), &images, "card").unwrap();
+    let lowered = lower(
+        &img(logo, Classes::dynamic("w-4")),
+        &images,
+        &no_remote(),
+        "card",
+    )
+    .unwrap();
     assert!(matches!(
         &lowered.kind,
         NodeKind::Image(data) if matches!(data.src, ImageSourceInput::Loaded(_))
@@ -128,11 +140,51 @@ fn img_02_unregistered_image_is_unknown_image() {
         (other, div(Classes::default())),
     ] {
         let tree = tree.child(Node::image(missing));
-        match lower(&tree, &images, "card") {
+        match lower(&tree, &images, &no_remote(), "card") {
             Err(RenderError::UnknownImage { id, image }) => {
                 assert_eq!((id.as_str(), image.as_str()), ("card", missing.id()));
             }
             other => panic!("expected UnknownImage, got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn img_03_remote_images_draw_their_resolved_source_or_the_fallback() {
+    let avatar = RemoteImage::url("https://cdn.discordapp.com/a.png").unwrap();
+    let blue = ImageSource::from_bytes(png_of([0, 0, 255, 255])).unwrap();
+    let remote = Resolved::with(
+        vec![(avatar.clone(), blue.clone())],
+        ImageSource::from_bytes(png()).unwrap(),
+    );
+    let none = StaticImages::default();
+    let lowered = lower(&img(&avatar, Classes::default()), &none, &remote, "card").unwrap();
+    let expected = takumi::prelude::Node::image(ImageData {
+        src: ImageSourceInput::Loaded(blue),
+        width: None,
+        height: None,
+    });
+    assert_eq!(lowered.to_html(), expected.to_html());
+    let placeholder = lower(
+        &img(RemoteImage::placeholder(), Classes::default()),
+        &none,
+        &no_remote(),
+        "card",
+    );
+    assert!(placeholder.is_ok());
+}
+
+#[test]
+fn img_03_undeclared_remote_image_is_an_error() {
+    let other = RemoteImage::url("https://cdn.discordapp.com/b.png?x=1").unwrap();
+    let tree = div(Classes::default()).child(img(&other, Classes::default()));
+    match lower(&tree, &StaticImages::default(), &no_remote(), "card") {
+        Err(RenderError::UndeclaredImage { id, image }) => {
+            assert_eq!(
+                (id.as_str(), image.as_str()),
+                ("card", "https://cdn.discordapp.com/b.png")
+            );
+        }
+        other => panic!("expected UndeclaredImage, got {other:?}"),
     }
 }

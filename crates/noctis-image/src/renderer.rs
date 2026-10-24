@@ -1,19 +1,20 @@
-//! The takumi [`Renderer`]: one per App, bound to its Theme and static
-//! images, drawing with the process-scoped [`FontRegistry`], rendering
-//! stills and animations within its per-job caps ([`RenderCaps`]), fitted
-//! to the size budget (`crate::budget`), on the process-scoped
-//! [`RenderPool`].
+//! The takumi [`Renderer`]: one per App, bound to its Theme, static
+//! images and remote-image fetcher, drawing with the process-scoped
+//! [`FontRegistry`], rendering stills and animations within its per-job
+//! caps ([`RenderCaps`]), fitted to the size budget (`crate::budget`), on
+//! the process-scoped [`RenderPool`]. A Template with `#[asset]` fields has
+//! its remote images resolved before its job is admitted.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 use std::time::Duration;
 
 use bytes::Bytes;
 use image::imageops::FilterType;
 use noctis_ports::{
-    AnimatedFormat, BoxFuture, EncodeSettings, Format, Frame, RenderError, RenderJob, RenderOutput,
-    Renderer, Size, TemplateDescriptor,
+    AnimatedFormat, AssetStore, BoxFuture, EncodeSettings, Format, Frame, RenderError, RenderJob,
+    RenderOutput, Renderer, RendererPorts, Size, TemplateDescriptor,
 };
 #[cfg(feature = "gif")]
 use takumi::prelude::{AnimatedGifOptions, AnimatedPngOptions};
@@ -27,6 +28,7 @@ use crate::caps::RenderCaps;
 use crate::fonts::FontRegistry;
 use crate::lower::lower;
 use crate::pool::{Lane, RenderPool, Requester};
+use crate::remote::{AssetFetcher, Declared, Resolved};
 use crate::tw::Theme;
 use crate::{ClassCheck, ClassCheckMode, ViewFn};
 
@@ -56,6 +58,11 @@ struct Shared {
     still_fallback: bool,
     /// The App's `ImageConfig::caps`, checked before admission.
     caps: RenderCaps,
+    /// The App's remote-image fetcher.
+    remote: AssetFetcher,
+    /// The App's namespaced `AssetStore`, set by `bind` (first call wins);
+    /// unbound, nothing is cached.
+    store: OnceLock<Arc<dyn AssetStore>>,
 }
 
 /// Why an animation with fps 0 or a duration under 1 ms is unsupported.
@@ -132,6 +139,8 @@ pub(crate) struct RendererConfig {
     pub(crate) still_fallback: bool,
     /// A job over one of them fails before admission.
     pub(crate) caps: RenderCaps,
+    /// The App's remote-image fetcher.
+    pub(crate) remote: AssetFetcher,
 }
 
 impl TakumiRenderer {
@@ -147,6 +156,7 @@ impl TakumiRenderer {
             size_target,
             still_fallback,
             caps,
+            remote,
         } = config;
         Self {
             pool,
@@ -159,6 +169,8 @@ impl TakumiRenderer {
                 size_target,
                 still_fallback,
                 caps,
+                remote,
+                store: OnceLock::new(),
             }),
             views: RwLock::new(HashMap::new()),
         }
@@ -209,28 +221,79 @@ impl std::fmt::Debug for TakumiRenderer {
     }
 }
 
-impl Renderer for TakumiRenderer {
-    /// Looks the Template up and checks the caps, then admits the job to
-    /// the pool before it returns the future, so admission order is call
-    /// order. Dropping the future gives the job up: a queued job is skipped,
-    /// a running one stops before its next frame or encode attempt.
-    fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
-        let admitted = self.view_of(&job).and_then(|view| {
-            let shared = Arc::clone(&self.shared);
-            let lane = match job.animation {
-                None => Lane::Still,
-                Some(spec) => Lane::Animated {
-                    frames: budget::span_count(spec.duration, spec.fps),
-                },
-            };
-            self.pool
-                .try_submit(lane, move |requester| shared.draw(view, &job, requester))
-        });
-        Box::pin(async move {
-            admitted?
-                .await
-                .map_err(|_| RenderError::failed("render pool dropped the job"))?
+impl TakumiRenderer {
+    /// Submits `job` (with its `resolved` remote images) to the pool.
+    fn submit(
+        &self,
+        view: ViewFn,
+        job: RenderJob,
+        resolved: Resolved,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<RenderOutput, RenderError>>, RenderError>
+    {
+        let shared = Arc::clone(&self.shared);
+        let lane = match job.animation {
+            None => Lane::Still,
+            Some(spec) => Lane::Animated {
+                frames: budget::span_count(spec.duration, spec.fps),
+            },
+        };
+        self.pool.try_submit(lane, move |requester| {
+            shared.draw(view, &job, &resolved, requester)
         })
+    }
+
+    /// The deduplicated remote images `job` declares, checked against the
+    /// per-job count before anything is fetched; `None` for a Template
+    /// without `#[asset]` fields.
+    fn declared(
+        &self,
+        view: ViewFn,
+        job: &RenderJob,
+    ) -> Result<Option<Vec<Declared>>, RenderError> {
+        let Some(assets) = view.assets() else {
+            return Ok(None);
+        };
+        let declared = assets(&job.data)?;
+        self.shared.remote.plan(job.template_id, declared).map(Some)
+    }
+}
+
+impl Renderer for TakumiRenderer {
+    /// Looks the Template up and checks the caps. A Template without
+    /// `#[asset]` fields is admitted to the pool before the future is
+    /// returned, so admission order is call order. One with `#[asset]`
+    /// fields first resolves its remote images (concurrently, through the
+    /// App's `AssetFetcher` and `AssetStore`) and is admitted after them.
+    /// Dropping the future gives the job up: pending fetches are aborted, a
+    /// queued job is skipped, a running one stops before its next frame or
+    /// encode attempt.
+    fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        let planned = self
+            .view_of(&job)
+            .and_then(|view| Ok((view, self.declared(view, &job)?)));
+        match planned {
+            Err(error) => Box::pin(std::future::ready(Err(error))),
+            Ok((view, None)) => {
+                let fallback = self.shared.remote.fallback().clone();
+                let admitted = self.submit(view, job, Resolved::empty(fallback));
+                Box::pin(async move {
+                    admitted?
+                        .await
+                        .map_err(|_| RenderError::failed("render pool dropped the job"))?
+                })
+            }
+            Ok((view, Some(plan))) => Box::pin(async move {
+                let store = self.shared.store.get().map(|store| &**store);
+                let resolved = self
+                    .shared
+                    .remote
+                    .resolve(store, job.template_id, plan, job.animation.is_some())
+                    .await?;
+                self.submit(view, job, resolved)?
+                    .await
+                    .map_err(|_| RenderError::failed("render pool dropped the job"))?
+            }),
+        }
     }
 
     /// Fails with [`RenderError::NoFont`] (IMG-01) when `templates` is not
@@ -252,6 +315,12 @@ impl Renderer for TakumiRenderer {
         *self.views.write().unwrap_or_else(PoisonError::into_inner) = views;
         Ok(())
     }
+
+    /// Keeps the App's namespaced `AssetStore` for fetched remote images;
+    /// the first call wins.
+    fn bind(&self, ports: RendererPorts) {
+        let _ = self.shared.store.set(ports.asset_store);
+    }
 }
 
 impl Shared {
@@ -261,28 +330,32 @@ impl Shared {
         &'a self,
         view: ViewFn,
         job: &'a RenderJob,
+        resolved: &'a Resolved,
         requester: &'a Requester<'a>,
     ) -> Encoder<'a> {
         Encoder {
             shared: self,
             view,
             job,
+            resolved,
             requester,
             frames: None,
         }
     }
 
-    /// Renders `job` with `view` and fits it to the size budget; runs on a
-    /// pool thread and stops once `requester` is gone.
+    /// Renders `job` with `view` and its `resolved` remote images and fits
+    /// it to the size budget; runs on a pool thread and stops once
+    /// `requester` is gone.
     fn draw(
         &self,
         view: ViewFn,
         job: &RenderJob,
+        resolved: &Resolved,
         requester: &Requester<'_>,
     ) -> Result<RenderOutput, RenderError> {
         let budget = job.upload_budget.min(self.size_target);
         let attempts = budget::ladder(job, self.still_fallback);
-        let mut encoder = self.encoder(view, job, requester);
+        let mut encoder = self.encoder(view, job, resolved, requester);
         let (bytes, attempt) = budget::fit(&attempts, budget, |a| {
             if requester.gone() {
                 return Err(requester_gone());
@@ -318,6 +391,7 @@ impl Shared {
         &self,
         view: ViewFn,
         job: &RenderJob,
+        resolved: &Resolved,
         frame: Frame,
         time_ms: u64,
     ) -> Result<Bitmap, RenderError> {
@@ -335,7 +409,7 @@ impl Shared {
         self.check
             .check(&node, &self.theme)
             .map_err(RenderError::failed)?;
-        let root = lower(&node, &self.images, job.template_id)?;
+        let root = lower(&node, &self.images, resolved, job.template_id)?;
         let (width, height) = (job.size.width(), job.size.height());
         let options = RenderOptions::builder()
             .viewport(Viewport::new((width, height)))
@@ -384,6 +458,8 @@ pub(crate) struct Encoder<'a> {
     shared: &'a Shared,
     view: ViewFn,
     job: &'a RenderJob,
+    /// The job's resolved remote images.
+    resolved: &'a Resolved,
     /// Asked before each frame: a gone requester stops the draw.
     requester: &'a Requester<'a>,
     frames: Option<Frames>,
@@ -474,12 +550,12 @@ impl Encoder<'_> {
     /// Draws every frame at `fps` (one still frame for `None`), stopping
     /// before a frame once the requester is gone.
     fn draw(&self, fps: Option<u16>) -> Result<Vec<AnimationFrame>, RenderError> {
-        let (shared, view, job) = (self.shared, self.view, self.job);
+        let (shared, view, job, resolved) = (self.shared, self.view, self.job, self.resolved);
         if self.requester.gone() {
             return Err(requester_gone());
         }
         let (Some(fps), Some(spec)) = (fps, job.animation) else {
-            let still = shared.frame(view, job, Frame::STILL, 0)?;
+            let still = shared.frame(view, job, resolved, Frame::STILL, 0)?;
             return Ok(vec![AnimationFrame::new(still, 0)]);
         };
         let spans = budget::spans(spec.duration, fps);
@@ -498,7 +574,7 @@ impl Encoder<'_> {
                     return Err(requester_gone());
                 }
                 let frame = Frame { index, count };
-                let bitmap = shared.frame(view, job, frame, span.start_ms)?;
+                let bitmap = shared.frame(view, job, resolved, frame, span.start_ms)?;
                 Ok(AnimationFrame::new(bitmap, span.duration_ms))
             })
             .collect()
