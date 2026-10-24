@@ -2,7 +2,8 @@
 title: 'Story 11.5: Runtime Locale overlays through LocaleSource'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '08c1efff004868d83c8453e922e827d767f60a0d'
 baseline_revision: '62f2c5fcae3c1d1e7ba9ef3ae8997455adb59518'
 review_loop_iteration: 0
 followup_review_recommended: false
