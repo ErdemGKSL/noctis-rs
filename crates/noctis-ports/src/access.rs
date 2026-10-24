@@ -12,3 +12,25 @@ pub trait GuildAccessList: Send + Sync + 'static {
     /// refreshes it in the background.
     fn allows(&self, guild: Id<GuildMarker>) -> bool;
 }
+
+/// Delegates to the shared list, so one `Arc` can be handed to an App and
+/// kept for runtime updates.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use noctis_ports::{GuildAccessList, memory::GuildAccess};
+/// use twilight_model::id::Id;
+///
+/// fn takes_list(_list: impl GuildAccessList) {}
+///
+/// let shared = Arc::new(GuildAccess::allow([Id::new(1)]));
+/// takes_list(Arc::clone(&shared));
+/// shared.insert(Id::new(2));
+/// assert!(shared.allows(Id::new(2)));
+/// ```
+impl<P: GuildAccessList + ?Sized> GuildAccessList for std::sync::Arc<P> {
+    fn allows(&self, guild: Id<GuildMarker>) -> bool {
+        (**self).allows(guild)
+    }
+}

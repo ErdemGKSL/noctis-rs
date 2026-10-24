@@ -255,6 +255,9 @@ pub(crate) struct AppShared {
     /// ends (the testkit's hidden seam, `__testing::observe_runs`); `None`
     /// in production. It only observes.
     pub(crate) run_observer: Option<RunObserver>,
+    /// The App's `GuildAccessList` (never namespaced): AD-23 stage 3 asks
+    /// it whether a guild is served (FR-47).
+    pub(crate) guild_access: Arc<dyn noctis_ports::GuildAccessList>,
     /// The App's gateway command handle: attached while `run` runs the
     /// shards, detached otherwise (`App::gateway`, `ctx.gateway()`).
     pub(crate) gateway: noctis_gateway::GatewayHandle,

@@ -392,6 +392,33 @@ pub enum BuildViolation {
         /// Every flag the mounted trees declare, sorted and deduplicated.
         declared: Vec<&'static str>,
     },
+    /// An App id of `Module::apps` that breaks the App id grammar
+    /// (`[a-z0-9-]{1,32}`); checked on the full trees, whatever is selected,
+    /// one per broken id, in pre-order.
+    ///
+    /// ```
+    /// use noctis_core::{AppIdError, BuildViolation};
+    ///
+    /// let v = BuildViolation::InvalidAppRestriction {
+    ///     module: "m",
+    ///     id: "Bad",
+    ///     reason: AppIdError::InvalidChar { index: 0, ch: 'B' },
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "Module `m` restricts to App id `Bad`: App id has `B` at index 0: use only a-z, 0-9 \
+    ///      and - ([a-z0-9-]{1,32})"
+    /// );
+    /// ```
+    #[error("Module `{module}` restricts to App id `{id}`: {reason}")]
+    InvalidAppRestriction {
+        /// The Module's id.
+        module: &'static str,
+        /// The rejected App id.
+        id: &'static str,
+        /// Why it was rejected.
+        reason: AppIdError,
+    },
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]
     InvalidShardTotal,

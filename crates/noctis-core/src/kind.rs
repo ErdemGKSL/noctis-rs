@@ -1044,7 +1044,7 @@ impl<T: ?Sized> __NoHandler for T {}
 pub struct __Unbound;
 
 impl sealed::Sealed for __Unbound {
-    fn register(self, _: &mut Module, _: &'static [&'static str]) {}
+    fn register(self, _: &mut Module, _: &'static [&'static str], _: &'static [&'static str]) {}
 }
 
 impl Descriptor for __Unbound {}

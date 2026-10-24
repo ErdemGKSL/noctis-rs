@@ -98,11 +98,10 @@ Compile-time checks on the literal (each error names its rule):
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
 `description`, `max_expansions`, `response`, `auto_defer` and the metadata arguments
 `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` and `rate_limit(..)`, plus `flags`
-(Boot Flags, `modules-middleware-ratelimits.md` §2) and `locales`/`default_locale`. Every argument marked
-[planned] is a compile error today (`` `#[command]` argument `apps` is planned and
-not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
+(Boot Flags, `modules-middleware-ratelimits.md` §2), `apps` (App restriction,
+`app-and-sharding.md` §10) and `locales`/`default_locale`. An unknown argument lists the landed names (`` unknown `#[command]`
 argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`,
-`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or
+`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or
 `default_locale` ``), and each argument
 may appear once (`` duplicate `#[command]` argument `nsfw` ``). The withdrawn bare flags
 are unknown arguments naming their replacement: `` unknown `#[command]` argument
@@ -124,7 +123,7 @@ are unknown arguments naming their replacement: `` unknown `#[command]` argument
 | `guilds = [123456789012345678]` | guild-scoped: published only to these guilds. Integer literals only (no consts or paths), non-zero, distinct, `u64` (`42u64` works). `contexts`/`integration_types` are then a compile error: ``[META-03] contexts: limit only on global commands, actual `[Guild]` `` with `= note: scope: guild 42` (the first id). Dev-guild publishing comes from `--publish-guild` |
 | `rate_limit(user, 3, per = "10s")` | N uses per window per scope (`user`, `member`, `channel`, `guild`; `message` only on `#[message_command]`), repeatable, `manual` to count only `ctx.rate_limits().hit(..)`; errors cite `[INT-14]`; see `modules-middleware-ratelimits.md` §7 |
 | `flags = ["beta"]` | Boot Flags: the Command exists only when the selection is `all` or holds one of them (`modules-middleware-ratelimits.md` §2). A non-empty list of string literals, each 1-32 of `a-z`, `0-9`, `_`, `-` (not `all`/`none`), no repeats; errors: ``invalid Boot Flag `Beta` in `flags`: …``, `` `flags` needs at least one Boot Flag … ``, `` `flags` takes a list of string literals … `` |
-| `apps = ["main"]` | [planned] publish only for these Apps (multi-App) |
+| `apps = ["main"]` | App restriction (multiple Apps per process): the Command exists only on Apps whose effective App id is listed, so it is registered, dispatched and published only there (`app-and-sharding.md` §10). A non-empty list of string literals, each an App id `[a-z0-9-]{1,32}`, no repeats; also on `#[user_command]`/`#[message_command]`, not on events, components or modals. Errors: ``invalid App id `Main` in `apps`: App id has `M` at index 0: …``, `` `apps` needs at least one App id: write `apps = ["main"]` or remove it ``, `` `apps` takes a list of string literals: write `apps = ["main"]` ``, `` `a` is listed twice in `apps` `` |
 
 There is no `dm_permission` (`` [META-05] `dm_permission` is deprecated by Discord and not
 supported; use `contexts = [Guild]` to keep a command out of DMs ``). An argument left out
@@ -742,7 +741,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
   and `response = public | ephemeral` and `auto_defer = true | false` (with `false` the
   handler takes `r: CommandResponder<Manual>`; same `[INT-04]`/`[INT-05]` errors as
-  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `flags = ["beta"]` declares Boot Flags (same rules as §1); `rate_limit(..)` works here (`message` scope only on `#[message_command]`); `apps` is [planned] here; `max_expansions` and other names are
+  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `flags = ["beta"]` declares Boot Flags (same rules as §1); `rate_limit(..)` works here (`message` scope only on `#[message_command]`); `apps = ["main"]` restricts the menu to those Apps (same rules as §1); `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
@@ -850,13 +849,14 @@ follow each localized name and description, and choices carry `name_localization
 (`i18n.md` §4; empty maps are omitted).
 
 Boot Flags filter what is published: only selected and unflagged Commands are in the
-JSON and the diff (`modules-middleware-ratelimits.md` §2). Runtime Module state
-(`ctx.modules()`, `modules-middleware-ratelimits.md` §3) filters it further: Publish
-reloads the snapshot and leaves a Module's guild-scoped Commands out of each guild where
-it is disabled (an emptied base or group is dropped; `[REG-02]` is counted after that
-filter); global Commands stay published and answer the ephemeral
+JSON and the diff (`modules-middleware-ratelimits.md` §2). `apps = [...]` and
+`Module::apps` filter it further: a Command restricted to other Apps is not in this App's
+JSON (`app-and-sharding.md` §10). The `GuildAccessList` does not change Publish. Runtime
+Module state (`ctx.modules()`, `modules-middleware-ratelimits.md` §3) filters it further:
+Publish reloads the snapshot and leaves a Module's guild-scoped Commands out of each guild
+where it is disabled (an emptied base or group is dropped; `[REG-02]` is counted after
+that filter); global Commands stay published and answer the ephemeral
 `noctis.module.disabled` notice. A toggle never publishes by itself. [planned]
-`apps = [...]`.
 
 ## 8. Handler context (`CommandCtx`)
 

@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `63f5bcbab27b4577b25ff71d3e07105751e359b6047737918a1bc88529cd49e6` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `ab313095aa507c87e9b15355e53e3950787a4df3ac178b1361231512f1534e17` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -484,7 +484,7 @@ Read only what the task touches.
 
 | File | Read when you… |
 | --- | --- |
-| `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), lifecycle hooks, shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps and `Runtime` |
+| `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), lifecycle hooks, shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps (`apps = [..]`, `Module::apps`, `GuildAccess` allow/deny lists, pipeline stage 3) and `Runtime` |
 | `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `CommandInput::with_error`, `OptionError::Constraint`) |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |

@@ -641,7 +641,11 @@ impl Prefix {
   the same public `noctis.validation.failed` reply as for a slash decode.
 - `run_command` resolves the path in the guild's scope, then globally, and runs the
   handler. An unregistered path is `Err(DispatchError::UnknownCommand { path })` with no
-  request; a failing handler goes to the `Command` Error Sink, not into the result.
+  request; a guild the App's `GuildAccessList` does not serve is
+  `Err(DispatchError::GuildNotServed { guild_id })` with no request (silent, so two
+  white-label Apps sharing a prefix never both reply; `app-and-sharding.md` §10);
+  `DispatchError` is `#[non_exhaustive]`. A failing handler goes to the `Command` Error
+  Sink, not into the result.
 - The Dispatcher enforces none of the Command's `default_member_permissions`, `contexts`
   or `nsfw` metadata (Discord enforces those only for real interactions): check them
   yourself before calling `run_command`.

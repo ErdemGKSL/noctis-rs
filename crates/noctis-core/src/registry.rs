@@ -22,6 +22,7 @@ use crate::kind::__ExtType;
 use crate::middleware::Chain;
 use crate::module::{self, Module, NodeDecl};
 use crate::module_state::ModuleIndex;
+use crate::namespace::AppId;
 
 use self::commands::{Commands, Folded};
 
@@ -135,8 +136,9 @@ pub(crate) struct Registry {
 }
 
 impl Registry {
-    /// Folds the trees `roots` as the Boot Flag selection `selection` keeps
-    /// them (AD-7: filter before fold, see [`Module::selected`]), pre-order:
+    /// Folds the trees `roots` as the Boot Flag selection `selection` and
+    /// the App restrictions for the effective App id `app` keep them (AD-7:
+    /// filter before fold, see [`Module::selected`]), pre-order:
     /// a Module's own registrations in `add` order, then each child.
     /// Returns the Registry and its violations: first the Module-id checks
     /// of every mounted Module of the **full** trees, in pre-order (per
@@ -146,7 +148,9 @@ impl Registry {
     /// id), then one [`BuildViolation::InvalidBootFlag`] per broken or
     /// repeated `Module::flags` entry of the full trees, in pre-order, then
     /// one [`BuildViolation::UnknownBootFlag`] per selected flag that the
-    /// full trees never declare, sorted; then, on the kept trees, one
+    /// full trees never declare, sorted, then one
+    /// [`BuildViolation::InvalidAppRestriction`] per broken `Module::apps`
+    /// id of the full trees, in pre-order; then, on the kept trees, one
     /// [`BuildViolation::MissingIntent`] per handler whose privileged intent
     /// is not in `requested`, in fold order, then one
     /// [`BuildViolation::Command`] per command rule broken after merging
@@ -166,11 +170,13 @@ impl Registry {
         requested: Intents,
         strings: Option<&noctis_i18n::AppStrings>,
         selection: &BootFlags,
+        app: &AppId,
     ) -> (Self, Vec<BuildViolation>) {
         let full = pre_order(roots);
         let mut violations = check_module_ids(&full);
         check_boot_flags(&full, selection, &mut violations);
-        let kept = select(roots, selection);
+        check_app_restrictions(&full, &mut violations);
+        let kept = select(roots, selection, app.as_str());
         let roots: &[Module] = &kept;
         let mut entries = Vec::new();
         let mut folded = Vec::new();
@@ -362,17 +368,18 @@ fn pre_order(roots: &[Module]) -> Vec<Mounted<'_>> {
     out
 }
 
-/// The trees `selection` keeps. With `all` nothing is pruned. Otherwise
+/// The trees `selection` and the App restrictions for the App id `app`
+/// keep. With `all` and no App restriction nothing is pruned. Otherwise
 /// each kept Module drops the `base`/`group` declarations whose node had a
 /// Command in the full trees and has none in the kept trees; a declaration
 /// whose node never had one stays (REG-04 reports it).
-fn select<'m>(roots: &'m [Module], selection: &BootFlags) -> Cow<'m, [Module]> {
-    if selection.is_all() {
+fn select<'m>(roots: &'m [Module], selection: &BootFlags, app: &str) -> Cow<'m, [Module]> {
+    if selection.is_all() && !roots.iter().any(Module::has_app_restriction) {
         return Cow::Borrowed(roots);
     }
     let mut kept: Vec<Module> = roots
         .iter()
-        .filter_map(|root| root.selected(selection))
+        .filter_map(|root| root.selected(selection, app))
         .collect();
     let paths = |roots: &[Module]| -> Vec<&'static str> {
         pre_order(roots)
@@ -452,6 +459,23 @@ fn check_boot_flags(
                     declared: declared.clone(),
                 }),
         );
+    }
+}
+
+/// Appends one [`BuildViolation::InvalidAppRestriction`] per
+/// `Module::apps` id of the full trees that breaks the App id grammar, in
+/// pre-order (FR-47).
+fn check_app_restrictions(full: &[Mounted<'_>], violations: &mut Vec<BuildViolation>) {
+    for &(module, _) in full {
+        for &id in module.app_restriction() {
+            if let Err(reason) = noctis_rules::app_id::check(id) {
+                violations.push(BuildViolation::InvalidAppRestriction {
+                    module: module.id(),
+                    id,
+                    reason,
+                });
+            }
+        }
     }
 }
 

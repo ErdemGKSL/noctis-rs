@@ -197,6 +197,13 @@ impl Workers {
             return;
         };
         let guild_id = event.guild_id();
+        // AD-23 stage 3: no handler runs for a guild the App does not serve
+        // (the Discord cache and the guild record already saw the event).
+        if !crate::pipeline::serves(&self.app, guild_id, kind.name().unwrap_or("UNKNOWN")) {
+            tracing::trace!(target: "noctis::dispatch", shard, kind = ?kind, "guild not served");
+            drop(permit);
+            return;
+        }
         let job = Job {
             shard,
             guild_id,

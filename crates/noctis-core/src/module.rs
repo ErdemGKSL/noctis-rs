@@ -18,8 +18,14 @@ pub(crate) mod sealed {
     /// How a descriptor adds itself to a Module.
     pub trait Sealed {
         /// Appends the registration to `module`, declaring the Boot Flags
-        /// `flags` (none for an unflagged registration).
-        fn register(self, module: &mut Module, flags: &'static [&'static str]);
+        /// `flags` (none for an unflagged registration) and the App ids
+        /// `apps` (none for an unrestricted registration).
+        fn register(
+            self,
+            module: &mut Module,
+            flags: &'static [&'static str],
+            apps: &'static [&'static str],
+        );
     }
 }
 
@@ -31,40 +37,65 @@ pub(crate) mod sealed {
 pub trait Descriptor: sealed::Sealed {}
 
 impl sealed::Sealed for EventHandler {
-    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
-        module.handlers.push(self, flags);
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.handlers.push(self, flags, apps);
     }
 }
 
 impl Descriptor for EventHandler {}
 
 impl sealed::Sealed for CommandHandler {
-    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
-        module.commands.push(self, flags);
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.commands.push(self, flags, apps);
     }
 }
 
 impl Descriptor for CommandHandler {}
 
 impl sealed::Sealed for ContextMenuHandler {
-    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
-        module.menus.push(self, flags);
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.menus.push(self, flags, apps);
     }
 }
 
 impl Descriptor for ContextMenuHandler {}
 
 impl sealed::Sealed for ComponentHandler {
-    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
-        module.components.push(self, flags);
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.components.push(self, flags, apps);
     }
 }
 
 impl Descriptor for ComponentHandler {}
 
 impl sealed::Sealed for ModalHandler {
-    fn register(self, module: &mut Module, flags: &'static [&'static str]) {
-        module.modals.push(self, flags);
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.modals.push(self, flags, apps);
     }
 }
 
@@ -149,6 +180,31 @@ pub(crate) enum NodeDecl {
 /// assert!(format!("{eco:?}").contains("economy"));
 /// ```
 ///
+/// # App restriction
+///
+/// The same tree can be mounted on several Apps of one process. A Module
+/// restricted with [`apps`](Self::apps) and a single registration with
+/// `apps = [..]` on its kind attribute (`#[command("admin", apps =
+/// ["main"])]`, `#[user_command]`, `#[message_command]`) exist only on an
+/// App whose effective App id is listed: the explicit `AppBuilder::app_id`,
+/// else the id derived from the token, else `default`. Ids use the App id
+/// grammar `[a-z0-9-]{1,32}`. The restriction works like Boot Flags, in the
+/// same pruning pass before the fold: an unrestricted Module or
+/// registration always exists, a pruned Module drops its whole subtree,
+/// and a kept Module's `base`/`group` declaration whose node loses its last
+/// Command is dropped. A pruned registration is not dispatched, adds no
+/// intents and is not published. A registration exists only when both its
+/// Boot Flags and its App restriction keep it. Set `.app_id(..)`
+/// explicitly on every App that restricts registrations.
+///
+/// ```
+/// use noctis_core::Module;
+///
+/// // Exists only on the App built with `.app_id("main")`.
+/// let admin = Module::new("admin").apps(["main"]);
+/// assert!(format!("{admin:?}").contains("main"));
+/// ```
+///
 /// Every interaction is one struct with a kind derive and a `#[handler]`
 /// method (`#[derive(SlashCommand)]`, `#[derive(EventHandler)]`,
 /// `#[derive(Button)]`, …); [`add::<T>()`](Self::add) registers it.
@@ -188,6 +244,9 @@ pub struct Module {
     /// The Boot Flags of `Module::flags`, in call order (validated at
     /// `build()`).
     flags: Vec<&'static str>,
+    /// The App ids of `Module::apps`, in call order (validated at
+    /// `build()`); empty when unrestricted.
+    apps: Vec<&'static str>,
     handlers: Flagged<EventHandler>,
     commands: Flagged<CommandHandler>,
     menus: Flagged<ContextMenuHandler>,
@@ -203,12 +262,15 @@ pub struct Module {
 }
 
 /// One kind of registration in `add` order, each with the Boot Flags its
-/// kind attribute declares (`flags = [..]`; empty when unflagged).
+/// kind attribute declares (`flags = [..]`; empty when unflagged) and the
+/// App ids it is restricted to (`apps = [..]`; empty when unrestricted).
 #[derive(Clone)]
 struct Flagged<T> {
     items: Vec<T>,
     /// Parallel to `items`.
     flags: Vec<&'static [&'static str]>,
+    /// Parallel to `items`.
+    apps: Vec<&'static [&'static str]>,
 }
 
 impl<T> Flagged<T> {
@@ -216,29 +278,43 @@ impl<T> Flagged<T> {
         Self {
             items: Vec::new(),
             flags: Vec::new(),
+            apps: Vec::new(),
         }
     }
 
-    fn push(&mut self, item: T, flags: &'static [&'static str]) {
+    fn push(&mut self, item: T, flags: &'static [&'static str], apps: &'static [&'static str]) {
         self.items.push(item);
         self.flags.push(flags);
+        self.apps.push(apps);
     }
 
     fn iter(&self) -> impl Iterator<Item = (&T, &'static [&'static str])> {
         self.items.iter().zip(self.flags.iter().copied())
     }
+
+    /// Each registration with its App restriction.
+    fn restricted(&self) -> impl Iterator<Item = (&T, &'static [&'static str])> {
+        self.items.iter().zip(self.apps.iter().copied())
+    }
 }
 
 impl<T: Clone> Flagged<T> {
-    /// The registrations `selection` keeps, in order.
-    fn selected(&self, selection: &BootFlags) -> Self {
-        let (items, flags) = self
-            .iter()
-            .filter(|&(_, flags)| selection.selects(flags))
-            .map(|(item, flags)| (item.clone(), flags))
-            .unzip();
-        Self { items, flags }
+    /// The registrations `selection` keeps on the App `app`, in order.
+    fn selected(&self, selection: &BootFlags, app: &str) -> Self {
+        let mut kept = Self::new();
+        for ((item, flags), apps) in self.iter().zip(self.apps.iter().copied()) {
+            if selection.selects(flags) && serves_app(apps, app) {
+                kept.push(item.clone(), flags, apps);
+            }
+        }
+        kept
     }
+}
+
+/// Whether an App restriction (`apps = [..]` or `Module::apps`) keeps a
+/// registration on the App `app`: an empty restriction keeps it everywhere.
+fn serves_app(apps: &[&str], app: &str) -> bool {
+    apps.is_empty() || apps.contains(&app)
 }
 
 /// A Route a Module renders but another Module handles
@@ -264,6 +340,7 @@ impl Module {
         Self {
             id,
             flags: Vec::new(),
+            apps: Vec::new(),
             handlers: Flagged::new(),
             commands: Flagged::new(),
             menus: Flagged::new(),
@@ -293,7 +370,7 @@ impl Module {
     #[doc(hidden)]
     #[must_use]
     pub fn __add(mut self, descriptor: impl Descriptor) -> Self {
-        descriptor.register(&mut self, &[]);
+        descriptor.register(&mut self, &[], &[]);
         self
     }
 
@@ -307,7 +384,23 @@ impl Module {
         flags: &'static [&'static str],
         descriptor: impl Descriptor,
     ) -> Self {
-        descriptor.register(&mut self, flags);
+        descriptor.register(&mut self, flags, &[]);
+        self
+    }
+
+    /// Appends `descriptor` with the Boot Flags of its kind attribute's
+    /// `flags = [..]` and the App ids of its `apps = [..]` (both checked by
+    /// the macro); what the derives' [`Register`] impls call for a
+    /// registration restricted to some Apps.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __add_scoped(
+        mut self,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+        descriptor: impl Descriptor,
+    ) -> Self {
+        descriptor.register(&mut self, flags, apps);
         self
     }
 
@@ -328,6 +421,27 @@ impl Module {
     #[must_use = "Module::flags returns the Module with the flags added"]
     pub fn flags<I: IntoIterator<Item = &'static str>>(mut self, flags: I) -> Self {
         self.flags.extend(flags);
+        self
+    }
+
+    /// Restricts this Module to the Apps whose effective App id is in
+    /// `apps` (see [App restriction](Module#app-restriction)); repeated
+    /// calls append. No ids leaves the Module unrestricted.
+    ///
+    /// `build()` checks each id against the App id grammar
+    /// (`[a-z0-9-]{1,32}`) and reports a broken one as
+    /// [`BuildViolation::InvalidAppRestriction`](crate::BuildViolation::InvalidAppRestriction).
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    ///
+    /// // Exists only on the App built with `.app_id("main")`.
+    /// let admin = Module::new("admin").apps(["main"]);
+    /// assert!(format!("{admin:?}").contains("main"));
+    /// ```
+    #[must_use = "Module::apps returns the Module with the App restriction added"]
+    pub fn apps<I: IntoIterator<Item = &'static str>>(mut self, apps: I) -> Self {
+        self.apps.extend(apps);
         self
     }
 
@@ -626,6 +740,23 @@ impl Module {
         &self.flags
     }
 
+    /// Its own App restriction (`Module::apps`), in call order.
+    pub(crate) fn app_restriction(&self) -> &[&'static str] {
+        &self.apps
+    }
+
+    /// Whether this tree holds any App restriction (`Module::apps` or a
+    /// registration's `apps = [..]`).
+    pub(crate) fn has_app_restriction(&self) -> bool {
+        !self.apps.is_empty()
+            || self.handlers.apps.iter().any(|apps| !apps.is_empty())
+            || self.commands.apps.iter().any(|apps| !apps.is_empty())
+            || self.menus.apps.iter().any(|apps| !apps.is_empty())
+            || self.components.apps.iter().any(|apps| !apps.is_empty())
+            || self.modals.apps.iter().any(|apps| !apps.is_empty())
+            || self.children.iter().any(Self::has_app_restriction)
+    }
+
     /// The Boot Flags its own registrations declare, in kind then `add`
     /// order (repeats included).
     pub(crate) fn registration_flags(&self) -> impl Iterator<Item = &'static str> + '_ {
@@ -642,24 +773,26 @@ impl Module {
             .flat_map(|flags| flags.iter().copied())
     }
 
-    /// This tree as `selection` keeps it (AD-7, filter before fold): `None`
-    /// when this Module's flags are not selected (its whole subtree goes),
-    /// else a copy with only the selected registrations and children, in
-    /// order. Templates, catalogs, Middleware, `uses` and `base`/`group`
-    /// declarations of a kept Module stay; see
+    /// This tree as `selection` keeps it on the App whose effective App id
+    /// is `app` (AD-7, filter before fold): `None` when this Module's flags
+    /// are not selected or its App restriction does not hold `app` (its
+    /// whole subtree goes), else a copy with only the kept registrations
+    /// and children, in order. Templates, catalogs, Middleware, `uses` and
+    /// `base`/`group` declarations of a kept Module stay; see
     /// [`retain_nodes`](Self::retain_nodes) for the declarations.
-    pub(crate) fn selected(&self, selection: &BootFlags) -> Option<Self> {
-        if !selection.selects(&self.flags) {
+    pub(crate) fn selected(&self, selection: &BootFlags, app: &str) -> Option<Self> {
+        if !selection.selects(&self.flags) || !serves_app(&self.apps, app) {
             return None;
         }
         Some(Self {
             id: self.id,
             flags: self.flags.clone(),
-            handlers: self.handlers.selected(selection),
-            commands: self.commands.selected(selection),
-            menus: self.menus.selected(selection),
-            components: self.components.selected(selection),
-            modals: self.modals.selected(selection),
+            apps: self.apps.clone(),
+            handlers: self.handlers.selected(selection, app),
+            commands: self.commands.selected(selection, app),
+            menus: self.menus.selected(selection, app),
+            components: self.components.selected(selection, app),
+            modals: self.modals.selected(selection, app),
             uses: self.uses.clone(),
             nodes: self.nodes.clone(),
             before: self.before.clone(),
@@ -669,7 +802,7 @@ impl Module {
             children: self
                 .children
                 .iter()
-                .filter_map(|child| child.selected(selection))
+                .filter_map(|child| child.selected(selection, app))
                 .collect(),
         })
     }
@@ -727,6 +860,17 @@ impl fmt::Debug for Module {
             .chain(self.modals.iter().map(|(h, f)| (h.route(), f)))
             .filter(|(_, f)| !f.is_empty())
             .collect();
+        // The App-restricted registrations: (name or Route id, App ids).
+        let restricted: Vec<(&str, &[&str])> = self
+            .handlers
+            .restricted()
+            .map(|(h, a)| (h.name(), a))
+            .chain(self.commands.restricted().map(|(h, a)| (h.name(), a)))
+            .chain(self.menus.restricted().map(|(h, a)| (h.menu_name(), a)))
+            .chain(self.components.restricted().map(|(h, a)| (h.route(), a)))
+            .chain(self.modals.restricted().map(|(h, a)| (h.route(), a)))
+            .filter(|(_, a)| !a.is_empty())
+            .collect();
         let uses: Vec<&str> = self.uses.iter().map(|u| u.route).collect();
         let before: Vec<&str> = self.before.iter().map(BeforeMiddleware::name).collect();
         let after: Vec<&str> = self.after.iter().map(AfterMiddleware::name).collect();
@@ -745,6 +889,8 @@ impl fmt::Debug for Module {
             .field("components", &components)
             .field("modals", &modals)
             .field("flagged", &flagged)
+            .field("apps", &self.apps)
+            .field("restricted", &restricted)
             .field("uses", &uses)
             .field("nodes", &self.nodes)
             .field("before", &before)

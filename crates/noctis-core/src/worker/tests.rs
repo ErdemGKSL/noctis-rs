@@ -2104,3 +2104,42 @@ mod guild_locales {
         );
     }
 }
+
+/// Story 15.2: an event from a guild the App's `GuildAccessList` refuses
+/// runs none of its handlers (ordered or concurrent), frees its permit and
+/// is one `trace`; guildless events and served guilds run.
+#[tokio::test]
+async fn guild_not_served_runs_no_handler() {
+    let capture = Capture::default();
+    let _guard = tracing::subscriber::set_default(capture.subscriber());
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
+    let log = Log::default();
+    let h = Harness::start(
+        App::builder()
+            .handler_concurrency(1)
+            .guild_access(noctis_ports::memory::GuildAccess::deny([Id::new(GA)]))
+            .module(
+                Module::new("m")
+                    .__add(logging("c", false, &log))
+                    .__add(logging("o", true, &log)),
+            ),
+    );
+    h.push(message_delete(7, Some(GA)));
+    h.push(message_delete(8, None));
+    h.push(message_delete(9, Some(GB)));
+    until("served events", || log.lines().len() == 4).await;
+    assert_eq!(log.count("c:7") + log.count("o:7"), 0);
+    for line in ["c:8", "o:8", "c:9", "o:9"] {
+        assert_eq!(log.count(line), 1, "{line}");
+    }
+    assert_eq!(
+        capture
+            .lines_with(&["TRACE", "noctis::dispatch", "guild not served"])
+            .len(),
+        1,
+        "{}",
+        capture.text()
+    );
+    h.close().await;
+}

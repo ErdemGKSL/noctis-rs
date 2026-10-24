@@ -164,7 +164,7 @@ pub struct noctis::AppId(_)
 impl noctis::AppId
 pub fn noctis::AppId::as_str(&self) -> &str
 pub fn noctis::AppId::from_application_id(twilight_model::id::Id<twilight_model::id::marker::ApplicationMarker>) -> Self
-pub fn noctis::AppId::new(&str) -> core::result::Result<Self, noctis::AppIdError>
+pub fn noctis::AppId::new(&str) -> core::result::Result<Self, noctis::rules::app_id::AppIdError>
 impl core::clone::Clone for noctis::AppId
 pub fn noctis::AppId::clone(&self) -> Self
 impl core::cmp::Eq for noctis::AppId
@@ -178,26 +178,9 @@ impl core::hash::Hash for noctis::AppId
 pub fn noctis::AppId::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for noctis::AppId
 impl core::str::traits::FromStr for noctis::AppId
-pub type noctis::AppId::Err = noctis::AppIdError
+pub type noctis::AppId::Err = noctis::rules::app_id::AppIdError
 pub fn noctis::AppId::from_str(&str) -> core::result::Result<Self, Self::Err>
-#[non_exhaustive] pub enum noctis::AppIdError
-pub noctis::AppIdError::Empty
-pub noctis::AppIdError::InvalidChar
-pub noctis::AppIdError::InvalidChar::ch: char
-pub noctis::AppIdError::InvalidChar::index: usize
-pub noctis::AppIdError::TooLong
-pub noctis::AppIdError::TooLong::len: usize
-impl core::clone::Clone for noctis::AppIdError
-pub fn noctis::AppIdError::clone(&self) -> Self
-impl core::cmp::Eq for noctis::AppIdError
-impl core::cmp::PartialEq for noctis::AppIdError
-pub fn noctis::AppIdError::eq(&self, &Self) -> bool
-impl core::error::Error for noctis::AppIdError
-impl core::fmt::Debug for noctis::AppIdError
-pub fn noctis::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for noctis::AppIdError
-pub fn noctis::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::AppIdError
+pub use noctis::AppIdError
 pub enum noctis::AutoDefer
 impl core::clone::Clone for noctis::AutoDefer
 pub fn noctis::AutoDefer::clone(&self) -> Self
@@ -412,7 +395,11 @@ pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
 pub noctis::BuildViolation::InvalidAckDeadline
 pub noctis::BuildViolation::InvalidAckDeadline::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidAppId
-pub noctis::BuildViolation::InvalidAppId::reason: noctis::AppIdError
+pub noctis::BuildViolation::InvalidAppId::reason: noctis::rules::app_id::AppIdError
+pub noctis::BuildViolation::InvalidAppRestriction
+pub noctis::BuildViolation::InvalidAppRestriction::id: &'static str
+pub noctis::BuildViolation::InvalidAppRestriction::module: &'static str
+pub noctis::BuildViolation::InvalidAppRestriction::reason: noctis::rules::app_id::AppIdError
 pub noctis::BuildViolation::InvalidBootFlag
 pub noctis::BuildViolation::InvalidBootFlag::flag: &'static str
 pub noctis::BuildViolation::InvalidBootFlag::module: &'static str
@@ -856,6 +843,8 @@ impl core::ops::bit::BitOr for noctis::DiscordCacheResources
 pub type noctis::DiscordCacheResources::Output = noctis::DiscordCacheResources
 pub fn noctis::DiscordCacheResources::bitor(self, Self) -> Self
 #[non_exhaustive] pub enum noctis::DispatchError
+pub noctis::DispatchError::GuildNotServed
+pub noctis::DispatchError::GuildNotServed::guild_id: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
 pub noctis::DispatchError::UnknownCommand
 pub noctis::DispatchError::UnknownCommand::path: alloc::boxed::Box<str>
 impl core::error::Error for noctis::DispatchError
@@ -1528,6 +1517,7 @@ pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::Module::after(self, noctis::AfterMiddleware) -> Self
+pub fn noctis::Module::apps<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
 pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::Module::flags<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
@@ -4137,6 +4127,8 @@ impl core::marker::Copy for noctis::ports::Frame
 impl core::marker::StructuralPartialEq for noctis::ports::Frame
 pub trait noctis::ports::GuildAccessList: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::GuildAccessList::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+impl<P: noctis::ports::GuildAccessList + ?core::marker::Sized> noctis::ports::GuildAccessList for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
 pub trait noctis::ports::IdentifyQueue: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::IdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
 impl<P: noctis::ports::IdentifyQueue + ?core::marker::Sized> noctis::ports::IdentifyQueue for alloc::rcs::arc::Arc<P>
@@ -4538,6 +4530,20 @@ impl core::marker::StructuralPartialEq for noctis::ports::memory::DiscordCacheRe
 impl core::ops::bit::BitOr for noctis::ports::memory::DiscordCacheResources
 pub type noctis::ports::memory::DiscordCacheResources::Output = noctis::ports::memory::DiscordCacheResources
 pub fn noctis::ports::memory::DiscordCacheResources::bitor(self, Self) -> Self
+pub struct noctis::ports::memory::GuildAccess
+impl noctis::ports::memory::GuildAccess
+pub fn noctis::ports::memory::GuildAccess::allow(impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>) -> Self
+pub fn noctis::ports::memory::GuildAccess::contains(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+pub fn noctis::ports::memory::GuildAccess::deny(impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>) -> Self
+pub fn noctis::ports::memory::GuildAccess::insert(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+pub fn noctis::ports::memory::GuildAccess::is_allow_list(&self) -> bool
+pub fn noctis::ports::memory::GuildAccess::remove(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+impl core::fmt::Debug for noctis::ports::memory::GuildAccess
+pub fn noctis::ports::memory::GuildAccess::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::GuildAccessList for noctis::ports::memory::GuildAccess
+pub fn noctis::ports::memory::GuildAccess::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+impl noctis::ports::GuildAccessList for noctis::ports::memory::GuildAccess
+pub fn noctis::ports::memory::GuildAccess::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
 pub struct noctis::ports::memory::MemoryAssetStore
 impl noctis::ports::memory::MemoryAssetStore
 pub const noctis::ports::memory::MemoryAssetStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
@@ -5365,6 +5371,7 @@ pub struct noctis::prelude::Module
 impl noctis::prelude::Module
 pub fn noctis::prelude::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::prelude::Module::after(self, noctis::AfterMiddleware) -> Self
+pub fn noctis::prelude::Module::apps<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
 pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::prelude::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::prelude::Module::flags<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
@@ -6131,6 +6138,27 @@ pub fn noctis::rules::Violation::fmt(&self, &mut core::fmt::Formatter<'_>) -> co
 impl core::fmt::Display for noctis::rules::Violation
 pub fn noctis::rules::Violation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::rules::Violation
+pub mod noctis::rules::app_id
+#[non_exhaustive] pub enum noctis::rules::app_id::AppIdError
+pub noctis::rules::app_id::AppIdError::Empty
+pub noctis::rules::app_id::AppIdError::InvalidChar
+pub noctis::rules::app_id::AppIdError::InvalidChar::ch: char
+pub noctis::rules::app_id::AppIdError::InvalidChar::index: usize
+pub noctis::rules::app_id::AppIdError::TooLong
+pub noctis::rules::app_id::AppIdError::TooLong::len: usize
+impl core::clone::Clone for noctis::rules::app_id::AppIdError
+pub fn noctis::rules::app_id::AppIdError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::app_id::AppIdError
+impl core::cmp::PartialEq for noctis::rules::app_id::AppIdError
+pub fn noctis::rules::app_id::AppIdError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::rules::app_id::AppIdError
+impl core::fmt::Debug for noctis::rules::app_id::AppIdError
+pub fn noctis::rules::app_id::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::app_id::AppIdError
+pub fn noctis::rules::app_id::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::app_id::AppIdError
+pub const noctis::rules::app_id::MAX_LEN: usize
+pub fn noctis::rules::app_id::check(&str) -> core::result::Result<(), noctis::rules::app_id::AppIdError>
 pub mod noctis::rules::attachment
 #[non_exhaustive] pub struct noctis::rules::attachment::AttachmentDecl<'a>
 pub noctis::rules::attachment::AttachmentDecl::description: core::option::Option<&'a str>

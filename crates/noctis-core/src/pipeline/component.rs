@@ -79,7 +79,10 @@
 //! `warn` on target `noctis::dispatch` and the CID-06 generic ephemeral
 //! notice; no handler run and no panic. The checks before the Payload
 //! decode (malformed, unknown Route, kind mismatch, no author) win over a
-//! stale id. Nothing is stored per message or component: the one
+//! stale id. Then AD-23 stage 3 asks the App's `GuildAccessList`: a guild
+//! it does not serve gets the `noctis.module.disabled` notice and one
+//! `debug` (`guild not served`), before any Ref lookup, the Expired
+//! Handler chain or the locale resolver. Nothing is stored per message or component: the one
 //! auto-defer task per interaction ends when the handler run ends.
 
 use std::panic::AssertUnwindSafe;
@@ -148,6 +151,14 @@ pub(crate) enum Rejection {
     SubmitInvalid,
     /// The interaction has neither `member` nor `user`.
     NoAuthor,
+    /// AD-23 stage 3: the App's `GuildAccessList` does not serve the
+    /// interaction's guild; answered with the `noctis.module.disabled` notice
+    /// and one `debug`, never the Expired Handler chain. `kind` is
+    /// `component` or `modal`.
+    GuildNotServed {
+        /// The interaction's kind, for the `debug` line.
+        kind: &'static str,
+    },
 }
 
 impl Rejection {
@@ -164,6 +175,17 @@ impl Rejection {
             Self::Undecodable => "undecodable",
             Self::SubmitInvalid => "submit_invalid",
             Self::NoAuthor => "no_author",
+            Self::GuildNotServed { .. } => "guild_not_served",
+        }
+    }
+
+    /// The key of the notice that answers it: `noctis.module.disabled` for
+    /// [`GuildNotServed`](Self::GuildNotServed), else the CID-06 generic
+    /// notice.
+    pub(crate) const fn notice_key(self) -> noctis_rules::MessageKey {
+        match self {
+            Self::GuildNotServed { .. } => keys::MODULE_DISABLED,
+            _ => keys::ERROR_GENERIC,
         }
     }
 
@@ -449,13 +471,22 @@ struct Rejecter<'a> {
 }
 
 impl Rejecter<'_> {
-    /// Logs `rejection`, then sends the CID-06 generic ephemeral notice over
-    /// `shared`; a failed send is one `warn`.
+    /// Logs `rejection`, then sends its ephemeral notice over `shared` (the
+    /// CID-06 generic one, or `noctis.module.disabled` for a guild stage 3
+    /// does not serve); a failed send is one `warn`.
     async fn reject(&self, route: Option<&str>, rejection: Rejection, shared: &Arc<Shared>) {
-        log_rejection(self.span, self.shard, route, rejection);
+        if let Rejection::GuildNotServed { kind } = rejection {
+            // A refused guild is a configuration outcome, not a fault: one
+            // `debug` with the Route and the kind only.
+            self.span.in_scope(|| {
+                tracing::debug!(target: "noctis::dispatch", route, kind, "guild not served");
+            });
+        } else {
+            log_rejection(self.span, self.shard, route, rejection);
+        }
         let text = self
             .span
-            .in_scope(|| notice::text(&*self.app.strings, self.locale, keys::ERROR_GENERIC));
+            .in_scope(|| notice::text(&*self.app.strings, self.locale, rejection.notice_key()));
         if let Err(error) = shared.notice(text).instrument(self.span.clone()).await {
             self.span.in_scope(|| {
                 tracing::warn!(
@@ -727,14 +758,28 @@ pub(crate) async fn run_component_over(
             .reject(Some(route), Rejection::NoAuthor, &notice_state(transport))
             .await;
     };
-    // AD-23 stage 3: the Route's Module must be enabled here, checked
-    // before the struct (and any Ref) is decoded, so a `one_shot` Ref is
-    // not consumed.
+    // AD-23 stage 3: the App's GuildAccessList, then the Route's Module
+    // enablement, both before the struct (and any Ref) is decoded, so a
+    // refused click never takes a `one_shot` Ref, and before the Expired
+    // Handler chain and the locale resolver.
+    if !span.in_scope(|| super::serves(&app, guild_id, entry.handler.name())) {
+        let kind = match target {
+            Target::Component(_) => "component",
+            Target::Modal(..) => "modal",
+        };
+        return answer
+            .reject(
+                Some(route),
+                Rejection::GuildNotServed { kind },
+                &notice_state(transport),
+            )
+            .await;
+    }
     if !crate::pipeline::stage3(&app, &span, entry.module, route, guild_id) {
         let state = notice_state(transport);
         return crate::pipeline::disabled_notice(&app, &span, &state, answer.locale).await;
     }
-    // Stage 3 (AD-23 stage 4): resolve the locales (once, before the
+    // AD-23 stage 4: resolve the locales (once, before the
     // Expired Handler chain branch), then build the context and the
     // responder state.
     let invocation = match &target {

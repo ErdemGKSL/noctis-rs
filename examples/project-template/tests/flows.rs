@@ -9,6 +9,7 @@
 //! simulated interaction through the real pipeline. It needs a multi-thread runtime.
 //! The memory check lives in `tests/memory.rs` (its own binary, dhat allocator).
 
+use noctis::ports::memory::GuildAccess;
 use noctis::{BootFlags, Permissions};
 use noctis::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -272,5 +273,33 @@ async fn badges_follow_the_boot_flags() -> anyhow::Result<()> {
         app.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await?;
     assert_eq!(badge.kind(), ResponseKind::Reply);
     app.stop().await?;
+    Ok(())
+}
+
+/// Multiple Apps: a white-label App `acme` built from the same `configure` serves only
+/// its customer's guild and has no `/setup` (restricted to the main App with
+/// `apps = [..]`); the main App skips that guild with a deny list and answers there with
+/// the ephemeral `noctis.module.disabled` notice.
+#[tokio::test(flavor = "multi_thread")]
+async fn white_label_app_serves_only_its_guild() -> anyhow::Result<()> {
+    let guild = || TestGuild::new(GUILD, "Test Guild");
+    let mut builder = App::builder();
+    configure(&mut builder).app_id("acme").guild_access(GuildAccess::allow([GUILD]));
+    let acme = TestApp::build(&mut builder).await?.guild(guild()).user(TestUser::new(ADMIN));
+    let setup = acme.command("setup start").by(ADMIN).in_guild(GUILD).run().await;
+    assert!(matches!(setup, Err(TestError::UnknownCommand { .. })), "{setup:?}");
+    let profile = acme.command("profile").by(ADMIN).in_guild(GUILD).run().await?;
+    assert_eq!(profile.kind(), ResponseKind::Reply);
+    assert!(!profile.text().contains("disabled here"), "{}", profile.text());
+    acme.stop().await?;
+
+    let mut builder = App::builder();
+    configure(&mut builder).guild_access(GuildAccess::deny([GUILD]));
+    let main = TestApp::build(&mut builder).await?.guild(guild()).user(TestUser::new(ADMIN));
+    let skipped = main.command("profile").by(ADMIN).in_guild(GUILD).run().await?;
+    assert_eq!(skipped.kind(), ResponseKind::Reply);
+    assert!(skipped.is_ephemeral());
+    assert_eq!(skipped.text(), "This feature is disabled here.");
+    main.stop().await?;
     Ok(())
 }

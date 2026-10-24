@@ -30,7 +30,13 @@ fn fold_with(
         // Parallel tests may register the `warn!` callsite with no subscriber,
         // caching `Interest::never`; rebuild it.
         tracing::callsite::rebuild_interest_cache();
-        Registry::fold(modules, Intents::empty(), strings, &crate::BootFlags::all())
+        Registry::fold(
+            modules,
+            Intents::empty(),
+            strings,
+            &crate::BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        )
     };
     let warnings = capture.lines_with(&["noctis::registry", "WARN"]);
     (registry.commands().render(), warnings, violations)
@@ -243,8 +249,13 @@ fn reg_02_two_guilds() {
         &["ping"],
         CommandMetadata::new().guilds(GUILDS),
     ));
-    let (registry, violations) =
-        Registry::fold(&[a], Intents::empty(), None, &crate::BootFlags::all());
+    let (registry, violations) = Registry::fold(
+        &[a],
+        Intents::empty(),
+        None,
+        &crate::BootFlags::all(),
+        &crate::namespace::fallback_app_id(),
+    );
     assert_eq!(violations, []);
     assert_eq!(
         registry.commands().render(),
@@ -316,8 +327,13 @@ fn reg_03_menu_types_and_chat_input() {
         CommandMetadata::new().nsfw(true),
     ));
     let c = Module::new("c").__add(command("c::show", &["show profile"], "Show"));
-    let (registry, violations) =
-        Registry::fold(&[a, b, c], Intents::empty(), None, &crate::BootFlags::all());
+    let (registry, violations) = Registry::fold(
+        &[a, b, c],
+        Intents::empty(),
+        None,
+        &crate::BootFlags::all(),
+        &crate::namespace::fallback_app_id(),
+    );
     assert_eq!(violations, []);
     assert_eq!(
         registry.commands().render(),
@@ -355,8 +371,13 @@ fn reg_04_entries_carry_ancestors() {
         .__add(command("c::ping", &["ping"], "d"))
         .__add(user_menu("c::show", "Show", CommandMetadata::new()));
     let root = Module::new("p").module(child);
-    let (registry, violations) =
-        Registry::fold(&[root], Intents::empty(), None, &crate::BootFlags::all());
+    let (registry, violations) = Registry::fold(
+        &[root],
+        Intents::empty(),
+        None,
+        &crate::BootFlags::all(),
+        &crate::namespace::fallback_app_id(),
+    );
     assert_eq!(violations, []);
     let global = registry.commands().scope(Scope::Global).unwrap();
     assert_eq!(&*global.command("ping").unwrap().ancestors, ["p"]);

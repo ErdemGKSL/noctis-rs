@@ -24,6 +24,8 @@
 //!   non-empty bodies, webhook names and threads, and the non-interactive
 //!   components of foreign webhooks (MSG-01, MSG-03..06, MSG-09, WH-02, WH-04,
 //!   WH-05).
+//! - [`app_id`]: the App id grammar of `AppId`, `apps = [..]` and
+//!   `Module::apps` (a framework convention, no rule id).
 //! - [`boot_flag`]: the Boot Flag grammar of `flags = [..]`, `Module::flags`
 //!   and `--features` (a framework convention, no rule id).
 //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
@@ -34,6 +36,7 @@
 //!
 //! The crate is sync and does no I/O.
 
+pub mod app_id;
 pub mod attachment;
 pub mod boot_flag;
 mod check;

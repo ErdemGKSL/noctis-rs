@@ -13,6 +13,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{Ident, LitStr};
 
+use crate::apps::Apps;
 use crate::common::plain;
 use crate::flags::Flags;
 
@@ -111,7 +112,7 @@ pub(crate) fn fallback(
     family_impl: &TokenStream,
     errors: &TokenStream,
 ) -> TokenStream {
-    let items = items(ident, family, false, &Flags::default());
+    let items = items(ident, family, false, &Flags::default(), &Apps::default());
     quote! {
         #errors
         #items
@@ -195,7 +196,19 @@ pub(crate) fn scaffolding(
     manual: bool,
     flags: &Flags,
 ) -> TokenStream {
-    let items = items(ident, family, manual, flags);
+    scaffolding_scoped(ident, family, manual, flags, &Apps::default())
+}
+
+/// [`scaffolding`] for a registration restricted to the App ids `apps`
+/// (`apps = [..]` of the Command macros; empty for unrestricted).
+pub(crate) fn scaffolding_scoped(
+    ident: &Ident,
+    family: Family,
+    manual: bool,
+    flags: &Flags,
+    apps: &Apps,
+) -> TokenStream {
+    let items = items(ident, family, manual, flags, apps);
     let check = missing_handler_check(ident, family);
     quote! {
         #items
@@ -218,8 +231,9 @@ fn missing_handler_check(ident: &Ident, family: Family) -> TokenStream {
 }
 
 /// The `__Kind` and `Register` impls; a flagged registration registers with
-/// `Module::__add_flagged`.
-fn items(ident: &Ident, family: Family, manual: bool, flags: &Flags) -> TokenStream {
+/// `Module::__add_flagged`, an App-restricted one with
+/// `Module::__add_scoped`.
+fn items(ident: &Ident, family: Family, manual: bool, flags: &Flags, apps: &Apps) -> TokenStream {
     let core = core();
     let name = plain(ident);
     let name_lit = LitStr::new(&name, Span::call_site());
@@ -230,7 +244,10 @@ fn items(ident: &Ident, family: Family, manual: bool, flags: &Flags) -> TokenStr
     } else {
         quote!(#core::AutoDefer)
     };
-    let add = if flags.is_empty() {
+    let add = if !apps.is_empty() {
+        let (flags, apps) = (flags.slice(), apps.slice());
+        quote!(module.__add_scoped(#flags, #apps, <#ident>::descriptor()))
+    } else if flags.is_empty() {
         quote!(module.__add(<#ident>::descriptor()))
     } else {
         let flags = flags.slice();
@@ -310,6 +327,31 @@ mod tests {
         assert!(
             flagged.contains("__add_flagged (& [\"beta\"] , <"),
             "{flagged}"
+        );
+        let apps = Apps::parse(&quote!(apps = ["main"]).into_iter().collect::<Vec<_>>()).unwrap();
+        let scoped = scaffolding_scoped(
+            &Ident::new("P", Span::call_site()),
+            Family::Slash,
+            false,
+            &Flags::default(),
+            &apps,
+        )
+        .to_string();
+        assert!(
+            scoped.contains("__add_scoped (& [] , & [\"main\"] , <"),
+            "{scoped}"
+        );
+        let both = scaffolding_scoped(
+            &Ident::new("P", Span::call_site()),
+            Family::Slash,
+            false,
+            &flags,
+            &apps,
+        )
+        .to_string();
+        assert!(
+            both.contains("__add_scoped (& [\"beta\"] , & [\"main\"] , <"),
+            "{both}"
         );
     }
 }

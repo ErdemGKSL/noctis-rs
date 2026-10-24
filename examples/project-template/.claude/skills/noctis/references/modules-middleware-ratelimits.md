@@ -67,7 +67,9 @@ derives implement).
   set, failing with `BuildViolation::Command` (rule id, Module notes, scope). See
   `commands.md` §1 and §6.
 - The same Module tree can be mounted on several Apps (`Module` is `Clone`); each App
-  folds its own copy.
+  folds its own copy. `Module::new("x").apps(["acme"])` (and `apps = [..]` on a Command
+  attribute) keeps a Module or Command only on the listed Apps, like a Boot Flag; a bad
+  id is a `BuildViolation::InvalidAppRestriction` (`app-and-sharding.md` §10).
 
 ### Module trees (FR-44)
 
@@ -191,7 +193,9 @@ struct CoreBeta;
   accept that the subset is what users see.
 - **Several Apps in one process.** Give each App its own selection with
   `.boot_flags(..)` and run each with `run_with_args(..)` (only `App::from_env()` reads
-  the process command line).
+  the process command line). The App restriction (`apps = [..]`, `Module::apps`) runs in
+  the same pruning pass, after the Boot Flags: an item exists only when both keep it
+  (`app-and-sharding.md` §10).
 - This template flags `profile/badges` with `badges` (`src/modules/profile/mod.rs`):
   `--features none` runs without `/badge`.
 

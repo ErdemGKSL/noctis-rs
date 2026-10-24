@@ -20,7 +20,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | `RenderCache` | encoded images by render key | `get`, `put` | byte-bounded memory | `.render_cache(..)` |
 | `AssetStore` | fetched remote images (avatars, icons, emoji) | `get`, `put` | byte-bounded memory | `.asset_store(..)` |
 | `LocaleSource` | runtime overlays of content strings, loaded once at startup (one `load` per locale with a file, content keys only; a failure or a rejected pair stops startup with `Error::LocaleOverlay`; see i18n §8) | `load(locale)` | none | `.locale_source(..)` |
-| `GuildAccessList` | per-App guild allow/deny lists (white-label) | `allows(guild)` | allow all | `.guild_access(..)` |
+| `GuildAccessList` | per-App guild allow/deny lists (white-label), asked at pipeline stage 3 (`app-and-sharding.md` §10) | `allows(guild)` | allow all (`GuildAccess` is the ready allow/deny list) | `.guild_access(..)` (never namespaced) |
 | `Renderer` (driven port, not a store) | turns a `RenderJob` into `RenderOutput` | `render(job)` | `noctis-image` local pool | `.renderer(..)` |
 
 ### 1.1 The in-memory defaults (`noctis::ports::memory`)
@@ -39,6 +39,7 @@ Every port has a bounded in-memory default in `noctis::ports::memory`. An App th
 | `MemoryDiscordCache` | `DiscordCache` | the chosen resources + 100 messages per channel | — |
 | `NoLocaleOverlay` | `LocaleSource` | `load` returns `Ok(vec![])` (no overlay) | — |
 | `AllowAllGuilds` | `GuildAccessList` | `allows` returns `true` | — |
+| `GuildAccess` | `GuildAccessList` | `GuildAccess::allow(guilds)` serves only those (empty: none), `GuildAccess::deny(guilds)` all but those (empty: all); one `RwLock<HashSet>`; `insert`/`remove` (`-> bool`), `contains`, `is_allow_list`; share an `Arc` to update it at run time | — |
 | `MemoryIdentifyQueue` | `IdentifyQueue` | one slot per bucket (`max_concurrency`) | — |
 
 Each byte store has the same inherent API:
@@ -312,9 +313,24 @@ pub trait DiscordCache: Send + Sync + 'static {
   implementation of `IdentifyQueue` must serialize per bucket across processes: at most
   one Lease per bucket per 5 s across the whole Cluster, different buckets in parallel.
   See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md) (written with Story 14.6).
-- `GuildAccessList::allows` is **synchronous**: it runs on a pipeline stage that does
+- `GuildAccessList::allows` is **synchronous**: it runs on pipeline stage 3, which does
   no port I/O. Never block in it; a remote-backed implementation keeps a local snapshot
-  and refreshes it in the background.
+  and refreshes it in the background. It is asked only for interactions, events and
+  `Dispatcher::run_command` calls that carry a guild (DMs are always served); `false`
+  answers with the `noctis.module.disabled` notice (interactions), an empty autocomplete
+  list, no event handler or `DispatchError::GuildNotServed`; a panic counts as `false`.
+  Publish ignores it. It is implemented for `Arc<P>`, so you can keep a handle:
+
+  ```rust
+  use std::sync::Arc;
+  use noctis::ports::memory::GuildAccess;
+
+  let access = Arc::new(GuildAccess::allow([customer_guild]));
+  builder.guild_access(Arc::clone(&access));
+  // later, while running:
+  access.insert(new_customer_guild);   // served from the next interaction on
+  access.remove(customer_guild);       // true if it was listed
+  ```
 - `DiscordCache` is implemented for `Arc<P>` (one backend, several Apps). It uses
   only `twilight_model` types (`gateway::event::Event`,
   `guild::{Guild, Member, Role}`, `channel::{Channel, Message}`, `user::User`). Getters

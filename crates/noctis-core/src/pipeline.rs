@@ -7,13 +7,20 @@
 //!    (unlocalized) names, in the scope `data.guild_id` names (LOC-06);
 //! 2. Ref resolution: none, since a Command has no Ref (components and
 //!    modals resolve theirs, `pipeline::component`);
-//! 3. Module enablement (FR-45): Boot Flags already pruned unselected
-//!    registrations at build; the handler's Module and every ancestor must
-//!    be enabled in the interaction's guild (globally in a DM), read from
-//!    the cached Module-state snapshot with no port call. A disabled one
-//!    gets an immediate localized ephemeral type-4 `noctis.module.disabled`
-//!    notice in the built-in locale resolution, with one `debug`; nothing
-//!    later runs (no locale resolver, auto-defer, Middleware or handler);
+//! 3. the App's `GuildAccessList` (FR-47), then Module enablement (FR-45).
+//!    An interaction from a guild the App does not serve gets one type-4
+//!    ephemeral `noctis.module.disabled` notice in the built-in locale
+//!    resolution and one `debug` on `noctis::dispatch` (`guild not
+//!    served`); a DM (no guild) is always served and a panicking list
+//!    counts as not served (fail closed, one `error`). Then the handler's
+//!    Module and every ancestor must be enabled in the interaction's guild
+//!    (globally in a DM), read from the cached Module-state snapshot with no
+//!    port call; a disabled one gets the same immediate localized ephemeral
+//!    type-4 `noctis.module.disabled` notice, with one `debug`. Either way
+//!    nothing later runs (no locale resolver, rate limit, auto-defer,
+//!    Middleware, handler, report or duration sample). Boot Flags and App
+//!    restrictions need no runtime check: their pruned registrations never
+//!    reach the Registry;
 //! 4. resolve the locales (FR-43): the User Locale as Discord's `locale`,
 //!    then `guild_locale`, then the App's default; the Guild Locale as
 //!    `guild_locale`, then `locale`, then the default (each step the
@@ -65,7 +72,9 @@
 //!
 //! The [`Dispatcher`] runs stages 3 onward for a Command invoked from
 //! outside an interaction; it arms no auto-defer (a message has no ack
-//! deadline), and its stage-3 notice is a public reply to the message.
+//! deadline), and its stage-3 Module notice is a public reply to the
+//! message. A guild it does not serve is
+//! [`DispatchError::GuildNotServed`], with nothing sent.
 //!
 //! # Autocomplete
 //!
@@ -80,7 +89,8 @@
 //! truncated to 25, their `MessageKey` labels rendered in the user's locale,
 //! labels over 100 characters cut and invalid kept suggestions dropped, each
 //! with a warning on target `noctis::autocomplete`, and exactly one type-8
-//! callback is sent. Any failure sends an empty list
+//! callback is sent. From a guild the App does not serve (stage 3) it sends
+//! an empty list without running the method. Any failure sends an empty list
 //! and goes to the Autocomplete Error Sink; an unknown Command or an option
 //! without a handler sends an empty list with a warning only. The
 //! [`Dispatcher`] has no autocomplete.
@@ -91,7 +101,11 @@
 //! [`component`] (Stories 7.1, 7.2 and 7.3; CID-04, CID-06, INT-01): its
 //! `custom_id` is decoded once and its Route looked up in the Registry's
 //! Route map with the borrowed id (AD-25); a `signed` Route's tag is
-//! verified with the App's payload key ring. A stale or Ref id runs the
+//! verified with the App's payload key ring. Stage 3 (the App's
+//! `GuildAccessList`) runs once the Route is resolved and before any Ref
+//! lookup, so a denied click never takes a `one_shot` Ref and a stale id
+//! from a denied guild gets the `noctis.module.disabled` notice. A stale or
+//! Ref id runs the
 //! Expired Handler chain (Route `#[on_stale]`, Route `#[on_expired]`, App
 //! `expired_handler`, default `noctis.expired` notice) like a handler; any
 //! other input that reaches no handler is one `warn` with a `reason` label
@@ -181,6 +195,14 @@ impl Resolved {
         match self {
             Self::Command { entry, .. } => entry.handler.name(),
             Self::Menu(entry) => entry.handler.name(),
+        }
+    }
+
+    /// The `kind` of the stage-3 `debug` line.
+    const fn kind(&self) -> &'static str {
+        match self {
+            Self::Command { .. } => "command",
+            Self::Menu(_) => "context_menu",
         }
     }
 
@@ -771,6 +793,62 @@ impl<'a> Report<'a> {
     }
 }
 
+/// AD-23 stage 3 (FR-47): whether the App serves `guild` by its
+/// `GuildAccessList`. No guild (a DM, a guildless event) is always served
+/// and the list is not consulted. A panic inside the list is caught,
+/// logged once at `error` on `noctis::dispatch` naming `what` (the handler
+/// or the event type), and counts as not served (fail closed). Synchronous,
+/// no port I/O.
+pub(crate) fn serves(app: &AppShared, guild: Option<Id<GuildMarker>>, what: &str) -> bool {
+    let Some(guild) = guild else {
+        return true;
+    };
+    if let Ok(allowed) =
+        std::panic::catch_unwind(AssertUnwindSafe(|| app.guild_access.allows(guild)))
+    {
+        allowed
+    } else {
+        tracing::error!(
+            target: "noctis::dispatch",
+            handler = what,
+            "the GuildAccessList panicked: the guild is not served"
+        );
+        false
+    }
+}
+
+/// Answers a Command or context menu stage 3 refused: one `debug` on
+/// `noctis::dispatch` (`handler` and `kind` only: no user id, no options),
+/// then the `noctis.module.disabled` ephemeral notice over `shared` in
+/// `locale` (the built-in resolution); a failed send is one `warn`.
+/// Components and modals answer through their `Rejection::GuildNotServed`.
+async fn not_served(
+    span: &Span,
+    app: &AppShared,
+    shared: &Arc<Shared>,
+    locale: noctis_rules::Locale,
+    (handler, kind): (&'static str, &'static str),
+) {
+    span.in_scope(|| {
+        tracing::debug!(
+            target: "noctis::dispatch",
+            handler,
+            kind,
+            "guild not served"
+        );
+    });
+    let text = span.in_scope(|| notice::text(&*app.strings, locale, keys::MODULE_DISABLED));
+    if let Err(error) = shared.notice(text).instrument(span.clone()).await {
+        span.in_scope(|| {
+            tracing::warn!(
+                target: "noctis::dispatch",
+                %error,
+                "could not send the guild-not-served notice"
+            );
+        });
+    }
+}
+
 /// Stage 4 (FR-43, AD-23): the run's locale cell: the built-in resolution
 /// of `request`, then the App's `LocaleResolver` once (for `handler`); an
 /// interaction's parseable `guild_locale` also refreshes an existing guild
@@ -1148,11 +1226,21 @@ pub(crate) async fn run_interaction(
     });
     // A user-install-only interaction may send 5 follow-ups (INT-11).
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
+    // Stage 3: the App's GuildAccessList, then Module enablement (cached
+    // state only).
+    if !span.in_scope(|| serves(&app, guild_id, resolved.handler())) {
+        let builtin = app
+            .locales
+            .builtin_raw(locale.as_deref(), guild_locale.as_deref());
+        let state =
+            Shared::with_followup_cap(transport, Ephemerality::Ephemeral, app.limits.clone(), cap);
+        let what = (resolved.handler(), resolved.kind());
+        return not_served(&span, &app, &state, builtin.user, what).await;
+    }
     let (discord_user, discord_guild) = (
         locale::parse(locale.as_deref()),
         locale::parse(guild_locale.as_deref()),
     );
-    // Stage 3: the Module must be enabled here (cached state only).
     if !stage3(&app, &span, resolved.module(), resolved.path(), guild_id) {
         // Before stage 4: the built-in locale resolution (no resolver).
         let builtin = LocaleCell::new(app.locales.builtin(discord_user, discord_guild));
@@ -1361,6 +1449,19 @@ pub(crate) async fn run_autocomplete(
         around: None,
         restore: None,
     };
+    // Stage 3: the App's GuildAccessList; a guild it does not serve gets
+    // an empty list, with no handler run and no report.
+    if let Ok(resolved) = &resolved
+        && !span.in_scope(|| serves(&app, guild_id, resolved.handler()))
+    {
+        let sent = send_choices(&target, &[]).instrument(span.clone()).await;
+        if let Err(error) = sent {
+            span.in_scope(|| {
+                tracing::warn!(target: "noctis::autocomplete", %error, "autocomplete callback failed");
+            });
+        }
+        return;
+    }
     let found = match find_autocomplete(&span, shard, resolved, raw.as_bytes(), author) {
         Ok(found) => found,
         Err(skip) => {
@@ -1725,6 +1826,21 @@ pub enum DispatchError {
         /// The requested Command Path.
         path: Box<str>,
     },
+    /// The App's `GuildAccessList` does not serve the invocation's guild
+    /// (AD-23 stage 3); nothing was sent and no handler ran.
+    ///
+    /// ```
+    /// use noctis_core::DispatchError;
+    /// use twilight_model::id::Id;
+    ///
+    /// let err = DispatchError::GuildNotServed { guild_id: Id::new(7) };
+    /// assert_eq!(err.to_string(), "guild `7` is not served by this App");
+    /// ```
+    #[error("guild `{guild_id}` is not served by this App")]
+    GuildNotServed {
+        /// The invocation's guild.
+        guild_id: Id<GuildMarker>,
+    },
 }
 
 /// One Command invocation for [`Dispatcher::run_command`]: the decoded
@@ -1835,8 +1951,10 @@ impl Dispatcher {
     /// # Errors
     ///
     /// [`DispatchError::UnknownCommand`] when no Command is registered at
-    /// the path in the guild's scope or globally. A failed handler is not
-    /// an error here: it goes to the Command Error Sink.
+    /// the path in the guild's scope or globally;
+    /// [`DispatchError::GuildNotServed`] when the App's `GuildAccessList`
+    /// does not serve the invocation's guild (nothing is sent). A failed
+    /// handler is not an error here: it goes to the Command Error Sink.
     #[expect(
         clippy::too_many_lines,
         reason = "one linear pass over the stages, stage 4 included"
@@ -1873,6 +1991,13 @@ impl Dispatcher {
         let Resolved::Command { entry, path } = &resolved else {
             return Ok(());
         };
+        // Stage 3: the App's GuildAccessList; silent, so two white-label
+        // Apps sharing a prefix never both answer.
+        if let Some(guild_id) = guild_id
+            && !span.in_scope(|| serves(&self.app, Some(guild_id), entry.handler.name()))
+        {
+            return Err(DispatchError::GuildNotServed { guild_id });
+        }
         let ephemerality = entry.handler.ephemerality();
         // Stage 3: a disabled Module answers a public notice reply.
         if !stage3(&self.app, &span, entry.module, path, guild_id) {

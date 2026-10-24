@@ -619,6 +619,7 @@ pub mod __testing {
             twilight_model::gateway::Intents::empty(),
             None,
             &crate::BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
         );
         if violations.is_empty() {
             Ok(RouteTable(registry))

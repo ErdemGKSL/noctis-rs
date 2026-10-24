@@ -26,13 +26,15 @@
 //!
 //! [`NoLocaleOverlay`] (no runtime overlay) and [`AllowAllGuilds`] (serve
 //! every guild) are the trivial defaults of `LocaleSource` and
-//! `GuildAccessList`.
+//! `GuildAccessList`. [`GuildAccess`] is the ready allow or deny list for
+//! white-label Apps; it can change while the App runs.
 //!
 //! [`MemoryIdentifyQueue`] grants identifies by Discord's buckets in one
 //! process: one Lease per bucket per 5 s, buckets in parallel, FIFO within a
 //! bucket. Its memory is one slot per bucket (`max_concurrency`). It does not
 //! cover several processes; a Cluster needs a shared `IdentifyQueue`.
 
+mod access;
 mod byte_store;
 mod discord;
 mod identify;
@@ -41,6 +43,7 @@ mod trivial;
 
 use std::time::Duration;
 
+pub use access::GuildAccess;
 pub use discord::{DiscordCacheResources, MemoryDiscordCache};
 pub use identify::MemoryIdentifyQueue;
 pub use stores::{

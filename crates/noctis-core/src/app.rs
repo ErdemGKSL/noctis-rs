@@ -2032,6 +2032,12 @@ impl AppBuilder {
     /// An invalid id is a [`BuildViolation::InvalidAppId`]. The last call
     /// wins.
     ///
+    /// The effective id (this one, else the token's, else `default`) also
+    /// selects the App-restricted registrations (`apps = [..]`,
+    /// `Module::apps`) before the fold: set it explicitly on every App of a
+    /// process that mounts restricted Modules or Commands, and give each App
+    /// a distinct id.
+    ///
     /// ```
     /// # #[tokio::main(flavor = "current_thread")] async fn main() {
     /// let app = noctis_core::App::builder().app_id("my-bot").build().unwrap();
@@ -2798,7 +2804,16 @@ impl AppBuilder {
         plain {
             identify_queue(IdentifyQueue) = "MemoryIdentifyQueue", "MemoryIdentifyQueue::default()";
             locale_source(LocaleSource) = "NoLocaleOverlay", "NoLocaleOverlay";
-            guild_access(GuildAccessList) = "AllowAllGuilds", "AllowAllGuilds";
+            guild_access(GuildAccessList) = "AllowAllGuilds", "AllowAllGuilds",
+                "Pipeline stage 3 asks it for every interaction, event and \
+                `Dispatcher::run_command` from a guild (DMs are always served): a refused \
+                command, context menu, component or modal gets one ephemeral \
+                `noctis.module.disabled` notice, a refused autocomplete an empty list, a refused \
+                event runs no handler, and a refused `run_command` is \
+                `DispatchError::GuildNotServed`. A panic counts as not served. \
+                `noctis::ports::memory::GuildAccess` is a ready allow or deny list; pass an \
+                `Arc` of it to update it while the App runs. It is never namespaced, and \
+                Publish ignores it (it controls serving, not registration).";
             discord_cache_backend(DiscordCache) = "{DiscordCacheResources, MemoryDiscordCache}",
                 "MemoryDiscordCache::new(DiscordCacheResources::all())",
                 default = "a `MemoryDiscordCache` of the [`discord_cache`](Self::discord_cache) \
@@ -2999,11 +3014,15 @@ impl AppBuilder {
                 (None, violations)
             }
         };
+        // The effective App id selects the App-restricted registrations
+        // before the fold, and is the App's id afterwards (computed once).
+        let app_id = explicit_app_id.unwrap_or_else(|| default_app_id(self.token.as_ref()));
         let (registry, missing) = Registry::fold(
             &self.modules,
             self.intents,
             strings.as_ref(),
             &self.boot_flags,
+            &app_id,
         );
         let registry = Arc::new(registry);
         self.violations.extend(missing);
@@ -3031,7 +3050,6 @@ impl AppBuilder {
             return Err(BuildError::new(config.violations));
         };
         let strings = Arc::new(strings);
-        let app_id = explicit_app_id.unwrap_or_else(|| default_app_id(config.token.as_ref()));
         let app: Arc<str> = Arc::from(app_id.as_str());
         let upstream = Upstream::for_proxy(http_proxy.as_deref(), config.http_config.upstream_h2c);
         let edge = Edge::start(
@@ -3083,6 +3101,7 @@ impl AppBuilder {
                 rate_limited: config.rate_limited,
                 run_observer: config.run_observer,
                 gateway: GatewayHandle::detached(),
+                guild_access: Arc::clone(&ports.guild_access),
             }),
             strings,
             http_timeout: config.http_timeout,

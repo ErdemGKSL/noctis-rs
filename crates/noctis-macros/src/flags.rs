@@ -46,24 +46,8 @@ impl core::fmt::Debug for Flags {
 impl Flags {
     /// Parses the whole `flags = [..]` argument `segment`.
     pub(crate) fn parse(segment: &[TokenTree]) -> syn::Result<Self> {
-        let span = span_of(segment);
-        let group = match segment {
-            [_, TokenTree::Punct(eq), TokenTree::Group(group)]
-                if eq.as_char() == '=' && group.delimiter() == Delimiter::Bracket =>
-            {
-                group
-            }
-            _ => return Err(syn::Error::new(span, NOT_A_LIST)),
-        };
-        let items = segments(group.stream());
-        if items.iter().all(Vec::is_empty) {
-            return Err(syn::Error::new(group.span(), EMPTY));
-        }
-        let mut flags: Vec<LitStr> = Vec::with_capacity(items.len());
-        for item in items {
-            let tokens: TokenStream = item.iter().cloned().collect();
-            let lit = syn::parse2::<LitStr>(tokens)
-                .map_err(|_| syn::Error::new(span_of(&item), NOT_A_LIST))?;
+        let mut flags: Vec<LitStr> = Vec::new();
+        for lit in string_list(segment, NOT_A_LIST, EMPTY)? {
             let value = lit.value();
             let reason = match boot_flag::check(&value) {
                 Err(reason) => Some(reason),
@@ -93,6 +77,36 @@ impl Flags {
         let flags = &self.0;
         quote!(&[#(#flags),*])
     }
+}
+
+/// The string literals of a `name = ["a", ..]` argument `segment`, in
+/// source order: `not_a_list` when the value is not a bracketed list of
+/// string literals, `empty` for `[]` (shared by `flags` and `apps`).
+pub(crate) fn string_list(
+    segment: &[TokenTree],
+    not_a_list: &str,
+    empty: &str,
+) -> syn::Result<Vec<LitStr>> {
+    let span = span_of(segment);
+    let group = match segment {
+        [_, TokenTree::Punct(eq), TokenTree::Group(group)]
+            if eq.as_char() == '=' && group.delimiter() == Delimiter::Bracket =>
+        {
+            group
+        }
+        _ => return Err(syn::Error::new(span, not_a_list)),
+    };
+    let items = segments(group.stream());
+    if items.iter().all(Vec::is_empty) {
+        return Err(syn::Error::new(group.span(), empty));
+    }
+    items
+        .iter()
+        .map(|item| {
+            let tokens: TokenStream = item.iter().cloned().collect();
+            syn::parse2::<LitStr>(tokens).map_err(|_| syn::Error::new(span_of(item), not_a_list))
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, Ident, LitStr};
 
+use crate::apps::Apps;
 use crate::command::{HandlerArgs, arg_name, segments, span_of, withdrawn};
 use crate::common::combine;
 use crate::flags::Flags;
@@ -53,10 +54,7 @@ impl Menu {
     }
 }
 
-/// Arguments later stories add.
-const PLANNED: [&str; 1] = ["apps"];
-
-const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` or `flags`";
+const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags` or `apps`";
 
 const KEY_LITERAL: &str = "`key` takes a string literal";
 
@@ -73,6 +71,8 @@ struct Args {
     key: Option<String>,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
+    /// `apps = [..]`: the App ids it is restricted to (FR-47).
+    apps: Apps,
     /// `rate_limit(..)`, once per scope (INT-14).
     rate_limits: RateLimits,
 }
@@ -108,6 +108,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         meta: MetaArgs::default(),
         key: None,
         flags: Flags::default(),
+        apps: Apps::default(),
         rate_limits: RateLimits::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -129,14 +130,8 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
                 parsed.rate_limits.parse(&segment)?;
                 continue;
             }
-            "response" | "auto_defer" | "key" | "flags" => {}
+            "response" | "auto_defer" | "key" | "flags" | "apps" => {}
             other if meta::is_meta(other) => {}
-            planned if PLANNED.contains(&planned) => {
-                return Err(syn::Error::new(
-                    span,
-                    format!("`{attr}` argument `{name}` is planned and not supported yet"),
-                ));
-            }
             _ => {
                 return Err(syn::Error::new(
                     span,
@@ -157,6 +152,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
         if name == "flags" {
             parsed.flags = Flags::parse(&segment)?;
+            continue;
+        }
+        if name == "apps" {
+            parsed.apps = Apps::parse(&segment)?;
             continue;
         }
         if let Some(result) = parsed.handler.parse(&name, &segment) {
@@ -270,11 +269,12 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
         |key| quote!(::core::option::Option::Some(#key)),
     );
     let rate_limits = args.rate_limits.const_item();
-    let scaffolding = crate::kind::scaffolding(
+    let scaffolding = crate::kind::scaffolding_scoped(
         ident,
         crate::kind::Family::Menu,
         args.handler.manual,
         &args.flags,
+        &args.apps,
     );
     Ok(quote! {
         #[automatically_derived]
@@ -541,13 +541,6 @@ mod tests {
         ] {
             assert_eq!(error(Menu::User, args.clone(), SHOW), expected, "{args}");
         }
-        for planned in PLANNED {
-            let ident = quote::format_ident!("{planned}");
-            assert_eq!(
-                error(Menu::User, quote!("X", #ident = "show_profile"), SHOW),
-                format!("`#[user_command]` argument `{planned}` is planned and not supported yet")
-            );
-        }
         assert_eq!(
             error(Menu::Message, quote!(), QUOTE),
             "`#[message_command]` needs the menu name as its first argument: `#[message_command(\"Quote\")]`"
@@ -586,6 +579,37 @@ mod tests {
                 (
                     quote!("X", flags = ["a"], flags = ["a"]),
                     format!("duplicate `{attr}` argument `flags`"),
+                ),
+            ] {
+                assert_eq!(error(menu, args.clone(), src), expected, "{args}");
+            }
+        }
+    }
+
+    /// Story 15.2: `apps = [..]` on both menu attributes.
+    #[test]
+    fn app_restriction() {
+        for (menu, src) in [(Menu::User, SHOW), (Menu::Message, QUOTE)] {
+            let out = expand(menu, quote!("X", apps = ["main"]), item(src))
+                .unwrap()
+                .to_string();
+            assert!(out.contains("__add_scoped (& [] , & [\"main\"]"), "{out}");
+            let attr = menu.attr();
+            for (args, expected) in [
+                (quote!("X", apps = []), crate::apps::EMPTY.to_owned()),
+                (quote!("X", apps = "main"), crate::apps::NOT_A_LIST.to_owned()),
+                (quote!("X", apps = [main]), crate::apps::NOT_A_LIST.to_owned()),
+                (
+                    quote!("X", apps = ["Main"]),
+                    "invalid App id `Main` in `apps`: App id has `M` at index 0: use only a-z, 0-9 and - ([a-z0-9-]{1,32})".to_owned(),
+                ),
+                (
+                    quote!("X", apps = ["a", "a"]),
+                    "`a` is listed twice in `apps`".to_owned(),
+                ),
+                (
+                    quote!("X", apps = ["a"], apps = ["b"]),
+                    format!("duplicate `{attr}` argument `apps`"),
                 ),
             ] {
                 assert_eq!(error(menu, args.clone(), src), expected, "{args}");

@@ -3079,6 +3079,7 @@ async fn int_05_manual_menu() {
     );
 }
 
+mod access;
 mod components;
 mod expired;
 mod guards;

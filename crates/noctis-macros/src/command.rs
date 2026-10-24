@@ -14,6 +14,7 @@ use quote::quote;
 use syn::{Attribute, DeriveInput, Ident, LitInt, LitStr, Meta, Type};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
+use crate::apps::Apps;
 use crate::common::combine;
 use crate::flags::Flags;
 use crate::meta::{self, MetaArgs};
@@ -31,10 +32,7 @@ const CAP_LITERAL: &str =
     "`max_expansions` takes an integer literal, such as `max_expansions = 30`";
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
-/// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 1] = ["apps"];
-
-const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`";
 
 /// The hidden flag of Noctis's own trybuild fixtures: `locales` is relative
 /// to the invoking source file.
@@ -56,6 +54,8 @@ struct Args {
     locales: LocaleArgs,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
+    /// `apps = [..]`: the App ids it is restricted to (FR-47).
+    apps: Apps,
     /// `rate_limit(..)`, once per scope (INT-14).
     rate_limits: RateLimits,
 }
@@ -222,6 +222,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         meta: MetaArgs::default(),
         locales: LocaleArgs::default(),
         flags: Flags::default(),
+        apps: Apps::default(),
         rate_limits: RateLimits::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -261,6 +262,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             parsed.flags = Flags::parse(&segment)?;
             continue;
         }
+        if name == "apps" {
+            parsed.apps = Apps::parse(&segment)?;
+            continue;
+        }
         if matches!(
             name.as_str(),
             "locales" | "default_locale" | FROM_SOURCE_FILE
@@ -285,12 +290,8 @@ fn check_arg_name(name: &str, span: Span) -> syn::Result<()> {
             ))
         }
         "description" | "max_expansions" | "response" | "auto_defer" | "locales"
-        | "default_locale" | "flags" | FROM_SOURCE_FILE => Ok(()),
+        | "default_locale" | "flags" | "apps" | FROM_SOURCE_FILE => Ok(()),
         other if meta::is_meta(other) => Ok(()),
-        planned if PLANNED.contains(&planned) => Err(syn::Error::new(
-            span,
-            format!("`#[command]` argument `{name}` is planned and not supported yet"),
-        )),
         _ => Err(syn::Error::new(
             span,
             format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
@@ -814,11 +815,12 @@ fn expand(
     };
     let ephemerality = args.handler.ephemerality();
     let rate_limits = args.rate_limits.const_item();
-    let scaffolding = crate::kind::scaffolding(
+    let scaffolding = crate::kind::scaffolding_scoped(
         ident,
         crate::kind::Family::Slash,
         args.handler.manual,
         &args.flags,
+        &args.apps,
     );
     Ok(quote! {
         #options
@@ -1192,7 +1194,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", ephemeral),
@@ -1216,7 +1218,7 @@ mod tests {
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1290,13 +1292,70 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in PLANNED {
-            let ident = quote::format_ident!("{planned}");
-            assert_eq!(
-                error(quote!("ping", #ident), PING),
-                format!("`#[command]` argument `{planned}` is planned and not supported yet")
-            );
+    }
+
+    /// Story 15.2: `apps = [..]`.
+    #[test]
+    fn app_restriction() {
+        let out = expand(
+            quote!("admin", description = "d", apps = ["main"]),
+            item(PING),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("__add_scoped (& [] , & [\"main\"]"), "{out}");
+        let both = expand(
+            quote!(
+                "admin",
+                description = "d",
+                flags = ["beta"],
+                apps = ["main", "acme"]
+            ),
+            item(PING),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            both.contains("__add_scoped (& [\"beta\"] , & [\"main\" , \"acme\"]"),
+            "{both}"
+        );
+        let plain = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string();
+        assert!(!plain.contains("__add_scoped"), "{plain}");
+        for (args, expected) in [
+            (quote!("ping", apps = []), crate::apps::EMPTY.to_owned()),
+            (quote!("ping", apps = "main"), crate::apps::NOT_A_LIST.to_owned()),
+            (quote!("ping", apps = [main]), crate::apps::NOT_A_LIST.to_owned()),
+            (quote!("ping", apps), crate::apps::NOT_A_LIST.to_owned()),
+            (
+                quote!("ping", apps = ["Main"]),
+                "invalid App id `Main` in `apps`: App id has `M` at index 0: use only a-z, 0-9 and - ([a-z0-9-]{1,32})".to_owned(),
+            ),
+            (
+                quote!("ping", apps = [""]),
+                "invalid App id `` in `apps`: App id is empty: use 1-32 characters matching [a-z0-9-]{1,32}, such as `my-bot`".to_owned(),
+            ),
+            (
+                quote!("ping", apps = ["a", "a"]),
+                "`a` is listed twice in `apps`".to_owned(),
+            ),
+            (
+                quote!("ping", apps = ["a"], apps = ["b"]),
+                "duplicate `#[command]` argument `apps`".to_owned(),
+            ),
+        ] {
+            assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
+        let long = "a".repeat(33);
+        assert_eq!(
+            error(quote!("ping", apps = [#long]), PING),
+            format!(
+                "invalid App id `{long}` in `apps`: App id has 33 characters: shorten it to at most 32 matching [a-z0-9-]{{1,32}}"
+            )
+        );
+        let max = "a".repeat(32);
+        assert!(expand(quote!("ping", description = "d", apps = [#max]), item(PING)).is_ok());
     }
 
     /// Story 13.2 M1-M8: `flags = [..]`.

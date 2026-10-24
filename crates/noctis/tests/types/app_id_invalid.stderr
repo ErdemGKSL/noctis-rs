@@ -1,0 +1,5 @@
+error: invalid App id `Main` in `apps`: App id has `M` at index 0: use only a-z, 0-9 and - ([a-z0-9-]{1,32})
+ --> tests/types/app_id_invalid.rs:4:47
+  |
+4 | #[command("admin", description = "d", apps = ["Main"])]
+  |                                               ^^^^^^

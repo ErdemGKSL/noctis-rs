@@ -127,7 +127,7 @@ Implemented:
 | `.report(BuildViolation)` | — | record a violation (plugins); `build()` returns it with the others |
 | `.renderer(Arc<dyn Renderer>)` | none | usually set by the image plugin |
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
-| `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
+| `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults (`.guild_access`: `AllowAllGuilds`) | each takes `impl Port`; the last call wins; see `adapters.md`; `.guild_access(GuildAccess::allow([..]))` / `deny([..])` decides which guilds the App serves (pipeline stage 3, §10) |
 | `.discord_cache(DiscordCacheConfig)` | `DiscordCacheConfig::default()`: `GUILD \| CHANNEL \| ROLE` | which Discord resources are cached for `ctx.cache()` (`noctis::DiscordCacheConfig`/`DiscordCacheResources`; `none()` turns it off); adds their event types to the gateway filter and their intents; `MEMBER` needs `.intents(Intents::GUILD_MEMBERS)` (else `BuildViolation::MissingCacheIntent`, GW-05); no env variable; the last call wins; read back with `app.discord_cache()`; see `adapters.md` §1.2 |
 | `.module_state_poll(Duration)` | 5 s | how often a running App polls the `ModuleStateStore`'s `version()` and reloads the runtime Module state: the delay before another process's toggle applies here; 10 ms..=1 h (else `BuildViolation::InvalidModuleStatePoll`); the last call wins; `app.module_state_poll()` reads it; see `modules-middleware-ratelimits.md` §3 |
 | `.discord_cache_backend(impl DiscordCache)` | a `MemoryDiscordCache` of the `.discord_cache(..)` resources and message cap | replace the Discord cache's storage (an `Arc` shares one across the Apps of a Cluster; never namespaced); the configuration still decides what is fed and read |
@@ -145,7 +145,7 @@ Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
+| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()`. The effective id also selects `apps = [..]` / `Module::apps` registrations before the fold (§10) |
 | `.locales(Catalog)` | none: available `{en-US}`, default `en-US` | the first catalog's `default` is the App default; see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` | none | sync `Fn(&LocaleRequest) -> Locales`, called once per run at pipeline stage 4, result used verbatim; a panic keeps the built-in resolution; see `i18n.md` §7 |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
@@ -902,24 +902,103 @@ plugin, turn it into a violation with `app.report(conflict.into())`, so the seco
 `build()` fails with `BuildViolation::ResourceConflict`. Two Apps on two
 `Runtime::for_test()` never conflict.
 
-Several Apps in one process [planned]:
+### Several Apps in one process (white-label bots)
+
+Build each App with its **own** `App::builder()` chain, an explicit `.token(..)` and a
+**distinct** `.app_id(..)`, attach both to one `Runtime`, and run them together. Each
+App keeps its own HTTP client, shards, Registry, Responder, `Limits`, `app`-labelled
+metrics and namespaced ports; process resources (fonts, render pool) come from the
+shared `Runtime`.
 
 ```rust
+use noctis::prelude::*;
+use noctis::ports::memory::GuildAccess;
+use noctis::{Runtime, Token};
+
 let runtime = Runtime::global();
-let main = configure(&mut App::from_env_prefixed("MAIN")?)   // MAIN_NOCTIS_TOKEN … [planned]
-    .image(image_config.clone())                              // first App freezes fonts/pool
-    .build()?;
-let white = configure(&mut App::from_env_prefixed("ACME")?)
-    .image(image_config)                                      // same config: fine
-    .guild_access(GuildAccess::allow([acme_guild]))
-    .build()?;
-runtime.run([main, white]).await?;                            // [planned]
+let acme_guild = noctis::twilight::model::id::Id::new(123);
+
+let mut main = App::builder();
+configure(&mut main)                                        // your shared Module tree
+    .runtime(&runtime)
+    .token(Token::new(std::env::var("MAIN_TOKEN")?)?)
+    .app_id("main")
+    .guild_access(GuildAccess::deny([acme_guild]));         // main skips the customer
+let main = main.build()?;
+
+let mut acme = App::builder();
+configure(&mut acme)
+    .runtime(&runtime)
+    .token(Token::new(std::env::var("ACME_TOKEN")?)?)
+    .app_id("acme")                                         // the last `.app_id` wins
+    .guild_access(GuildAccess::allow([acme_guild]));        // acme serves only it
+let acme = acme.build()?;
+
+tokio::try_join!(main.run(), acme.run())?;
 ```
 
-- The same Module tree can be mounted on several Apps. Restrict a command to some Apps
-  with `#[command("…", apps = ["main"])]` [planned].
-- Apps share Adapters only where you opt in (`.cache_store(Shared::new(store))`);
-  otherwise keys are namespaced per App (FR-71): give each App its own `.app_id(..)`.
+There is no `App::from_env_prefixed` or `Runtime::run([..])`: read each App's token
+yourself. Two live Apps with the same App id are **not** detected: they would share
+port keys and metric series, so always give each App its own `.app_id(..)`.
+
+**Restrict registrations to some Apps.** The same Module tree mounts on every App.
+`apps = ["main", ..]` on `#[command]`, `#[user_command]` and `#[message_command]`, or
+`Module::new("x").apps(["acme"])` for a whole Module, keeps it only on Apps whose
+**effective App id** (the explicit `.app_id(..)`, else the id derived from the token,
+else `default`) is listed:
+
+```rust
+#[derive(SlashCommand)]
+#[command("admin", description = "Main bot only", apps = ["main"])]
+struct Admin;
+
+let branding = Module::new("branding").apps(["acme"]).add::<Brand>();
+```
+
+- It works like a Boot Flag, in the same pruning pass before `build()` folds the trees,
+  after the Boot Flag selection: an unrestricted item always exists, a restricted one
+  exists only on a listed App, a pruned Module drops its whole subtree (components,
+  events, Middleware, children), and a kept Module's `base`/`group` whose node loses its
+  last Command is dropped. A pruned Command is not registered, dispatched, counted for
+  intents or published; an interaction for it is "unknown command". `flags` and `apps`
+  together: it exists only when both keep it.
+- `Module::apps([])` is unrestricted; repeated calls append.
+- Ids follow the App id grammar `[a-z0-9-]{1,32}`. In the macros a bad id is a compile
+  error: ``invalid App id `Main` in `apps`: App id has `M` at index 0: use only a-z, 0-9
+  and - ([a-z0-9-]{1,32})``, ``apps` needs at least one App id: write `apps = ["main"]`
+  or remove it``, ``apps` takes a list of string literals: write `apps = ["main"]```
+  and ``a` is listed twice in `apps```. A bad `Module::apps` id is a
+  `BuildViolation::InvalidAppRestriction { module, id, reason: AppIdError }` (``Module
+  `m` restricts to App id `Bad`: …``), checked on the full trees. `apps` is not accepted
+  on events, components or modals (restrict their Module instead).
+- An App without an explicit id is `default` (or the token's id): restricted items are
+  pruned there unless that id is listed, so set `.app_id(..)` on every App.
+
+**Serve guilds selectively: `GuildAccessList`.** `.guild_access(..)` takes the App's
+list; `noctis::ports::memory::GuildAccess` is the ready one: `GuildAccess::allow(guilds)`
+serves only those guilds (an empty allow list serves none), `GuildAccess::deny(guilds)`
+serves all but those. Pass an `Arc<GuildAccess>` and keep a clone to `insert(guild) ->
+bool` / `remove(guild) -> bool` while the App runs; `contains` and `is_allow_list` read
+it. A custom list implements `GuildAccessList::allows` (sync, no I/O; `adapters.md`).
+It is pipeline **stage 3**, after the Command or Route is resolved and before any Ref
+lookup, the Expired Handler chain, the `LocaleResolver`, rate limits, the auto-defer,
+Middleware, Guards and the handler:
+
+| Refused in a guild | What happens |
+| --- | --- |
+| slash Command, context menu, component, modal submit | one type-4 ephemeral `noctis.module.disabled` notice ("This feature is disabled here."), in the built-in locale (user, then guild, then App default); one `debug` `guild not served` on `noctis::dispatch`; no handler, Middleware, Guard, rate-limit count, report or duration sample; a `one_shot` Ref is never taken; a stale id gets this notice, not the Expired chain |
+| autocomplete | one type-8 callback with no choices; the method does not run |
+| event (`event.guild_id()` is set) | no handler runs (the Discord cache is still fed); one `trace` |
+| `Dispatcher::run_command` (prefix commands) | `Err(DispatchError::GuildNotServed { guild_id })`, nothing sent; `PrefixPlugin` logs it, so two white-label bots sharing a prefix never both reply |
+
+- No guild (a DM, a guildless event) is **always served**; the list is not asked.
+- A panic inside `allows` counts as **not served** (fail closed) with one `error` log.
+- **Publish ignores it**: it controls serving, not registration; guild-scoped Publish
+  is unaffected. Use `apps = [..]` to keep a Command out of an App's Publish.
+- It is never namespaced and shared between Apps only if you pass the same `Arc`.
+
+**Adapters** are shared only where you opt in (`.cache_store(Shared::new(store))`);
+otherwise keys are namespaced per App (`<app>:<port>:`, FR-71).
 
 ## 11. Observability
 

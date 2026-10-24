@@ -19,9 +19,6 @@ use noctis_ports::{
 use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 
-/// The most characters an [`AppId`] may have.
-const MAX_LEN: usize = 32;
-
 /// The namespace segment of a [`Shared`] port; `_` is outside the
 /// [`AppId`] alphabet, so it never equals an App id.
 const SHARED_SEGMENT: &str = "_shared";
@@ -67,20 +64,7 @@ impl AppId {
     /// assert_eq!(AppId::new(&"a".repeat(33)), Err(AppIdError::TooLong { len: 33 }));
     /// ```
     pub fn new(id: &str) -> Result<Self, AppIdError> {
-        if id.is_empty() {
-            return Err(AppIdError::Empty);
-        }
-        let len = id.chars().count();
-        if len > MAX_LEN {
-            return Err(AppIdError::TooLong { len });
-        }
-        if let Some((index, ch)) = id
-            .chars()
-            .enumerate()
-            .find(|&(_, c)| !matches!(c, 'a'..='z' | '0'..='9' | '-'))
-        {
-            return Err(AppIdError::InvalidChar { index, ch });
-        }
+        noctis_rules::app_id::check(id)?;
         Ok(Self(Arc::from(id)))
     }
 
@@ -146,35 +130,7 @@ impl FromStr for AppId {
     }
 }
 
-/// Why an [`AppId`] was rejected.
-///
-/// ```
-/// use noctis_core::AppIdError;
-///
-/// let err = AppIdError::InvalidChar { index: 1, ch: '_' };
-/// assert!(err.to_string().contains("[a-z0-9-]{1,32}"));
-/// ```
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum AppIdError {
-    /// The id is empty.
-    #[error("App id is empty: use 1-32 characters matching [a-z0-9-]{{1,32}}, such as `my-bot`")]
-    Empty,
-    /// The id has more than 32 characters.
-    #[error("App id has {len} characters: shorten it to at most 32 matching [a-z0-9-]{{1,32}}")]
-    TooLong {
-        /// The number of characters.
-        len: usize,
-    },
-    /// The id has a character outside `a-z`, `0-9` and `-`.
-    #[error("App id has `{ch}` at index {index}: use only a-z, 0-9 and - ([a-z0-9-]{{1,32}})")]
-    InvalidChar {
-        /// The character index of the first invalid character.
-        index: usize,
-        /// The invalid character.
-        ch: char,
-    },
-}
+pub use noctis_rules::app_id::AppIdError;
 
 /// Escapes one namespace segment: `%` becomes `%25`, then `:` becomes
 /// `%3A`; every other character is kept.

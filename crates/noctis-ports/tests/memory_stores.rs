@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use noctis_ports::memory::{
-    AllowAllGuilds, MemoryAssetStore, MemoryCacheStore, MemoryLimits, MemoryModuleStateStore,
-    MemoryRateLimitStore, MemoryRefStore, MemoryRenderCache, MemorySessionStore, MemoryUsage,
-    NoLocaleOverlay,
+    AllowAllGuilds, GuildAccess, MemoryAssetStore, MemoryCacheStore, MemoryLimits,
+    MemoryModuleStateStore, MemoryRateLimitStore, MemoryRefStore, MemoryRenderCache,
+    MemorySessionStore, MemoryUsage, NoLocaleOverlay,
 };
 use noctis_ports::{
     AssetStore, CacheStore, GuildAccessList, LocaleSource, ModuleStateStore, PortError,
@@ -555,6 +555,29 @@ fn trivial_defaults() {
     assert!(AllowAllGuilds.allows(Id::new(u64::MAX)));
     let defaults: (NoLocaleOverlay, AllowAllGuilds) = Default::default();
     assert_eq!(defaults, (NoLocaleOverlay, AllowAllGuilds));
+}
+
+/// `GuildAccess` behind `Arc<dyn GuildAccessList>` sees runtime updates made
+/// through a kept `Arc`, in both modes.
+#[test]
+fn guild_access_through_a_shared_arc() {
+    let (g, h) = (Id::new(1), Id::new(2));
+    let allow = Arc::new(GuildAccess::allow([g, g]));
+    let port: Arc<dyn GuildAccessList> = Arc::new(Arc::clone(&allow));
+    assert!(port.allows(g));
+    assert!(!port.allows(h));
+    assert!(allow.insert(h));
+    assert!(port.allows(h));
+    assert!(allow.remove(h));
+    assert!(!port.allows(h));
+    assert!(!allow.remove(h));
+
+    let deny = Arc::new(GuildAccess::deny([]));
+    let port: Arc<dyn GuildAccessList> = deny.clone();
+    assert!(port.allows(g));
+    assert!(deny.insert(g));
+    assert!(!port.allows(g));
+    assert!(port.allows(h));
 }
 
 /// Every byte store is implemented for `Arc<P>`: one instance behind

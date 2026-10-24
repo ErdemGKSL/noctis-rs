@@ -2005,7 +2005,12 @@ pub mod ports {
     //!   before handlers see an event. It is implemented for `Arc<P>`, so one
     //!   backend can serve several Apps; it is never namespaced.
     //! - [`LocaleSource`]: runtime overlays of content strings.
-    //! - [`GuildAccessList`]: per-App guild allow and deny lists (sync).
+    //! - [`GuildAccessList`]: per-App guild allow and deny lists (sync),
+    //!   asked at pipeline stage 3 for every interaction, event and
+    //!   `Dispatcher::run_command` from a guild (FR-47); implemented for
+    //!   `Arc<P>` and never namespaced. [`memory::GuildAccess`] is the ready
+    //!   allow or deny list. Publish ignores it: it controls serving, not
+    //!   registration.
     //! - [`PortError`], [`ValueError`] and [`BoxFuture`]: what every port
     //!   method returns.
     //! - [`encode_value`] and [`decode_value`]: typed values as postcard with
@@ -2079,7 +2084,10 @@ pub mod ports {
         //! [`MemoryDiscordCache`] caches only the chosen
         //! [`DiscordCacheResources`] and at most a per-channel message cap.
         //! [`NoLocaleOverlay`] and [`AllowAllGuilds`] are the defaults of
-        //! `LocaleSource` and `GuildAccessList`.
+        //! `LocaleSource` and `GuildAccessList`. [`GuildAccess`] is the ready
+        //! allow or deny list for white-label Apps (`AppBuilder::guild_access`):
+        //! keep an `Arc` of it to `insert` or `remove` guilds while the App
+        //! runs. DMs are always served.
         //!
         //! [`MemoryIdentifyQueue`] grants identifies by bucket
         //! (`shard_id % max_concurrency`) in one process: one Lease per bucket
@@ -2110,10 +2118,20 @@ pub mod ports {
         //! assert_eq!(identify.max_concurrency().get(), 16);
         //! let q: Arc<dyn IdentifyQueue> = Arc::new(identify);
         //! # let _ = q;
+        //!
+        //! use noctis::ports::GuildAccessList;
+        //! use noctis::ports::memory::GuildAccess;
+        //! use noctis::twilight::model::id::Id;
+        //!
+        //! let customer = Arc::new(GuildAccess::allow([Id::new(10)]));
+        //! assert!(customer.allows(Id::new(10)));
+        //! assert!(!customer.allows(Id::new(11)));
+        //! customer.insert(Id::new(11));
+        //! assert!(customer.allows(Id::new(11)));
         //! ```
 
         pub use noctis_ports::memory::{
-            AllowAllGuilds, DiscordCacheResources, MemoryAssetStore, MemoryCacheStore,
+            AllowAllGuilds, DiscordCacheResources, GuildAccess, MemoryAssetStore, MemoryCacheStore,
             MemoryDiscordCache, MemoryIdentifyQueue, MemoryLimits, MemoryModuleStateStore,
             MemoryRateLimitStore, MemoryRefStore, MemoryRenderCache, MemorySessionStore,
             MemoryUsage, NoLocaleOverlay,
@@ -3286,6 +3304,9 @@ pub mod rules {
     //! - [`discord_len`] and [`truncate`]: the only length function for user text,
     //!   and `…` truncation that respects it.
     //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes.
+    //! - [`app_id`]: the App id grammar ([`app_id::check`],
+    //!   [`app_id::AppIdError`], also re-exported as [`crate::AppIdError`]) of
+    //!   `AppId`, `apps = [..]` and `Module::apps`.
     //! - [`boot_flag`]: the Boot Flag grammar ([`boot_flag::check`],
     //!   [`boot_flag::BootFlagError`], also re-exported as
     //!   [`crate::BootFlagError`]) of `flags = [..]`, `Module::flags` and
@@ -3383,7 +3404,7 @@ pub mod rules {
         Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,
         Violation,
     };
-    pub use noctis_rules::{attachment, boot_flag, command, component, message, modal};
+    pub use noctis_rules::{app_id, attachment, boot_flag, command, component, message, modal};
 }
 
 #[cfg(feature = "testkit")]

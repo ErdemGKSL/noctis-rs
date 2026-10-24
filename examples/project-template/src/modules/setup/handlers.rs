@@ -20,12 +20,17 @@ use crate::strings::{Strings, keys};
 /// Entry point (UD-3): no options, so a unit struct. `response = ephemeral`: a
 /// single-admin flow, so it is private (the auto-defer too) and renders in the User
 /// Locale.
+///
+/// `apps = ["noctis-template"]`: setup exists only on the main App (`configure` sets
+/// `.app_id("noctis-template")`). A white-label App built from the same `configure`
+/// with another `.app_id(..)` never registers, dispatches or publishes it.
 #[derive(SlashCommand, Debug)]
 #[command(
     "setup start",
     response = ephemeral,
     permissions = MANAGE_GUILD,
     contexts = [Guild],
+    apps = ["noctis-template"],
 )]
 pub struct SetupStart;
 

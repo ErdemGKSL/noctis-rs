@@ -268,7 +268,14 @@ mod module_ids {
     use crate::ModuleIdError::{self, Empty, InvalidChar, NotUnderParent, PathAtRoot};
 
     fn fold(roots: &[Module]) -> Vec<BuildViolation> {
-        Registry::fold(roots, Intents::empty(), None, &BootFlags::all()).1
+        Registry::fold(
+            roots,
+            Intents::empty(),
+            None,
+            &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        )
+        .1
     }
 
     fn invalid(id: &'static str, reason: ModuleIdError) -> BuildViolation {
@@ -293,8 +300,13 @@ mod module_ids {
                     .__add(noop::<MessageCreate>("h2"))
                     .module(Module::new("ops/audit/log").__add(noop::<MessageCreate>("h3"))),
             );
-        let (registry, violations) =
-            Registry::fold(&[tree], Intents::empty(), None, &BootFlags::all());
+        let (registry, violations) = Registry::fold(
+            &[tree],
+            Intents::empty(),
+            None,
+            &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        );
         assert_eq!(violations, []);
         let modules: Vec<&str> = registry.entries().iter().map(|e| e.module).collect();
         assert_eq!(modules, ["ops", "ops/audit", "ops/audit/log"]);
@@ -776,6 +788,7 @@ fn every_parsed_type_has_a_slot() {
                     Intents::all(),
                     None,
                     &BootFlags::all(),
+                    &crate::namespace::fallback_app_id(),
                 );
                 let slots: Vec<EventType> = TABLE
                     .iter()
@@ -976,7 +989,13 @@ mod routes {
     use crate::test_support::{TBuy, button, modal};
 
     fn fold(roots: &[Module]) -> (Registry, Vec<BuildViolation>) {
-        Registry::fold(roots, Intents::empty(), None, &BootFlags::all())
+        Registry::fold(
+            roots,
+            Intents::empty(),
+            None,
+            &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        )
     }
 
     fn duplicate(
@@ -1166,7 +1185,14 @@ mod extensions {
     }
 
     fn fold(roots: &[Module]) -> Vec<BuildViolation> {
-        Registry::fold(roots, Intents::empty(), None, &BootFlags::all()).1
+        Registry::fold(
+            roots,
+            Intents::empty(),
+            None,
+            &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        )
+        .1
     }
 
     fn missing(module: &'static str, handler: &'static str, ty: &'static str) -> BuildViolation {
@@ -1310,8 +1336,13 @@ mod extensions {
                     .__add(noop::<MessageCreate>("bot::child")),
             );
         assert!(format!("{tree:?}").contains("before: [\""));
-        let (registry, violations) =
-            Registry::fold(&[tree], Intents::empty(), None, &BootFlags::all());
+        let (registry, violations) = Registry::fold(
+            &[tree],
+            Intents::empty(),
+            None,
+            &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
+        );
         assert_eq!(violations, []);
         let names = |entry: &Entry| -> Vec<&str> {
             entry
@@ -1398,6 +1429,7 @@ mod templates {
             Intents::empty(),
             None,
             &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
         );
         let name = std::any::type_name::<CardA>();
         assert_eq!(
@@ -1433,6 +1465,7 @@ mod templates {
             Intents::empty(),
             None,
             &BootFlags::all(),
+            &crate::namespace::fallback_app_id(),
         );
         assert!(violations.is_empty());
         assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);
@@ -1455,6 +1488,7 @@ mod templates {
             Intents::empty(),
             None,
             &BootFlags::none(),
+            &crate::namespace::fallback_app_id(),
         );
         assert_eq!(violations, []);
         assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);
@@ -1474,7 +1508,13 @@ mod boot_flags {
     }
 
     fn fold(roots: &[Module], selection: &BootFlags) -> (Registry, Vec<BuildViolation>) {
-        Registry::fold(roots, Intents::empty(), None, selection)
+        Registry::fold(
+            roots,
+            Intents::empty(),
+            None,
+            selection,
+            &crate::namespace::fallback_app_id(),
+        )
     }
 
     /// The Module ids of the folded event handlers.
@@ -1824,13 +1864,15 @@ mod boot_flags {
 /// root-first paths; a Boot-Flag-pruned Module is absent.
 #[test]
 fn module_index_is_pre_order_of_the_kept_trees() {
+    let app = crate::namespace::fallback_app_id();
     let roots = [
         Module::new("p")
             .module(Module::new("p/c").module(Module::new("p/c/d")))
             .module(Module::new("p/e").flags(["fun"])),
         Module::new("q"),
     ];
-    let (registry, violations) = Registry::fold(&roots, Intents::empty(), None, &BootFlags::all());
+    let (registry, violations) =
+        Registry::fold(&roots, Intents::empty(), None, &BootFlags::all(), &app);
     assert!(violations.is_empty(), "{violations:?}");
     let index = registry.modules();
     assert_eq!(index.ids(), ["p", "p/c", "p/c/d", "p/e", "q"]);
@@ -1842,8 +1884,193 @@ fn module_index_is_pre_order_of_the_kept_trees() {
         Module::new("p").module(Module::new("p/e").flags(["fun"])),
         Module::new("q").flags(["other"]),
     ];
-    let (registry, violations) = Registry::fold(&roots, Intents::empty(), None, &only);
+    let (registry, violations) = Registry::fold(&roots, Intents::empty(), None, &only, &app);
     assert!(violations.is_empty(), "{violations:?}");
     assert_eq!(registry.modules().ids(), ["p", "q"]);
     assert_eq!(registry.modules().path("p/e"), None);
+}
+
+// --- Story 15.2: App restriction ---------------------------------------------
+
+mod app_restriction {
+    use super::*;
+    use crate::metadata::BaseMeta;
+    use crate::namespace::{AppId, AppIdError};
+    use crate::test_support::{button, command, user_menu};
+
+    fn fold_as(
+        roots: &[Module],
+        app: &str,
+        selection: &BootFlags,
+    ) -> (Registry, Vec<BuildViolation>) {
+        let app = AppId::new(app).expect("a valid App id");
+        Registry::fold(roots, Intents::empty(), None, selection, &app)
+    }
+
+    fn fold(roots: &[Module], app: &str) -> (Registry, Vec<BuildViolation>) {
+        fold_as(roots, app, &BootFlags::all())
+    }
+
+    fn tree(registry: &Registry) -> String {
+        registry.commands().render()
+    }
+
+    fn core() -> Module {
+        Module::new("core")
+            .__add(command("ping", &["ping"], "Ping"))
+            .__add_scoped(&[], &["main"], command("admin", &["admin"], "Admin"))
+            .__add_scoped(&[], &["main", "acme"], command("both", &["both"], "Both"))
+    }
+
+    /// apps match, miss and multi.
+    #[test]
+    fn registration_restriction() {
+        let (registry, violations) = fold(&[core()], "main");
+        assert_eq!(violations, []);
+        let rendered = tree(&registry);
+        for name in ["/ping", "/admin", "/both"] {
+            assert!(rendered.contains(name), "{rendered}");
+        }
+        let (registry, violations) = fold(&[core()], "acme");
+        assert_eq!(violations, []);
+        let rendered = tree(&registry);
+        assert!(rendered.contains("/ping"), "{rendered}");
+        assert!(rendered.contains("/both"), "{rendered}");
+        assert!(!rendered.contains("/admin"), "{rendered}");
+        let (registry, _) = fold(&[core()], "other");
+        assert!(!tree(&registry).contains("/both"));
+    }
+
+    /// apps + flags: kept only when both keep it.
+    #[test]
+    fn with_boot_flags() {
+        let m = Module::new("m").__add_scoped(&["beta"], &["main"], command("b", &["b"], "B"));
+        let beta = BootFlags::only(["beta"]).unwrap();
+        let (registry, violations) = fold_as(std::slice::from_ref(&m), "main", &beta);
+        assert_eq!(violations, []);
+        assert!(tree(&registry).contains("/b"));
+        let (registry, _) = fold_as(std::slice::from_ref(&m), "acme", &beta);
+        assert!(!tree(&registry).contains("/b"));
+        let (registry, _) = fold_as(std::slice::from_ref(&m), "main", &BootFlags::none());
+        assert!(!tree(&registry).contains("/b"));
+    }
+
+    /// The `default` App id prunes unless `"default"` is listed.
+    #[test]
+    fn default_app_id() {
+        let fallback = crate::namespace::fallback_app_id();
+        let fold_default = |roots: &[Module]| {
+            Registry::fold(roots, Intents::empty(), None, &BootFlags::all(), &fallback)
+        };
+        let (registry, _) = fold_default(&[core()]);
+        assert!(!tree(&registry).contains("/admin"));
+        let listed = Module::new("m").__add_scoped(&[], &["default"], command("d", &["d"], "D"));
+        let (registry, _) = fold_default(&[listed]);
+        assert!(tree(&registry).contains("/d"));
+    }
+
+    /// `Module::apps` prunes the whole subtree (components, events,
+    /// menus and children); `apps([])` is unrestricted; repeated calls
+    /// append.
+    #[test]
+    fn module_restriction() {
+        let acme = || {
+            Module::new("acme")
+                .apps(["acme"])
+                .__add(command("brand", &["brand"], "Brand"))
+                .__add(noop::<MessageDelete>("gone"))
+                .__add(button("buy", "shop.buy"))
+                .__add(user_menu(
+                    "inspect",
+                    "Inspect",
+                    crate::CommandMetadata::new(),
+                ))
+                .module(Module::new("acme/sub").__add(noop::<MessageCreate>("sub")))
+        };
+        let (registry, violations) = fold(&[acme()], "main");
+        assert_eq!(violations, []);
+        assert_eq!(registry.len(), 0);
+        assert!(!tree(&registry).contains("brand"));
+        assert!(!tree(&registry).contains("Inspect"));
+        assert!(registry.intents().is_empty());
+        let (registry, violations) = fold(&[acme()], "acme");
+        assert_eq!(violations, []);
+        assert!(registry.route("shop.buy").is_some());
+        assert_eq!(registry.entries().len(), 2);
+        assert!(tree(&registry).contains("Inspect"));
+
+        let open = Module::new("m").apps([]).__add(noop::<MessageCreate>("h"));
+        let (registry, _) = fold(&[open], "main");
+        assert_eq!(registry.entries().len(), 1);
+
+        let both = || {
+            Module::new("m")
+                .apps(["a"])
+                .apps(["b"])
+                .__add(noop::<MessageCreate>("h"))
+        };
+        for (app, kept) in [("a", 1), ("b", 1), ("c", 0)] {
+            let (registry, _) = fold(&[both()], app);
+            assert_eq!(registry.entries().len(), kept, "{app}");
+        }
+    }
+
+    /// Invalid `Module::apps` ids are violations on the full trees.
+    #[test]
+    fn invalid_module_ids() {
+        let (_, violations) = fold(
+            &[Module::new("m")
+                .apps(["Bad"])
+                .module(Module::new("m/c").apps(["", "ok"]))],
+            "main",
+        );
+        assert_eq!(
+            violations,
+            [
+                BuildViolation::InvalidAppRestriction {
+                    module: "m",
+                    id: "Bad",
+                    reason: AppIdError::InvalidChar { index: 0, ch: 'B' },
+                },
+                BuildViolation::InvalidAppRestriction {
+                    module: "m/c",
+                    id: "",
+                    reason: AppIdError::Empty,
+                },
+            ]
+        );
+        assert_eq!(
+            violations[0].to_string(),
+            "Module `m` restricts to App id `Bad`: App id has `B` at index 0: use only a-z, 0-9 \
+             and - ([a-z0-9-]{1,32})"
+        );
+    }
+
+    /// A base whose every subcommand is restricted elsewhere is dropped.
+    #[test]
+    fn emptied_base_is_dropped() {
+        let m = Module::new("m")
+            .base("cfg", BaseMeta::new().description("Config"))
+            .__add(command("ping", &["ping"], "Ping"))
+            .__add_scoped(&[], &["main"], command("set", &["cfg set"], "Set"))
+            .__add_scoped(&[], &["main"], command("get", &["cfg get"], "Get"));
+        let (registry, violations) = fold(std::slice::from_ref(&m), "acme");
+        assert_eq!(violations, []);
+        assert!(!tree(&registry).contains("cfg"));
+        let (registry, violations) = fold(&[m], "main");
+        assert_eq!(violations, []);
+        assert!(tree(&registry).contains("Config"));
+    }
+
+    #[test]
+    fn module_debug_shows_apps() {
+        let m = Module::new("m").apps(["main"]).__add_scoped(
+            &[],
+            &["acme"],
+            noop::<MessageCreate>("h"),
+        );
+        let text = format!("{m:?}");
+        assert!(text.contains("apps: [\"main\"]"), "{text}");
+        assert!(text.contains("restricted: [(\"h\", [\"acme\"])]"), "{text}");
+    }
 }
