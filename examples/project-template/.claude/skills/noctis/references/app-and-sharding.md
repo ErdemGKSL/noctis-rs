@@ -317,7 +317,7 @@ explicitly). Built-in parser, no clap:
 | `--publish-guild [<id>]` | publish **every** Command into one guild (dev mirror; instant), print, exit. No id: `.dev_guild(..)` / `NOCTIS_DEV_GUILD`, else `CliError::MissingDevGuild` |
 | `--publish-clear [--guild <id>]` | publish an empty list globally (or to that guild): deletes this App's commands there |
 | `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff and the create count, write nothing |
-| `--features a,b` / `all` / `none` | Boot Flags. `App::from_env()` reads it from the process command line before `build()` (it wins over `NOCTIS_FEATURES`); `run` only checks that it equals `app.boot_flags()`, else `CliError::BootFlagsMismatch`. Combines with every mode, `--dry-run` and `--no-resume` |
+| `--features a,b` / `all` / `none` | Boot Flags. `App::from_env()` reads it from the process command line before `build()` (it wins over `NOCTIS_FEATURES`); `run` only checks that it equals `app.boot_flags()`, else `CliError::BootFlagsMismatch`, and logs the selection at info level (`boot flags selected`). Combines with every mode, `--dry-run` and `--no-resume` |
 | `--no-resume` | run the bot with fresh sessions: `.resume_sessions(false)` for this run (`info` log `session resume disabled (--no-resume)`): each shard deletes its stored entry before it identifies, the shutdown closes with 1000 and deletes it. With a publish flag it is `CliError::NoResumeWithPublish` |
 
 Parsing rules: `--publish-guild=<id>`, `--guild=<id>` and `--features=<v>` also work;

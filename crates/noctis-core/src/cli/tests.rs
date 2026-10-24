@@ -396,6 +396,7 @@ fn features_parse() {
     assert_eq!(clear.features(), Some(&flags(&["a"])));
     let first = parsed(&["--features", "a", "--publish-guild", "7"]);
     assert_eq!(first.mode(), Some(CliMode::PublishGuild(id(7))));
+    assert_eq!(first.features(), Some(&flags(&["a"])));
 }
 
 /// Story 13.2 C4-C7.

@@ -255,13 +255,14 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
 - **Signature:** a `#[derive(EventHandler)]` unit struct with `#[event]` and exactly one
   `#[handler] async fn handle(self, ctx: EventCtx, event: <payload>[, Ext<T> |
   Option<Ext<T>> …]) -> HandlerResult<()>` method (Extensions from Middleware, §5) (any visibility, doc comments and `_` patterns allowed);
-  `X::descriptor()` is its `EventHandler`. Arguments: `ordered`, `droppable`, in any
-  order, each at most once (`#[event(ordered, droppable)]`). The handler's name in logs
+  `X::descriptor()` is its `EventHandler`. Arguments: `ordered`, `droppable` and
+  `flags = ["beta"]` (Boot Flags, §2), in any order, each at most once
+  (`#[event(ordered, droppable)]`). The handler's name in logs
   and errors is `module_path!()::Struct` (e.g. `my_bot::modules::profile::AwardXp`).
 - **Errors** (at `cargo check`): `` `#[derive(EventHandler)]` needs a unit struct ``,
   the `#[handler]` errors (`commands.md` §1: `self` by value, `async`, no generics,
   `` a #[handler] method takes `(self, ctx[, path | target | event][, Ext<T> | Option<Ext<T>> …][, r: <Kind>Responder<..>])` ``),
-  ``unknown `#[event]` argument `x`: expected `ordered` or `droppable``, ``duplicate
+  ``unknown `#[event]` argument `x`: expected `ordered`, `droppable` or `flags = ["beta"]` ``, ``duplicate
   `#[event]` argument `x``; a free `#[event] async fn` is a compile error whose help
   shows the struct form. A payload
   type outside `noctis::events` (or `InteractionCreate`) is

@@ -1743,6 +1743,15 @@ mod boot_flags {
         let (registry, violations) = fold(&[tree], &only(&["deep"]));
         assert_eq!(violations, []);
         assert_eq!(registry.len(), 0);
+        // An invalid Module flag is not listed as declared.
+        let (_, violations) = fold(&[Module::new("m").flags(["Beta", "ok"])], &only(&["x"]));
+        assert!(matches!(
+            violations.as_slice(),
+            [
+                BuildViolation::InvalidBootFlag { module: "m", flag: "Beta", .. },
+                BuildViolation::UnknownBootFlag { flag, declared },
+            ] if flag == "x" && *declared == ["ok"]
+        ));
     }
 
     /// B16: Module ids are checked on the full trees.

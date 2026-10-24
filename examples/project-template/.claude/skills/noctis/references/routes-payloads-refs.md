@@ -154,7 +154,10 @@ today on every kind attribute, `#[modal]` included (§1a below). `rate_limit(..)
 **[planned, Story 13.4]**: Noctis **rejects** it with ``[CID-03] `rate_limit` is a
 runtime argument of #[button] that this Noctis release does not support yet``
 (attribute name per kind; a silently ignored limit would be a hole), and accepts it
-from the release that implements it. Anything else is a compile error.
+from the release that implements it. `flags = ["beta"]` works today on every kind
+attribute and on `#[modal]` (Boot Flags, `modules-middleware-ratelimits.md` §2); its
+errors are the shared `flags` errors, without a `[CID-03]` prefix. Anything else is a
+compile error.
 `#[handler]` itself takes no arguments: every setting is here.
 
 | Argument | Meaning |
@@ -162,6 +165,7 @@ from the release that implements it. Anything else is a compile error.
 | `"id"` | Route id (required, first) |
 | `response = update \| ephemeral \| public` | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
 | `auto_defer = true \| false` | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
+| `flags = ["beta"]` | Boot Flags: the Route exists only in runs whose selection holds one of them (`modules-middleware-ratelimits.md` §2) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
 | `overflow = spill` | inline when the actual value fits, else by Ref |
 | `ttl = "2d"` | Ref TTL (by_ref/spill only), 1 s..=365 d; default `AppBuilder::ref_ttl` (24 h) |

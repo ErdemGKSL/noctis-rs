@@ -779,6 +779,7 @@ impl App {
                 }
                 .into());
             }
+            tracing::info!(target: "noctis::app", boot_flags = %app.boot_flags, "boot flags selected");
             check_runtime(true)?;
             ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
             if let Some(mode) = args.mode() {

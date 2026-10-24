@@ -97,11 +97,13 @@ Compile-time checks on the literal (each error names its rule):
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
 `description`, `max_expansions`, `response`, `auto_defer` and the metadata arguments
-`permissions`, `contexts`, `integration_types`, `nsfw` and `guilds`. Every argument marked
+`permissions`, `contexts`, `integration_types`, `nsfw` and `guilds`, plus `flags`
+(Boot Flags, `modules-middleware-ratelimits.md` §2) and `locales`/`default_locale`. Every argument marked
 [planned] is a compile error today (`` `#[command]` argument `rate_limit` is planned and
 not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
 argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`,
-`permissions`, `contexts`, `integration_types`, `nsfw` or `guilds` ``), and each argument
+`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or
+`default_locale` ``), and each argument
 may appear once (`` duplicate `#[command]` argument `nsfw` ``). The withdrawn bare flags
 are unknown arguments naming their replacement: `` unknown `#[command]` argument
 `ephemeral`: write `response = ephemeral` `` (the old modal flag likewise points to

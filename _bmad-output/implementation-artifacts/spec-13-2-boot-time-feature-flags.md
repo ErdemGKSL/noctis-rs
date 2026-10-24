@@ -2,7 +2,7 @@
 title: 'Story 13.2: Boot-time feature flags'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '19a8f21e960babb05ac57c0f3fe722a1f984767f'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,14 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template's Boot Flag test badges_follow_the_boot_flags runs in no verification path.
+    evidence: |-
+      examples/project-template is excluded from the root workspace (Cargo.toml L20), no gate in tools/story-loop/gates.sh builds the template tests, and the disabled CI job only runs cargo build without --tests under continue-on-error; pass 1 found the test did not compile (E0618) and no gate failed. Needs a template-test gate (project-level, Story 14.2 CI restore).
+    location: >-
+      examples/project-template/tests/flows.rs:260
+    severity: medium
 ---
 
 <intent-contract>
@@ -228,6 +235,32 @@ Display strings (exact, tested):
   - `[false]` `[reject]` (intent D5) catalogs/Templates of pruned Modules kept — spec Always rule and memlog 11.2/13.2 decision settle D-b.
   - `[false]` `[reject]` (intent D6) unknown selected flag is a build error — spec Always rule (typo guard) and Design Notes decision settle it.
 
+### 2026-10-24 — Review pass
+- verdicts: 22 findings — high 0, medium 1, low 13, false 8, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) Usage Skill `modules-middleware-ratelimits.md` §4 still lists `#[event]` arguments as only `ordered`/`droppable` and quotes the old unknown-argument text — confirmed at L258-264 vs `event.rs` `EXPECTED` L21; add `flags = [..]` to the argument list and quote the new text.
+  - `[low]` `[patch]` (blind) Usage Skill `commands.md` §1 prose (L98-103) omits `flags` from the landed `#[command]` arguments and quotes the old `EXPECTED` text — confirmed vs `command.rs` L36; add `flags` (and the current tail) to the prose and refresh the quoted error.
+  - `[low]` `[patch]` (blind) Usage Skill `routes-payloads-refs.md` "Arguments after the id" never mentions `flags = [..]`, though `route.rs` accepts it on every component kind and `#[modal]`, and ends "Anything else is a compile error" — confirmed (no `flags` in L126-160 or the table); add the argument with a pointer to `modules-middleware-ratelimits.md` §2 and a table row.
+  - `[low]` `[reject]` (blind) a malformed `NOCTIS_FEATURES` fails `from_env` even when argv carries a valid `--features` — real (`from_sources` L1760 runs `from_lookup` first), but it matches the existing `from_env` convention (every set variable is validated even when a later source/setter overrides it); a malformed variable is rare and the fix adds an argv-first branch.
+  - `[low]` `[reject]` (blind) a flag declared only inside a pruned subtree passes the typo guard and selects nothing, with no warning — spec B15 settles that such a flag counts as declared; the suggested `warn!` is new behaviour plus an ancestor walk, for a rare configuration.
+  - `[low]` `[patch]` (blind) nothing logs the Boot Flag selection a process runs with — confirmed (`run_with_args` L769-793 logs only `--no-resume`); add one `tracing::info!` with the canonical `Display` after the mismatch check and mention it in `app-and-sharding.md`.
+  - `[low]` `[reject]` (blind) `UnknownBootFlag` repeats the whole `declared` list per unknown flag — the spec fixes the per-flag variant and its Display; noise appears only with several typos at once and the fix reshapes a spec'd type.
+  - `[low]` `[patch]` (blind) `cli/tests.rs` `features_parse` last case (`--features a --publish-guild 7`) asserts only `mode()` — confirmed at L397-398; add `assert_eq!(first.features(), Some(&flags(&["a"])))`.
+  - `[low]` `[reject]` (blind) template test `badges_follow_the_boot_flags` does not check the `/badge` autocomplete or Publish — test breadth only; autocomplete registers with its pruned Command (fold tests) and Publish of a subset is covered by `dry_run_reflects_the_selection` and the testkit; the template test runs in no gate anyway (see the vgap defer).
+  - `[false]` `[reject]` (blind) spec frontmatter `review_loop_iteration`/`followup_review_recommended` not advanced — step-04 increments the iteration only before a bad_spec loopback and sets the follow-up flag at Finalize; neither happened on pass 1.
+  - `[low]` `[reject]` (edge) `from_env` runs the full `NoctisArgs::split` combination checks over argv — carried: same location and claim as the pass 1 blind/edge `from_env` rows; code unchanged at app.rs L1760-1764.
+  - `[low]` `[reject]` (edge) `Module::flags(["Beta","Beta"])` reports `InvalidBootFlag` once per occurrence — carried: same claim as the pass 1 edge row; registry.rs L403-419 unchanged.
+  - `[low]` `[patch]` (vgap) the pass 1 filter that keeps invalid `Module::flags` out of `UnknownBootFlag.declared` has no test — pre-verified gap; add a `registry/tests.rs` `mod boot_flags` case folding `Module::new("m").flags(["Beta", "ok"])` under `only(["x"])`, asserting `[InvalidBootFlag { module: "m", flag: "Beta", .. }, UnknownBootFlag { flag: "x", declared: vec!["ok"] }]`.
+  - `[medium]` `[defer]` (vgap) the template's `badges_follow_the_boot_flags` runs in no verification path (template excluded from the workspace, CI paused) — pre-verified gap; closing it needs a template-test gate, a project-level decision (Story 14.2 CI restore); deferred.
+  - `[false]` `[reject]` (intent 1) `--features` takes effect at `App::from_env`, `run` only verifies — carried: pass 1 intent D1 row (spec Design Notes decision 1, AD-7 filter-before-fold).
+  - `[false]` `[reject]` (intent 2) AC2 not driven through real process argv `from_env` + `run` — carried: pass 1 intent D2 row.
+  - `[false]` `[reject]` (intent 3) "not published" read as deleting unselected remote Commands — carried: pass 1 intent D4 row (spec R3, Usage Skill §2).
+  - `[low]` `[reject]` (intent 4) dispatch-level tests do not cover menus, selects and modals — carried: pass 1 intent D3 row.
+  - `[false]` `[reject]` (intent 5) catalogs/Templates of pruned Modules kept App-wide — carried: pass 1 intent D5 row.
+  - `[false]` `[reject]` (intent 6) behaviour beyond the intent (unknown-flag build error, run mismatch error, `from_env` `Error::Cli`, pruned `base`/`group` drop) — each is settled by the spec (Always rules, R2, Code Map, Nesting rule) and carried from pass 1 rows D6, the edge mismatch row and the `from_env` rows.
+  - `[false]` `[reject]` (intent 7) "equivalent config" has no config-file surface — the spec's Approach selects `NOCTIS_FEATURES` and `AppBuilder::boot_flags` as the config sources; Noctis has no config-file layer to extend.
+  - `[false]` `[reject]` (intent 8) AC3 `skill-check` outcome not visible in the diff — not a defect claim; `skill-check` is a gate in the spec's Verification section.
+
 ## Design Notes
 
 - (decision) The selection must exist before `build()`, because the fold of the full set can fail where a subset builds (two flagged alternatives of `/shop`, B17). `App::from_env()` (the "process environment" entry point the template uses) therefore reads `--features` from argv as well as `NOCTIS_FEATURES`; `run`/`run_with_args` keep parsing `--features` (spine Conventions) and only verify it matches. Rejected: re-folding inside `run_with_args` (would need to rebuild `AppShared`, intents and Renderer registration after build, and still fails on B18-style conflicts at build time).
@@ -260,3 +293,12 @@ Run from `/home/claude/lanes/b/noctis-rs`, release only:
 - `cargo deny check` -- expected: exit 0
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
 - `cargo hack` is not run here (only in an epic's last story, `tools/story-loop/gates.sh`)
+
+## Auto Run Result
+
+- Summary: Boot-time feature flags. `flags = [..]` on every kind attribute (compile-checked) and `Module::flags([..])` (any-of within a declaration, AND across nesting); selection via `--features a,b|all|none`, `NOCTIS_FEATURES` or `AppBuilder::boot_flags`. `App::from_env()` reads the selection before build and prunes registrations before the fold; `run`/`run_with_args` only verify a matching `--features` (`BootFlagsMismatch`). Unknown selected flags are build errors (typo guard); Publish of a subset deletes unselected live Commands; catalogs/Templates of pruned Modules stay App-wide.
+- Files changed: `noctis-rules/src/boot_flag.rs` (flag grammar, reserved `all`/`none`); `noctis-core` `boot_flags.rs` (opaque `BootFlags`), `cli.rs` (`--features` parsing), `module.rs`/`registry.rs` (pruning, flag checks), `error.rs`, `app.rs` (from_env selection, mismatch check, selection log); `noctis-macros` `flags.rs` plus command/component/event/menu/modal/route/kind attribute support; tests in core, testkit `tests/boot_flags.rs`, trybuild `boot_flag_invalid`; facade re-exports; project template code, tests, AGENTS.md, Usage Skill references; `xtask/public-api.txt` re-blessed.
+- Review findings: pass 1 — 27 findings (high 2, low 17, false 8): 11 patched (2 high: template `flows.rs` binding shadowing `fn app`, E0618; 9 low: doc placement, declared-set filter, docs for `--features`, `has_flags` removal, const placement, test gaps), 16 rejected (spec-settled behaviour or out-of-scope surface). Pass 2 — 22 findings (medium 1, low 13, false 8): 7 low patched (Usage Skill argument lists for `#[event]`/`#[command]`/routes, selection `tracing::info!`, cli test assertion, declared-filter test), 1 medium deferred (template tests run in no gate; needs a template-test gate, Story 14.2 CI restore), 14 rejected with recorded reasons.
+- Follow-up review recommended: false (pass 2 is a follow-up pass and patched no high; patched by verdict: pass 1 high 2 / low 9, pass 2 low 7).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- Residual risks: the project-template test crate (`badges_follow_the_boot_flags`) is compiled by no gate until CI/template gate returns (deferred); malformed `NOCTIS_FEATURES` fails `from_env` even with valid argv `--features` (consistent with existing env convention).
