@@ -88,7 +88,7 @@ Compile-time checks on the literal (each error names its rule):
 | each word matches `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` (note: `ʼ` U+02BC, not ASCII `'`) | CMD-01 |
 | 1–32 chars per word, no empty words: a leading, trailing or doubled space (`"a  b"`) is CMD-02, any other whitespace (tab, U+00A0) CMD-01 | CMD-02 |
 | lowercase where the letter has a lowercase form | CMD-03 |
-| description 1–100 chars (UTF-16 counted): `description = "…"` (literal only; doc comments never count); missing = error with `help: add description = "…"`. [planned] With the `i18n` feature, `cmd.<path>.description` from the default-locale file (Story 11.4) | CMD-04 |
+| description 1–100 chars (UTF-16 counted): `description = "…"` (literal only; doc comments never count); missing = error with `help: add description = "…"`. With the `i18n` feature, `cmd.<path>.description` from the default-locale file (a literal must equal it; see `i18n.md` §4) | CMD-04 |
 | total command size ≤ 8000 (name+desc+options+choices, longest localization per field) | CMD-05 |
 | ≤ 3 words | CMD-10 |
 
@@ -108,9 +108,10 @@ are unknown arguments naming their replacement: `` unknown `#[command]` argument
 
 | Argument | Meaning |
 | --- | --- |
-| `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
+| `description = "…"` | the description (a string literal); required without a locale file. With the `i18n` feature it comes from `cmd.<path>.description` in the default-locale file: omit it (a literal must equal the file, else `[CMD-04] description differs from …`) |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
-| `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
+| `locales = "<dir>"` | `i18n` feature: where this command's default-locale file lives (default `"locales"`, relative to `Cargo.toml`); set it when the crate's `i18n!` uses another `dir`. A missing file under an explicit dir is a compile error naming the path |
+| `default_locale = "<code>"` | `i18n` feature: the default locale file to read (default `"en-US"`; a bad code is the `[LOC-01]` message). Both need the feature (``` needs the `i18n` feature of `noctis` ```) |
 | `response = public \| ephemeral` | how the command answers (default public), an ident. Fixed at registration (INT-10); `reply`, `defer_reply()`, a returned message and the auto-defer use it (`reply_as`/`defer_reply_as` override one call); `CommandHandler::ephemerality()` reads it. `response = update` is ``[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral` ``; any other value (`"ephemeral"`, a bare `response`, `loud`) is `` `response` takes `public` or `ephemeral` `` |
 | `auto_defer = true \| false` | a bool literal, default `true` (anything else is `` `auto_defer` takes `true` or `false` ``). `false` disables the auto-defer and is required to open a modal: the handler must take `r: CommandResponder<Manual>` and may call `r.show_modal(m)`; a mismatch is a compile error citing `[INT-05]` (`responder.md` §2b): `false` with a plain `CommandResponder` (`` [INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>` ``), `CommandResponder<Manual>` without it (`` [INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false` ``), or `false` without a responder parameter (`` [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>` ``). `CommandHandler::auto_defer()` reads it. See `responder.md` §4 |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
@@ -184,7 +185,11 @@ pub fn module() -> Module {
   inherit it, set leaves must match); two Modules with different descriptions for one node
   are REG-04 (`` `a` declares `A` ``, `` `b` declares `B` ``); a path no handler registers is
   REG-04 `metadata only for a registered command path`; a description outside 1-100
-  characters is CMD-04 (note `` declared by `b` ``); a `BaseMeta` metadata field on a path
+  characters is CMD-04 (note `` declared by `b` ``); with locale catalogs, a declared
+  description that differs from the value sent for the owner catalog's default locale for
+  `cmd.<path>.description` (its own file's, else its sibling file's, e.g. `en-GB.yaml`; other
+  locales are not compared) is CMD-04 too (``description differs from `cmd.<path>.description` in catalog …``): make
+  it equal or omit it and let the file supply it (`i18n.md` §4); a `BaseMeta` metadata field on a path
   below a base is META-02 (``help: declare it on `config` ``); a path of more than 3 words
   is CMD-10; `contexts`/`integration_types` on a base whose handlers are guild-scoped is
   META-03. The values apply in every scope the node exists in.
@@ -399,7 +404,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 
 | Argument | Takes | Option types | Rules |
 | --- | --- | --- | --- |
-| `description = "…"` | string literal, 1–100 chars (UTF-16 counted); **required**: a field without one is CMD-04 with `` help: add `#[option(description = "…")]` `` | all | CMD-04 |
+| `description = "…"` | string literal, 1–100 chars (UTF-16 counted); **required** without a locale file: a field without one is CMD-04 with `` help: add `#[option(description = "…")]` ``; with the `i18n` feature it comes from `cmd.<path>.opt.<name>.description` (omit it; a missing key is CMD-04 naming the key and file) | all | CMD-04 |
 | `rename = "…"` | string literal; the option name (default: field name, `r#` stripped) | all | CMD-01..03, CMD-06 |
 | `min_value = n`, `max_value = n` | unsuffixed integer or float literal, optionally negated (`-5`, `1.5`); an integer outside `i64` fails at expansion | INTEGER (`i64`, integers only, ±(2^53−1)), NUMBER (`f64`, ±2^53) | OPT-03..05 |
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
@@ -567,7 +572,7 @@ limit at most 100, actual 101 `` with notes `in the choice value` and `the same 
 to modal and select options (MOD-07, CV2-09)`; an empty `value = ""` and descriptions stay
 MOD-07. The enum may have more than 25 variants (modal selects), but as an option field it
 fails OPT-08. Command choices are STRING only: integer/number choices are [planned].
-[planned] Localized choice names from `cmd.<path>.opt.<opt>.choice.<value>` (Story 11.4).
+Localized choice names come from `cmd.<path>.opt.<opt>.choice.<value>` (`i18n.md` §4).
 
 ## 4. Autocomplete
 
@@ -725,7 +730,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
   and `response = public | ephemeral` and `auto_defer = true | false` (with `false` the
   handler takes `r: CommandResponder<Manual>`; same `[INT-04]`/`[INT-05]` errors as
-  §1). `key = "…"` (localization key), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
+  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
@@ -734,8 +739,8 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   `` [CTX-02] context-menu commands have no options: make `Report` a unit struct ``. The
   handler is exactly `(self, ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`
   (or `ResolvedMessage` for `#[derive(MessageCommand)]`) returning `HandlerResult<R>` like a slash Command (`R` a
-  `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
-  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Story 11.4). Answer with
+  `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277).
+  Localized as a whole: `ctxcmd.<key>.name` with `key = "<segment>"` (`i18n.md` §4). Answer with
   `ctx.respond(..)` like a slash Command.
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
@@ -828,7 +833,9 @@ as declared (`default_member_permissions` as the bit string, `contexts` and
 are omitted; option fields only when set (`required: true`, `choices`, `min_value` /
 `max_value` as integers for integer bounds, `min_length` / `max_length`,
 `channel_types`, `autocomplete: true`, `file_types`). Menus carry `type` and `name` only
-(plus metadata). Localizations arrive with Story 11.4 [planned].
+(plus metadata). With catalogs, `name_localizations` / `description_localizations`
+follow each localized name and description, and choices carry `name_localizations`
+(`i18n.md` §4; empty maps are omitted).
 
 [planned] Boot Flags (Story 13.2), per-guild Module enablement (Story 13.3) and
 `apps = [...]` filter what is published. Disabled Modules: only their guild-scoped

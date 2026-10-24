@@ -1,0 +1,6 @@
+error: [LOC-03] `../../fixtures/i18n/loc03/tr.yaml`: `cmd.ban.opt.reason.name`: [CMD-06] user: limit unique option names, actual `user`
+         = note: equals the default name of the option at position 1
+ --> tests/ui-i18n/loc/LOC-03_localized_option_name_collides.rs:2:21
+  |
+2 | noctis::i18n!(dir = "../../fixtures/i18n/loc03", __dir_from_source_file);
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^

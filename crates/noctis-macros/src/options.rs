@@ -31,7 +31,16 @@ use syn::{
     Meta, PathArguments, Token, Type, UnOp,
 };
 
+use crate::command::{LocaleFile, OptionText, not_found, option_description};
 use crate::common::combine;
+
+/// The default-locale file a `#[derive(SlashCommand)]` reads option
+/// descriptions from, with the struct's Command Paths (Story 11.4).
+#[derive(Clone, Copy)]
+pub(crate) struct OptionLocale<'a> {
+    pub(crate) file: &'a LocaleFile,
+    pub(crate) paths: &'a [String],
+}
 
 /// The error of the withdrawn `autocomplete = path` form.
 const AUTOCOMPLETE_FLAG: &str = "`autocomplete` is a bare flag: write `#[option(.., autocomplete)]` and add `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>`\n  = help: #[derive(SlashCommand)] #[command(\"warn\", description = \"…\")] struct Warn { #[option(description = \"…\", autocomplete)] rule: i64 } impl Warn { #[autocomplete(rule)] async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> { .. } }";
@@ -98,6 +107,11 @@ struct OptField<'a> {
     name: String,
     attr: Option<&'a Attribute>,
     args: Args,
+    /// The description from the default-locale file, when no literal is
+    /// given.
+    from_file: Option<String>,
+    /// With a default-locale file and no description: the missing keys.
+    missing_keys: Vec<String>,
 }
 
 impl OptField<'_> {
@@ -140,6 +154,7 @@ impl OptField<'_> {
             .description
             .as_ref()
             .map(LitStr::value)
+            .or_else(|| self.from_file.clone())
             .unwrap_or_default()
     }
 
@@ -404,6 +419,8 @@ fn parse_field(field: &Field) -> syn::Result<OptField<'_>> {
         name,
         attr,
         args,
+        from_file: None,
+        missing_keys: Vec::new(),
     })
 }
 
@@ -429,7 +446,7 @@ fn check_field(
         .flatten()
         .map(String::as_str)
         .collect();
-    let missing = field.args.description.is_none();
+    let missing = field.args.description.is_none() && field.from_file.is_none();
     let description = field.description();
     let mut seen: Vec<(String, Violation, Vec<OptionType>)> = Vec::new();
     for kind in OptionType::ALL {
@@ -444,6 +461,9 @@ fn check_field(
                 v.path = format!("options[{index}]{rest}");
             }
             if missing && v.rule == RuleId::CMD_04 {
+                for key in &field.missing_keys {
+                    v.notes.push(key.clone());
+                }
                 v = v.with_help(format!(
                     "add `#[option(description = \"…\")]` with 1 to {} characters (doc comments are rustdoc only)",
                     limits.command_description_len
@@ -660,14 +680,23 @@ fn validator_tokens(field: &OptField<'_>) -> Option<TokenStream> {
 ///
 /// The expansion errors with the type-dependent `const` checks, as tokens to
 /// emit instead of the derive's other items (which would only add noise).
-pub(crate) fn expand(input: &DeriveInput, fields: &[&Field]) -> Result<TokenStream, TokenStream> {
+pub(crate) fn expand(
+    input: &DeriveInput,
+    fields: &[&Field],
+    locale: Option<OptionLocale<'_>>,
+) -> Result<TokenStream, TokenStream> {
     let name = &input.ident;
     let mut errors = Vec::new();
     let mut parsed = Vec::new();
     let mut all_parsed = true;
     for field in fields {
         match parse_field(field) {
-            Ok(f) => parsed.push(f),
+            Ok(mut f) => {
+                if let Some(locale) = locale {
+                    resolve_description(&mut f, locale, &mut errors);
+                }
+                parsed.push(f);
+            }
             Err(e) => {
                 all_parsed = false;
                 errors.push(e);
@@ -742,6 +771,50 @@ pub(crate) fn expand(input: &DeriveInput, fields: &[&Field]) -> Result<TokenStre
             #table
         }
     })
+}
+
+/// Resolves a field's description against the default-locale file
+/// (M12-M14): a conflict or differing keys is a CMD-04 error on the
+/// literal (or the field).
+fn resolve_description(
+    field: &mut OptField<'_>,
+    locale: OptionLocale<'_>,
+    errors: &mut Vec<syn::Error>,
+) {
+    if !crate::common::is_key_segment(&field.name) {
+        if field.args.description.is_none() {
+            field.missing_keys = locale
+                .paths
+                .iter()
+                .map(|p| {
+                    not_found(
+                        &format!("cmd.{}.opt.{}.description", p.replace(' ', "."), field.name),
+                        locale.file,
+                    )
+                })
+                .collect();
+        }
+        return;
+    }
+    let literal = field.args.description.as_ref().map(LitStr::value);
+    match option_description(locale.paths, &field.name, literal.as_deref(), locale.file) {
+        Ok(OptionText::Text(text)) => {
+            if field.args.description.is_none() {
+                field.from_file = Some(text);
+            }
+        }
+        Ok(OptionText::Missing(keys)) => {
+            field.missing_keys = keys.iter().map(|k| not_found(k, locale.file)).collect();
+        }
+        Err(violation) => {
+            let span = field
+                .args
+                .description
+                .as_ref()
+                .map_or_else(|| field.ident.span(), LitStr::span);
+            errors.push(syn::Error::new(span, violation.to_string()));
+        }
+    }
 }
 
 /// `<Name>Partial`.
@@ -887,7 +960,7 @@ mod tests {
     /// The options half over a checked struct, like the derive.
     fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         let fields = crate::common::kind_fields(input, "SlashCommand")?;
-        Ok(super::expand(input, &fields).unwrap_or_else(|errors| errors))
+        Ok(super::expand(input, &fields, None).unwrap_or_else(|errors| errors))
     }
 
     fn run(input: TokenStream) -> String {

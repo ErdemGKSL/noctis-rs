@@ -1,0 +1,7 @@
+error: [CMD-01] name: limit a word other than `name`, `description` or `opt` when locale files are read, actual `name`
+         = note: `name` is ambiguous in the `cmd.<path>` keys of `../../fixtures/i18n/cmdkeys/en-US.yaml`
+         = help: rename the word `name`
+ --> tests/ui-i18n/cmd/CMD-01_reserved_locale_word_name.rs:7:5
+  |
+7 |     "name",
+  |     ^^^^^^

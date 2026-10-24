@@ -10,18 +10,16 @@
 mod handlers;
 pub mod view;
 
-use noctis::BaseMeta;
 use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker, WebhookMarker};
 use noctis::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::strings::keys;
 
-/// The Module. `.base` declares the description of the `/setup` base command (FR-57),
-/// equal to `cmd.setup.description` in `locales/en-US.yaml`.
+/// The Module. The `/setup` base command takes its description from
+/// `cmd.setup.description` in `locales/en-US.yaml`, so it needs no `.base(..)`.
 pub fn module() -> Module {
     Module::new("setup")
-        .base("setup", BaseMeta::new().description("Set up the bot for this server"))
         .add::<handlers::SetupStart>()
         .add::<SetupState>()
         .add::<PickLogChannel>()

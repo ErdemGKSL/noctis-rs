@@ -11,6 +11,9 @@ mod emit;
 mod load;
 mod model;
 
+pub(crate) use load::{root, shown};
+pub(crate) use model::{COMMAND_KEY_WORDS, file_entries};
+
 use proc_macro2::TokenStream;
 
 use crate::common::combine;
@@ -22,7 +25,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         Err(e) => return e.into_compile_error(),
     };
     let loaded = load::load(&args);
-    let dir = load::shown(&args.dir);
+    let dir = shown(&args.dir);
     let span = args.span();
     let mut errors: Vec<syn::Error> = loaded
         .errors

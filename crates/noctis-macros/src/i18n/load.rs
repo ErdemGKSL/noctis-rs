@@ -46,19 +46,25 @@ pub(crate) struct Loaded {
     pub(crate) errors: Vec<String>,
 }
 
-/// The directory `dir` resolves to.
-fn base(args: &Args) -> Result<PathBuf, String> {
-    let root = if args.from_source_file {
+/// The directory relative paths start from: the invoking source file's
+/// directory with `from_source_file` (Noctis's own fixtures), else the
+/// crate root.
+pub(crate) fn root(from_source_file: bool) -> Result<PathBuf, String> {
+    if from_source_file {
         proc_macro::Span::call_site()
             .local_file()
             .and_then(|file| file.parent().map(Path::to_path_buf))
-            .ok_or_else(|| "i18n!: the invoking source file is unknown".to_owned())?
+            .ok_or_else(|| "i18n!: the invoking source file is unknown".to_owned())
     } else {
         std::env::var_os("CARGO_MANIFEST_DIR")
             .map(PathBuf::from)
-            .ok_or_else(|| "i18n!: `CARGO_MANIFEST_DIR` is not set".to_owned())?
-    };
-    Ok(root.join(&args.dir))
+            .ok_or_else(|| "i18n!: `CARGO_MANIFEST_DIR` is not set".to_owned())
+    }
+}
+
+/// The directory `dir` resolves to.
+fn base(args: &Args) -> Result<PathBuf, String> {
+    Ok(root(args.from_source_file)?.join(&args.dir))
 }
 
 /// Lists and reads the locale files of `args.dir`.

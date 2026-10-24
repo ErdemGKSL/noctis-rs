@@ -114,6 +114,7 @@ functions live in `noctis::rules::command` (see `commands.md` §2 "Rule function
 | `command::{expand, validate_name, validate_tree, validate_merge}` | Command Patterns and trees (`commands.md` §2) |
 | `command::{validate_options, measure_options, OptionDecl, OptionType, Choice, ChoiceValue, NumericValue}` | options (`commands.md` §3) |
 | `command::validate_context_menu_name` | CTX-01 (`commands.md` §5) |
+| `command::{validate_localized, validate_localized_option_names, LocalizedField}` | one localized text (LOC-02: `LocalizedField::{Name, Description, ChoiceName, ContextMenuName}`) and one locale's option names (LOC-03) (`i18n.md` §4) |
 | `command::{validate_meta, CommandMeta, InteractionContext, IntegrationType}` | base-command metadata (`commands.md` §6) |
 | `command::validate_autocomplete` | an autocomplete response: INT-07 count, OPT-09/03/04 per kept choice, OPT-11 (`commands.md` §4) |
 | `component::{validate_components, validate_legacy_components, cost, Component, Container, Section, Accessory, Media, Separator, Spacing, Button, ButtonStyle, Select, SelectKind, SelectOption, Cost}` | Components V2 trees and legacy rows, CV2-03..13, CV2-15..17 (`components-v2.md` §15) |

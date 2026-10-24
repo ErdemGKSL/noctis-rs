@@ -15,6 +15,14 @@ pub(crate) fn error(
     syn::Error::new_spanned(tokens, format!("[{rule}] {what}\n  = help: {help}"))
 }
 
+/// Whether `text` is one locale key segment (`[A-Za-z0-9_-]+`).
+pub(crate) fn is_key_segment(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 /// Folds `errors` into one error, or `Ok` when there is none.
 pub(crate) fn combine(errors: Vec<syn::Error>) -> syn::Result<()> {
     let mut errors = errors.into_iter();

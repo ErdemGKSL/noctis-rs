@@ -369,7 +369,7 @@ Targets: `PublishScope::Global` writes the global commands, then each guild of a
 
 The JSON carries only what you declared: `"options": []` on every option-less command,
 subcommand and group (FR-61); unset metadata is omitted (Discord applies its default);
-`default_member_permissions` is the bit string; localizations are not sent yet ([planned, Story 11.4]).
+`default_member_permissions` is the bit string; the localizations from the merged catalogs are sent (`i18n.md` §4).
 The diff ignores Discord's server fields and defaults (unset `contexts` equals
 `[0,1,2]`, unset `integration_types` equals the app's enabled types, absent `nsfw`
 equals `false`, `1` equals `1.0`); option and choice order matter, command order does
