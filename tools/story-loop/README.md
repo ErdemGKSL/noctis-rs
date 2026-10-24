@@ -58,8 +58,16 @@ Run about one or two epics per invocation, then check the results, `git log` and
   triage result); in a lane, a story done in the lane but not yet in main takes
   `resumeAt: "merge"`.
 - `[Maintainer-gated]` stories (14.8, 14.9) are skipped and reported as waiting.
-- A blocked story stops the batch; read its spec's `## Auto Run Result`, fix the cause
-  or amend the spec, and run again.
+- After a restart, give each in-flight story `resumeAt: "auto"`: a recovery agent reads the
+  spec, `git log` and the working tree and picks the resume point itself.
+- A story that stops (planning blocked, a halt, a failed sync, start or merge) does not end
+  the lane. A recovery agent (`recover <num>`) diagnoses it: it fixes a tooling or environment
+  fault (in `tools/story-loop/` too, so it does not recur), amends a bad spec, or decides an
+  intent question and logs it as a `(decision)` line, sets a `blocked` status back to
+  `in-progress`, and names the resume point; the story is retried in place, at most twice.
+  Only then does the lane stop.
+- An agent that dies (no structured output) is retried once and then counts as a failed
+  step; it no longer ends its lane silently.
 - Every third finished epic (3, 6, 9, 12, 15) the script refreshes `README.md`.
 - Before the Epic 14 launch stories, move `.github/workflows-disabled/*` back to
   `.github/workflows/` and fix every CI failure.
@@ -92,7 +100,10 @@ args: { root, w, date, lanes: [
   both sides' docs), the gates run on the merged tree, and `lane.sh push-main` lands it.
   These post-merge gates skip `cargo hack` and the MSRV check: both sides already passed them,
   and the next story's full gates on main run them again.
-  Merges are serialized across lanes.
+  Merges are serialized across lanes, also across separate workflow runs: `mergeIntoMain`
+  takes the file lock `lane.sh lock` (in the common git dir; `push-main` releases it, a lock
+  older than 4 h is stale). Push to main by hand only while holding it:
+  `tools/story-loop/lane.sh lock manual`, push, `tools/story-loop/lane.sh unlock manual`.
 - Pick lanes from story dependencies: stories in one lane may depend on each other; stories
   in different lanes must not (they may touch the same files; the merge step handles that).
 - After a restart, rerun with the same lanes: `lane.sh setup` reuses the worktrees, and an
