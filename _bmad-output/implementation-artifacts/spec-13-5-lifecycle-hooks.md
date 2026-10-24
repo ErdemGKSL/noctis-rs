@@ -2,7 +2,8 @@
 title: 'Story 13.5: Lifecycle Hooks'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'e6eb41e77228bc1b32bad454e225168b581b2d65'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
