@@ -9,21 +9,33 @@ permissions:
   contents: read
 
 jobs:
-  # Benches against crates/noctis-core/benches/budgets.toml. Stories 10.11
-  # and 14.3 add their benches; gating starts in Story 14.3 (until then each
-  # bench reports only, in the step summary).
+  # Benches against crates/noctis-core/benches/budgets.toml (AD-25). Budgets
+  # are report-only until Story 14.3 (`gate = false`): an over-budget run
+  # prints a line and passes. Story 14.3 adds its benches here.
   benches:
     name: Benches
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      # `cargo bench` has no --release: the bench profile inherits release.
       # Story 12.6: memory per idle guild (NFR-1).
       - run: cargo bench -p noctis-core --bench memory_per_guild
+      # Story 10.11: the reference card render latency (NFR-3).
+      - run: cargo bench -p noctis-image --features render --bench reference_card
 
-  # Story 10.11: build and test against the latest takumi.
+  # Story 10.11 (NFR-8, AD-28): builds and tests against the newest takumi
+  # and takumi-core. Report-only: it never fails the workflow; each step's
+  # result goes to the job summary.
   latest-takumi:
+    name: Latest takumi (report only)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
-      - run: echo "latest-takumi lands in Story 10.11"
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: bash .github/scripts/latest-takumi.sh

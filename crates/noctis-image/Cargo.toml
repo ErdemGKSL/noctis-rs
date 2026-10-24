@@ -102,6 +102,8 @@ twilight-model = { workspace = true, optional = true }
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The reference card bench reads `noctis-core/benches/budgets.toml`.
+toml.workspace = true
 # Captures the `noctis::image` warnings in the fetcher tests.
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 tokio = { workspace = true, features = [
@@ -112,6 +114,16 @@ tokio = { workspace = true, features = [
   "io-util",
   "time",
 ] }
+
+# The reference card (NFR-3, AD-25): p50/p99 against
+# `noctis-core/benches/budgets.toml` with `cargo bench`; a smoke run under
+# `cargo test`. A custom harness, no criterion.
+[[bench]]
+name = "reference_card"
+path = "benches/reference_card.rs"
+harness = false
+test = true
+required-features = ["render"]
 
 [lints]
 workspace = true

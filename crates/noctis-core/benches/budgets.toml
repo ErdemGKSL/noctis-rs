@@ -1,5 +1,9 @@
-# Noctis performance budgets (AD-25, AD-28). One top-level table per bench.
-# `gate = false` reports only; Story 14.3 confirms the numbers (PRD Q3) and turns gating on.
+# Noctis performance budgets (AD-25, AD-28). One top-level table per bench;
+# each bench reads only its own table and prints its measured statistics next
+# to these budgets. Budgets are report-only until Story 14.3 confirms the
+# numbers and decides which ones gate (PRD Q3): with `gate = false` an
+# over-budget run prints a line and still exits 0; `gate = true` makes it
+# exit 1. Story 14.3 adds its benches' tables here.
 
 [memory_per_guild]
 nfr = "NFR-1"
@@ -16,3 +20,11 @@ note = "reported only: NFR-1 sets no Discord cache target; default configuration
 [memory_per_guild.render_cache_bytes]
 max = 67108864
 note = "MemoryRenderCache::DEFAULT_LIMITS byte budget (64 MiB); idle guilds render nothing"
+
+# The reference card (crates/noctis-image/benches/reference_card.rs): a
+# 934x282 PNG profile card rendered with warm caches on a saturated render
+# pool, in milliseconds per render (NFR-3).
+[reference_card]
+p50_ms = 10.0
+p99_ms = 50.0
+gate = false

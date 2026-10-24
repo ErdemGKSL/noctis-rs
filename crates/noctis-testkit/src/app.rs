@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use noctis_core::__testing::AppProbe;
 use noctis_core::{AppBuilder, Runtime, Token};
+use noctis_ports::Renderer;
 use serde_json::{Value, json};
 use tokio::runtime::{Handle, RuntimeFlavor};
 use tokio::sync::oneshot;
@@ -91,6 +92,8 @@ pub struct TestApp {
     /// The guild seeds already fed to the App's Discord cache.
     fed: Mutex<HashSet<Id<GuildMarker>>>,
     timeout: Duration,
+    /// The App's Renderer, captured before `run_until` moves the App.
+    renderer: Option<Arc<dyn Renderer>>,
 }
 
 impl fmt::Debug for TestApp {
@@ -181,6 +184,7 @@ impl TestApp {
             }),
         );
         let app = builder.build().map_err(TestError::Build)?;
+        let renderer = app.renderer().cloned();
         let probe = AppProbe::of(&app);
         let definitions = probe.commands();
         let (stop, stopped) = oneshot::channel::<()>();
@@ -205,6 +209,7 @@ impl TestApp {
             seeds,
             fed: Mutex::new(HashSet::new()),
             timeout: DEFAULT_TIMEOUT,
+            renderer,
         };
         test_app.wait_ready().await?;
         Ok(test_app)
@@ -341,6 +346,14 @@ impl TestApp {
     /// [`Response::http_calls`](crate::Response::http_calls).
     pub fn http_fake(&self) -> &FakeDiscordHttp {
         &self.http
+    }
+
+    /// The App's `Renderer` port, like `App::renderer`: `Some` when one was
+    /// installed (the `ImagePlugin` through `.image(..)`/`.theme(..)`, or
+    /// `AppBuilder::renderer`). Pass it to
+    /// [`assert_render_snapshot!`](crate::assert_render_snapshot).
+    pub fn renderer(&self) -> Option<&Arc<dyn Renderer>> {
+        self.renderer.as_ref()
     }
 
     /// The gateway fake the App's shard is connected to.

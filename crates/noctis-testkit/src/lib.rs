@@ -15,6 +15,10 @@
 //! - [`render_json`] and [`Response::message_json`]: snapshot JSON with
 //!   only per-send `custom_id` parts masked.
 //! - [`assert_memory_flat`]: NFR-2 with dhat.
+//! - [`assert_render_snapshot!`] and [`Tolerance`]: Template pixel
+//!   snapshots through the App's `Renderer` port
+//!   ([`TestApp::renderer`]), decoded with `png` and compared with
+//!   `tests/snapshots/<name>.png` within a tolerance.
 //! - [`fake::FakeDiscordHttp`]: a local Discord HTTP fake (HTTP/1.1 and h2c
 //!   on `127.0.0.1`) with per-test routes, a fallback, a canned `GET
 //!   /gateway/bot`, a request and connection log (with HTTP/2 PINGs),
@@ -36,6 +40,7 @@ mod memory;
 mod render;
 mod response;
 mod seed;
+mod snapshot;
 
 pub use app::{AutocompleteRun, ClickRun, CommandRun, MenuRun, SelectRun, SubmitRun, TestApp};
 pub use dhat;
@@ -47,3 +52,10 @@ pub use response::{
     HttpCall, ModalForm, Response, ResponseKind, TestComponent, TestMessage, WireCost,
 };
 pub use seed::{TestGuild, TestOption, TestUser};
+pub use snapshot::Tolerance;
+
+/// What [`assert_render_snapshot!`] expands to; not part of the API.
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::snapshot::render_snapshot;
+}

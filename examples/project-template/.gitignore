@@ -1,2 +1,4 @@
 /target
 .env
+# Rejected pixel snapshot renders (assert_render_snapshot!).
+*.new.png

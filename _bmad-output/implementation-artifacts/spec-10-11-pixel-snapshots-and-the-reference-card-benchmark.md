@@ -268,3 +268,9 @@ deferred: []
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`, `cargo deny check` and `cargo +1.91 check --release --workspace`: pass.
 - `git diff Cargo.lock`: only the new dependency-list lines (no new package or version).
 - `bash tools/story-loop/gates.sh`: ALL-OK (this is the epic's last story, so it includes `cargo hack`).
+
+## Auto Run Result
+
+- `cargo bench -p noctis-image --features render --bench reference_card` (cloud container, T = 2 threads, 2 clients, 1000 samples): min 4.530 ms, mean 7.711 ms, **p50 6.518 ms**, **p99 15.934 ms**, max 25.287 ms; both within budget (10 / 50 ms, report only).
+- Committed snapshots: `crates/noctis/tests/snapshots/reference_card.png` (first run, then re-run twice against it) and `crates/noctis-testkit/tests/snapshots/fake_card.png`.
+- `*.new.png` is ignored in the repository and in the Project Template.

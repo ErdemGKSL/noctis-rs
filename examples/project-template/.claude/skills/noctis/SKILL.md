@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `59d70fdda8fd6d90d5b7dae54a853e42099fe5dae99e2580cc5f63deaaee1338` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `f0fad34d132ea8d1012d8c57c70ed5016b54aca2625a16aaee4a4505be0cbd34` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -495,6 +495,6 @@ Read only what the task touches.
 | `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing (`app_id`, `Shared::new`), `ctx.kv()` (`Kv`) and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |
-| `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |
+| `references/testing.md` | test commands, clicks, Views, message snapshots, Template pixel snapshots (`assert_render_snapshot!`, `Tolerance`), Adapters, memory |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |

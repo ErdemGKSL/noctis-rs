@@ -7196,6 +7196,7 @@ pub fn noctis::testkit::TestApp::command(&self, &str) -> noctis::testkit::Comman
 pub fn noctis::testkit::TestApp::guild(self, noctis::testkit::TestGuild) -> Self
 pub fn noctis::testkit::TestApp::http_fake(&self) -> &noctis::testkit::fake::FakeDiscordHttp
 pub fn noctis::testkit::TestApp::message_command(&self, &str) -> noctis::testkit::MenuRun<'_>
+pub fn noctis::testkit::TestApp::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
 pub fn noctis::testkit::TestApp::select(&self, noctis::testkit::TestComponent) -> noctis::testkit::SelectRun<'_>
 pub async fn noctis::testkit::TestApp::stop(self) -> core::result::Result<(), noctis::testkit::TestError>
 pub fn noctis::testkit::TestApp::submit(&self, noctis::testkit::ModalForm) -> noctis::testkit::SubmitRun<'_>
@@ -7365,6 +7366,27 @@ impl core::clone::Clone for noctis::testkit::TestUser
 pub fn noctis::testkit::TestUser::clone(&self) -> Self
 impl core::fmt::Debug for noctis::testkit::TestUser
 pub fn noctis::testkit::TestUser::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::Tolerance
+impl noctis::testkit::Tolerance
+pub const noctis::testkit::Tolerance::EXACT: Self
+pub const fn noctis::testkit::Tolerance::channel(self, u8) -> Self
+pub const fn noctis::testkit::Tolerance::channel_delta(self) -> u8
+pub const fn noctis::testkit::Tolerance::max_ratio(self) -> f64
+pub fn noctis::testkit::Tolerance::ratio(f64) -> Self
+impl core::clone::Clone for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::eq(&self, &Self) -> bool
+impl core::convert::From<f64> for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::from(f64) -> Self
+impl core::default::Default for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::default() -> Self
+impl core::fmt::Debug for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::testkit::Tolerance
+pub fn noctis::testkit::Tolerance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::testkit::Tolerance
+impl core::marker::StructuralPartialEq for noctis::testkit::Tolerance
 pub struct noctis::testkit::WireCost
 pub noctis::testkit::WireCost::components: usize
 pub noctis::testkit::WireCost::text_chars: usize
@@ -7382,6 +7404,7 @@ pub fn noctis::testkit::WireCost::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::testkit::WireCost
 impl core::marker::StructuralPartialEq for noctis::testkit::WireCost
 pub async fn noctis::testkit::assert_memory_flat<'a, F, Fut>(&'a noctis::testkit::TestApp, usize, F) -> core::result::Result<noctis::testkit::MemoryReport, noctis::testkit::TestError> where F: core::ops::function::FnMut(&'a noctis::testkit::TestApp) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<(), noctis::testkit::TestError>>
+pub macro noctis::testkit::assert_render_snapshot!
 pub use noctis::testkit::dhat
 pub fn noctis::testkit::render_json(&noctis::ui::V2Message) -> core::result::Result<serde_json::value::Value, noctis::testkit::TestError>
 pub mod noctis::testkit::fake

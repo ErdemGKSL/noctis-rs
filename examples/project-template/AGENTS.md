@@ -23,7 +23,7 @@ Media Gallery, bio modal), a custom
 - `src/observability.rs` the `AlertSink` Error Sink for the `Event` and `Render` origins.
 - `src/modules/{setup,dashboard,profile}/` one Module each: `mod.rs` (Module and component structs), `view.rs` (render functions), `handlers.rs` (Command structs and every `#[handler]` impl), `events.rs` (gateway events); `src/adapters/` custom Adapters; `src/strings.rs` compiles `locales/*.yaml` (`en-US` is the default locale; file names are Discord locale codes).
 - `noctis-theme.css` Theme tokens and keyframes for Templates.
-- `tests/` flows (`noctis::testkit::TestApp`, `#[tokio::test(flavor = "multi_thread")]`), `memory.rs` (`assert_memory_flat`, its own binary with the dhat allocator and one `#[test]`), Adapter conformance, Template pixel snapshots.
+- `tests/` flows (`noctis::testkit::TestApp`, `#[tokio::test(flavor = "multi_thread")]`), `memory.rs` (`assert_memory_flat`, its own binary with the dhat allocator and one `#[test]`), Adapter conformance, Template pixel snapshots (`templates.rs`: `assert_render_snapshot!(app.renderer(), ..)`, stored in `tests/snapshots/`; commit them, `NOCTIS_UPDATE_SNAPSHOTS=1` rewrites them).
 
 ## Running and verifying
 

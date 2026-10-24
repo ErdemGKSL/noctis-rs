@@ -3,7 +3,8 @@
 Covers: the testkit (`noctis::testkit`): `TestApp`, seeds, simulated commands, clicks,
 selects, modal submits and autocomplete, assertions on rendered messages, response
 kind and ephemerality, message JSON snapshots (`render_json`), Limit cost,
-`assert_memory_flat`; Template pixel snapshots and Adapter conformance are planned. FR-51. Enable the `testkit`
+`assert_memory_flat`, Template pixel snapshots (`assert_render_snapshot!`, `Tolerance`,
+`app.renderer()`); Adapter conformance is planned. FR-51. Enable the `testkit`
 feature in `[dev-dependencies]` only:
 
 ```toml
@@ -245,20 +246,70 @@ with unresolved Route ids filled with placeholder parts and the same masking as
 `message_json()`, so it equals the `message_json()` of a public reply of that message
 and both paths can share one snapshot.
 
-## 6. Template pixel snapshots [planned, Story 10.11]
+## 6. Template pixel snapshots
 
 ```rust
-// Build the App with your own `configure`, so its ImagePlugin installs the Renderer as in
-// production; TestApp runs on `Runtime::for_test()` (default font, no network,
-// placeholder assets) [planned, Story 10.11].
-let app = TestApp::build(configure(&mut App::builder()))?;
-noctis::testkit::assert_render_snapshot!(app.renderer(), "profile_card", card, tolerance = 0.01);
+use noctis::App;
+use noctis::image::RemoteImage;
+use noctis::testkit::{TestApp, Tolerance, assert_render_snapshot};
+
+#[tokio::test(flavor = "multi_thread")]
+async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
+    // Your own `configure`: its `.theme(..)`/`.image(..)` install the ImagePlugin, which puts
+    // the Renderer on the App exactly as in production; register fonts explicitly there.
+    let app = TestApp::build(configure(&mut App::builder())).await?;
+    let card = ProfileCard {
+        name: "Deniz".into(),
+        subtitle: "they/them".into(),
+        level_label: "Level 7".into(),
+        xp_label: "42 / 100 XP".into(),
+        progress: 0.42,
+        avatar: RemoteImage::placeholder(), // no network
+    };
+    assert_render_snapshot!(app.renderer(), "profile_card", card, tolerance = 0.01);
+    app.stop().await?;
+    Ok(())
+}
 ```
 
-`app.renderer()` is the App's `Renderer` port; without the `image` feature (no
-ImagePlugin) it is an error. First run writes `tests/snapshots/profile_card.png`;
-later runs compare. Runtime class strings with unknown Tailwind classes are errors on
-a test Runtime, so they fail tests.
+- **Two forms.** `assert_render_snapshot!(renderer, "name", template)` compares exactly
+  (`Tolerance::EXACT`); `assert_render_snapshot!(renderer, "name", template, tolerance = t)`
+  takes a `Tolerance` or an `f64` ratio (`0.01` = `Tolerance::ratio(0.01)`). The macro
+  `.await`s, so it is valid only inside an async fn: use
+  `#[tokio::test(flavor = "multi_thread")]` (TestApp needs it).
+- **`Tolerance`.** `Tolerance::ratio(r)` (0.0..=1.0, finite, else it panics) is the largest
+  share of pixels that may differ; `.channel(d)` makes a pixel count as differing only when
+  one of its R, G, B or A values differs by more than `d` (default 0). `Tolerance::EXACT`
+  (also `Default`) is ratio 0.0, channel 0. Getters: `max_ratio()`, `channel_delta()`. A
+  snapshot matches when both images have the same size and
+  `differing <= max_ratio * total` pixels.
+- **What is rendered.** `app.renderer()` (`TestApp::renderer()`: the App's `Renderer`
+  port, `Option<&Arc<dyn Renderer>>`, `None` without the `image` feature's ImagePlugin or
+  `.renderer(..)`) renders the Template through the real Renderer, forced to a still PNG
+  with no animation and no upload budget: the view is drawn once with `Frame::STILL`, so a
+  JPEG, WebP or animated Template snapshots its still PNG pixels (animations are not
+  compared frame by frame). Register the Template on the App
+  (`Module::template::<T>()`); an unregistered one fails with the Renderer's
+  `UnknownTemplate` error. Without a Renderer it fails with "no Renderer".
+- **Files.** The snapshot is `tests/snapshots/<name>.png` of the calling crate. The first
+  run writes it (creating the directory); **commit it**. On a mismatch, a size mismatch or
+  an undecodable stored file the test panics and writes the actual render to
+  `tests/snapshots/<name>.new.png` (compare, then delete it or accept it); a later match
+  deletes a stale `.new.png`. Add `*.new.png` to `.gitignore`.
+- **Updating.** `NOCTIS_UPDATE_SNAPSHOTS=1 cargo test --release` rewrites every snapshot
+  that runs and passes; review the diff before committing.
+- **CI.** With `CI` set (GitHub sets `CI=true`), a missing snapshot fails ("missing
+  snapshot (CI)") instead of being written, so a forgotten file cannot pass. An
+  environment variable counts as on when it is set and not `""`, `"0"` or `"false"`;
+  update mode wins over `CI`.
+- **Names.** 1..=64 bytes of `[A-Za-z0-9_-]` (no dots, slashes or spaces), checked before
+  rendering; keep each name unique in the crate, since all tests share one directory.
+- **Determinism.** Register your fonts explicitly with `ImageConfig::font(..)` (the same
+  font file on every machine), use `RemoteImage::placeholder()` for `#[asset]` fields so
+  no network is needed, and a small tolerance (`0.01`) absorbs antialiasing differences.
+  A downscaled render (the size budget shrank it) fails: snapshots compare the declared
+  size. Runtime class strings with unknown Tailwind classes are errors on a test Runtime,
+  so they fail tests too.
 
 ## 7. Adapter conformance [planned, Story 14.1]
 

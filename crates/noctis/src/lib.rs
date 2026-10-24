@@ -603,7 +603,8 @@
 //!   `PrefixPlugin` runs opted-in slash Commands from messages such as
 //!   `!warn <@5> 3`; it needs the privileged `MESSAGE_CONTENT` intent.
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
-//!   simulated interactions, message snapshots and the memory check;
+//!   simulated interactions, message and Template pixel snapshots and the
+//!   memory check;
 //!   enable it in `[dev-dependencies]` only.
 #![deny(missing_docs)]
 
@@ -3452,6 +3453,16 @@ pub mod testkit {
     //! - [`assert_memory_flat`]: live heap stays within
     //!   [`MEMORY_FLAT_SLACK_BYTES`] over N runs (NFR-2). It needs the
     //!   [`dhat`] allocator in its own test binary with one `#[test]`.
+    //! - Pixel snapshots: [`assert_render_snapshot!`]`(app.renderer(), "name",
+    //!   template)` or `(.., tolerance = 0.01)` renders a registered Template
+    //!   through the App's `Renderer` port ([`TestApp::renderer`]; the
+    //!   `image` feature's `ImagePlugin` installs it) as a still PNG and
+    //!   compares it with `tests/snapshots/<name>.png` of the calling crate
+    //!   within a [`Tolerance`] (a share of differing pixels plus a
+    //!   per-channel delta). The first run writes the file; a mismatch writes
+    //!   `<name>.new.png` and panics; `NOCTIS_UPDATE_SNAPSHOTS=1` rewrites
+    //!   it; on `CI` a missing snapshot fails. Use it inside
+    //!   `#[tokio::test(flavor = "multi_thread")]`.
     //!
     //! ```no_run
     //! use noctis::prelude::*;
@@ -3491,7 +3502,7 @@ pub mod testkit {
     pub use noctis_testkit::{
         AutocompleteRun, ClickRun, CommandRun, HttpCall, MEMORY_FLAT_SLACK_BYTES, MemoryReport,
         MenuRun, ModalForm, RecordedFile, Response, ResponseKind, SelectRun, SubmitRun, TestApp,
-        TestComponent, TestError, TestGuild, TestMessage, TestOption, TestUser, WireCost,
-        assert_memory_flat, dhat, render_json,
+        TestComponent, TestError, TestGuild, TestMessage, TestOption, TestUser, Tolerance,
+        WireCost, assert_memory_flat, assert_render_snapshot, dhat, render_json,
     };
 }

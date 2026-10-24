@@ -15,8 +15,12 @@ http-body-util.workspace = true
 hyper = { workspace = true, features = ["http1", "http2", "server"] }
 hyper-util = { workspace = true, features = ["server-auto", "tokio"] }
 noctis-core.workspace = true
+# The `Renderer` port of pixel snapshots (never noctis-image, AD-24).
+noctis-ports.workspace = true
 noctis-rules.workspace = true
 noctis-ui.workspace = true
+# Decodes pixel snapshots (stored and rendered PNGs).
+png.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
@@ -30,7 +34,6 @@ metrics.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
 noctis.workspace = true
 noctis-gateway.workspace = true
-noctis-ports.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
 tokio-websockets = { workspace = true, features = ["client", "server", "sha1_smol"] }

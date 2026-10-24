@@ -65,6 +65,9 @@ jobs:
       - run: cargo test --release -p noctis --features i18n,testkit --test i18n_app --test i18n_modules --test i18n_locales --test i18n_commands --test i18n_overlays
       # Needs both `image` and `testkit` (Story 10.3: `ctx.render` end to end).
       - run: cargo test --release -p noctis --features image,testkit --test render_e2e
+      # The reference card bench in smoke mode (Story 10.11): percentile and budget
+      # parser self-checks, budgets.toml, three distinct renders.
+      - run: cargo test --release -p noctis-image --features render --bench reference_card
       # Needs both `prefix` and `testkit` (Story 15.4: prefix commands end to end).
       - run: cargo test --release -p noctis --features prefix,testkit --test prefix_e2e
 
@@ -139,8 +142,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- deps-check
 
+  # Required on every push, takumi bumps included (NFR-8, AD-28): the grammar
+  # fingerprint, the takumi oracle and the reference card pixel snapshot.
   tw-crosscheck:
-    name: Tailwind grammar cross-check
+    name: Takumi cross-check and pixel snapshots
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -149,6 +154,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- tw-grammar --check
       - run: cargo test --release -p noctis-image --features render --test tw_crosscheck
+      # CI=true: a missing snapshot fails instead of being written.
+      - run: cargo test --release -p noctis --features image,testkit --test reference_card
 
   rules-catalog:
     name: Rules catalog

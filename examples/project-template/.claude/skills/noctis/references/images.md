@@ -3,7 +3,7 @@
 Covers: the `image` features, `#[derive(Template)]`, `view!` and `tw!`, Tailwind v4
 class names and the strict grammar, typed dynamic styles, the Theme file, fonts, emoji,
 remote images, animation, output formats and size budget, the render pool, caps and
-cache, attaching to messages. Doctrine: UD-2 (images are read-only). FR-32..37, FR-66..70.
+cache, attaching to messages, pixel snapshots. Doctrine: UD-2 (images are read-only). FR-32..37, FR-66..70.
 
 ## 1. Enable it
 
@@ -813,8 +813,14 @@ Section::new([TextDisplay::new(title)], Thumbnail::new(cx.attach(&self.badge)).a
 ## 11. Testing
 
 `noctis::testkit::assert_render_snapshot!(app.renderer(), "name", template, tolerance = 0.01)`
-on a `TestApp` built from your own `configure` (its ImagePlugin installs the Renderer;
-default font, no network). See `testing.md`.
+inside `#[tokio::test(flavor = "multi_thread")]`, on a `TestApp` built from your own
+`configure` (its ImagePlugin installs the Renderer; `TestApp::renderer()` returns it).
+The Template (registered with `Module::template::<T>()`) is rendered as a still PNG and
+compared with `tests/snapshots/<name>.png` within a `Tolerance` (a share of differing
+pixels, plus `.channel(d)` per-channel slack); the first run writes the file (commit it),
+a mismatch writes `<name>.new.png` and fails, `NOCTIS_UPDATE_SNAPSHOTS=1` rewrites it,
+and on `CI` a missing snapshot fails. Register fonts explicitly and use
+`RemoteImage::placeholder()` so renders are deterministic and offline. See `testing.md` §6.
 
 ## 12. Unstable
 
