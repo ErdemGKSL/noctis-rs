@@ -2,7 +2,7 @@
 title: 'Story 10.6: Animated Templates'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'fe4cb718a86eb6a7d9a29e9f0b42df203abf2501'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -241,6 +241,34 @@ C = `tw::classify`, V(theme) = `tw::validate`, T = `Theme::parse`. R is a render
 
 ## Review Triage Log
 
+### 2026-10-23 — Review pass
+- verdicts: 24 findings — high 0, medium 2, low 7, false 15, maybe-false 0
+- findings:
+  - `false` `reject` (blind) `root_size_mismatch` ignores CSS precedence between a root `Style` px side and a `w-/h-/size-[Npx]` class — the spec settles "a mismatch is any declared width ≠ job width" (Always, Renderer), so any conflicting explicit declaration counts by design.
+  - `false` `reject` (blind) fractional/rem/min-/max-/leading-zero root sizes are unchecked — the spec fixes `N = [0-9]{1,9}` and only `w-/h-/size-[Npx]`; the skill (`images.md` "Every frame has the Template's size") already lists exactly what is checked and that relative sizes are not.
+  - `low` `reject` (blind) core runs `check_fps` before the Renderer's `image-gif` support check, so a GIF over 50 fps on a build without `image-gif` gets `OverCap{Fps}` first, then `Unsupported` — real but reachable only via `render_with` with a GIF spec on a gif-less build (the derive refuses GIF without the feature); the order is what the spec prescribes, and fixing it adds a format-support branch to core.
+  - `false` `reject` (blind) `RenderOptions` lacks `.still()` and a getter — the spec defines `RenderOptions` exactly (`new`, `animation`); FR-69/intent does not ask for a per-call still or introspection.
+  - `medium` `patch` (blind) no core test of an option overriding an animated Template's own `ANIMATION` — grouped with the vgap gap below (same root cause); patch adds the `Reel` + option case.
+  - `low` `reject` (blind) out-of-grammar `animate-[…]` forms get a bare TW-01 without a hint — real but uncommon (functions/lists/no duration in arbitrary animations), the TW-01 row and skill document the grammar, and a fix adds new hint branches in `suggest`.
+  - `low` `reject` (blind) `is_animation_token` rejects `inf`/`infinity`/`nan` because `f32::parse` accepts them — the spec prescribes this predicate and it matches the existing `bg-inf narrowed=numeric-token` behaviour; such animation token names are very unlikely in practice.
+  - `false` `reject` (blind) `check_keyframes_references` silently `continue`s on an unparsable stored value — `declare` rejects any `--animate-*` value that does not parse (`InvalidAnimation`), so the branch is unreachable and no animation can skip the keyframes check today.
+  - `low` `reject` (blind) no facade end-to-end test for `SizeMismatch`; facade test only reasserts `max_fps` — the renderer tests cover the detection and the core test covers the error path and sink report; the facade row is exactly what the spec's matrix asks; extra layering adds little.
+  - `false` `reject` (blind) no metric reason for `SizeMismatch`/fps and no `docs/discord-rules.md` id for fps/frame size — the spec's Never forbids a new metric or reason and gives `SizeMismatch` none; `discord-rules.md` carries no entry for any `RenderCaps` limit either (they are Noctis render caps, listed in the limits cheatsheet), so this is consistent.
+  - `false` `reject` (blind) spec front matter still `in-progress` with no task updates — expected mid-review; the fix would edit this build's spec.
+  - `false` `reject` (edge) builtin `w-px`/`h-px`/`size-px` escape the size check — `w-px` is a spacing utility, which the spec's Never excludes from the root-size check ("no check of spacing or percentage utilities").
+  - `false` `reject` (edge) fractional or uppercase px values escape the size check — same as the blind row: the spec fixes the digit-only lowercase `Npx` form and the skill documents it.
+  - `low` `reject` (edge) core's fps check precedes the Renderer's gif-support check — same root cause as the blind core-order row; rejected for the same reason.
+  - `low` `reject` (intent D1) "animation plays as declared" is asserted at frame bitmaps plus the `ANIM`/frames count, not by decoding the encoded animation, and GIF/APNG CSS paths are not exercised — the frame loop and encoders are pre-existing (10.4) and covered there; the new behaviour (stylesheet + per-frame `time_ms`) is pinned at the frame level as the spec's matrix asks.
+  - `false` `reject` (intent D2) fps cap enforced at dispatch, not at `AnimationSpec::new` — the AC says "when core creates the job" and the takumi Renderer covers hand-built jobs; the spec settled this deliberately.
+  - `false` `reject` (intent D3) size-mismatch scope (all animated jobs, px-only) — spec Always/Never and Design Notes settle the definition; CSS-driven frames run the same check harmlessly.
+  - `false` `reject` (intent D4) built-in redefinition tested at parse, not registration — `.theme(..)` takes only a parsed `Theme`, so parse is registration (spec AC5, Design Notes).
+  - `false` `reject` (intent D5) `skill-check` pass not visible in the diff — a gate result, not a diff defect; the gates run in Verification.
+  - `false` `reject` (intent D6) project template code unchanged — maintainer-decisions §5 requires the template, skill and snapshot to be updated; the diff updates the template's `AGENTS.md`, `noctis-theme.css` and Usage Skill, the additive API leaves its code valid, and the spec's Never forbids a new animated Template in its code.
+  - `false` `reject` (intent D7) surface beyond the intent (`render_report`, new `ThemeErrorKind`s, strict grammar) — the intent's Problem names `render_report`, and the Theme validation and keyword-only grammar are the intent's Approach.
+  - `medium` `patch` (vgap) per-call `RenderOptions::animation` replacing a Template's own `ANIMATION` is never exercised; `job.animation.or(options.animation)` would keep every test green — grouped with the blind row; patch: third case in `options_set_the_animation_and_default_to_the_template_s` rendering `Reel` with an option and asserting `Some(spec)`.
+  - `low` `patch` (vgap) core fps check untested for a Template's own over-cap `ANIMATION` — narrowing the check to `options.animation` keeps tests green and a custom Renderer port would receive an over-cap job; patch: add a GIF 60 fps Template to core tests and assert `OverCap{Fps,50,60}`, Fake never called.
+  - `false` `reject` (vgap other) derive bounds `fps` to 1..=90 for every format — `crates/noctis-macros/src/template.rs:378-383` rejects `Gif` with `fps > 50` ("`fps` for `Gif` must be 1..=50").
+
 ## Design Notes
 
 - **Already shipped (no work).**
@@ -264,3 +292,12 @@ C = `tw::classify`, V(theme) = `tw::validate`, T = `Theme::parse`. R is a render
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog`, `-- skill-check`, `-- tw-grammar --check` -- pass
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- Summary: animated Templates (FR-69). Per-call `RenderOptions` (`new`, `animation`) override a Template's own `ANIMATION`; new `render_report` exposes `settings_used`. Core rejects fps above the per-format cap (GIF 50, others 90) as `OverCap { cap: Fps }` before enqueue; the takumi Renderer re-checks hand-built jobs. Animated jobs fail with `SizeMismatch` when the root declares a px width/height (Style or `w-/h-/size-[Npx]`) different from the job size. Theme validates `--animate-*` values with the strict keyword-only animation grammar and checks keyframes references after the whole file; keyframes names are lowercase `[a-z]([a-z0-9-]*[a-z0-9])?`, built-in redefinition stays rejected at parse.
+- Files changed: noctis-ports `render.rs` (RenderOptions, SizeMismatch, fps caps); noctis-core `render.rs`, `responder/ergonomics.rs` (fps check, options, render_report) plus tests; noctis-image `tw/animation.rs`, `tw/theme.rs`, `tw/mod.rs`, `node/mod.rs`, `renderer.rs` plus tests, tw corpus/crosscheck; noctis-macros `tw.rs`; noctis facade `lib.rs`, theme CSS, tests and trybuild TW-01/TW-02 fixtures; `docs/discord-rules.md`; project template AGENTS.md, theme CSS and Usage Skill (SKILL.md, images.md, limits cheatsheet); `xtask/public-api.txt` re-blessed.
+- Review findings: 24 (high 0, medium 2, low 7, false 15). Patched: 2 medium (grouped: core test that a per-call option overrides a Template's own `ANIMATION`) and 1 low (core test that a Template's own over-cap GIF 60 fps `ANIMATION` yields `OverCap{Fps,50,60}` without calling the Renderer). Deferred: none. Rejected: 21, each with its reason in the Review Triage Log (spec-settled size/fps semantics, check order fps-before-gif-support, no TW-01 hints for out-of-grammar `animate-[...]`, `inf`/`nan` token predicate, unreachable keyframes-parse branch, no new metric reason, test-depth items).
+- Follow-up review recommended: false (patched counts: high 0, medium 1 grouped finding from 2 entries sharing one root cause, low 1; patches are test-only).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests incl. all-features, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, tw-grammar --check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- Residual risks: GIF over 50 fps on a gif-less build reports `OverCap{Fps}` before `Unsupported`; out-of-grammar `animate-[...]` gets a bare TW-01 without a hint; encoded GIF/APNG output of CSS animations is asserted at frame level, not by decoding.

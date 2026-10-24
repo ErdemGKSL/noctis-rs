@@ -478,6 +478,54 @@ async fn options_set_the_animation_and_default_to_the_template_s() {
         .unwrap();
     let job = fake.job.lock().unwrap().take().unwrap();
     assert_eq!(job.animation, Some(REEL));
+    render(&parts(&app), Reel, RenderOptions::new().animation(spec))
+        .await
+        .unwrap();
+    let job = fake.job.lock().unwrap().take().unwrap();
+    assert_eq!(job.animation, Some(spec));
+}
+
+/// An animated Template whose own `ANIMATION` is over the GIF fps cap.
+#[derive(Debug, Serialize, Deserialize)]
+struct GifReel;
+
+impl Template for GifReel {
+    const ID: &'static str = "gif_reel";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(8, 8);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = Some(AnimationSpec::new(
+        Duration::from_secs(1),
+        60,
+        AnimatedFormat::Gif,
+    ));
+
+    fn view() -> ErasedView {
+        ErasedView::new(())
+    }
+}
+
+#[tokio::test]
+async fn a_template_animation_over_the_fps_cap_never_reaches_the_renderer() {
+    let sink = Arc::new(Recording::default());
+    let fake = Fake::new(Answer::Ok);
+    let app = app(Some(Arc::clone(&fake)), &sink);
+    let err = render(&parts(&app), GifReel, RenderOptions::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            render_error(&err),
+            RenderError::OverCap {
+                id,
+                cap: noctis_ports::RenderCap::Fps,
+                limit: 50,
+                actual: 60,
+            } if id == "gif_reel"
+        ),
+        "{err}"
+    );
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

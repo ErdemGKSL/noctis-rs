@@ -129,7 +129,7 @@ development_status:
   10-3-renderer-and-bounded-render-pool: done
   10-4-output-formats-and-size-budget: done
   10-5-per-job-caps-and-admission-control: done
-  10-6-animated-templates: in-progress
+  10-6-animated-templates: done
   10-7-fonts-and-static-assets: backlog
   10-8-remote-image-fetching-through-the-assetfetcher: backlog
   10-9-emoji-rendering: backlog
