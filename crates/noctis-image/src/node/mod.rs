@@ -28,6 +28,8 @@ mod tests;
 
 use std::borrow::Cow;
 
+use noctis_ports::Size;
+
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
 pub(crate) use style::Dimension;
@@ -159,6 +161,67 @@ impl Node {
             Kind::Text(_) => &[],
         }
     }
+    /// The explicit root size this node declares that differs from
+    /// `expected`, as `(width, height)` with `expected`'s side where only
+    /// the other one differs; `None` when every declared side matches.
+    ///
+    /// The declared sides are the [`Style`] pixel width and height and each
+    /// class without a variant (one leading or trailing `!` stripped) of the
+    /// form `w-[Npx]`, `h-[Npx]` or `size-[Npx]`; spacing and percentage
+    /// utilities are relative and ignored.
+    pub(crate) fn root_size_mismatch(&self, expected: Size) -> Option<(u32, u32)> {
+        let mut widths = Vec::new();
+        let mut heights = Vec::new();
+        if let Some(Dimension::Px(px)) = self.style.width {
+            widths.push(px);
+        }
+        if let Some(Dimension::Px(px)) = self.style.height {
+            heights.push(px);
+        }
+        for class in self.classes.as_str().split_whitespace() {
+            if class.contains(':') {
+                continue;
+            }
+            let class = class
+                .strip_prefix('!')
+                .or_else(|| class.strip_suffix('!'))
+                .unwrap_or(class);
+            let Some((prefix, px)) = arbitrary_px(class) else {
+                continue;
+            };
+            match prefix {
+                "w" => widths.push(px),
+                "h" => heights.push(px),
+                _ => {
+                    widths.push(px);
+                    heights.push(px);
+                }
+            }
+        }
+        let width = widths.into_iter().find(|&w| w != expected.width());
+        let height = heights.into_iter().find(|&h| h != expected.height());
+        if width.is_none() && height.is_none() {
+            return None;
+        }
+        Some((
+            width.unwrap_or(expected.width()),
+            height.unwrap_or(expected.height()),
+        ))
+    }
+}
+
+/// `w-[Npx]`, `h-[Npx]` or `size-[Npx]` with `N` = `[0-9]{1,9}`, as
+/// (prefix, N).
+fn arbitrary_px(class: &str) -> Option<(&str, u32)> {
+    let (prefix, rest) = class.split_once("-[")?;
+    if !matches!(prefix, "w" | "h" | "size") {
+        return None;
+    }
+    let digits = rest.strip_suffix("px]")?;
+    if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((prefix, digits.parse().ok()?))
 }
 
 /// A `<div>` with `classes`.

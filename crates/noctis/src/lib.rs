@@ -1993,6 +1993,19 @@ pub mod image {
     //!   the capacity is reserved for stills, which also run before queued
     //!   animations. Dropping the `ctx.render` future gives the render up:
     //!   a queued job is skipped, a running animation stops between frames.
+    //! - Animations (FR-69): a Template's `animation(..)` or, per call,
+    //!   `ctx.render_with(template, RenderOptions::new().animation(spec))`
+    //!   ([`RenderOptions`]) render one frame per `1/fps`; the view gets
+    //!   `Frame { index, count }`, and CSS animations play over the frame
+    //!   time: `animate-spin|ping|pulse|bounce`, `animate-<token>` for a
+    //!   Theme `--animate-<token>` (whose `@keyframes` the Theme defines),
+    //!   or `animate-[<keyframes>_1s_…]`. A still draws the frame at 0 ms.
+    //!   The fps is capped per format ([`AnimatedFormat::max_fps`]: GIF 50,
+    //!   WebP and APNG 90; `RenderError::OverCap` with `RenderCap::Fps`).
+    //!   Every frame has the Template's size: a frame root that declares
+    //!   another pixel size (`Style::width_px`, `w-[Npx]`, …) fails with
+    //!   `RenderError::SizeMismatch`. `ctx.render_report` returns a
+    //!   [`RenderReport`] with the encoded `format` and `settings_used`.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2041,6 +2054,7 @@ pub mod image {
     /// every `tw = "…"` literal is checked at `cargo check` (`[TW-01]`).
     pub use noctis_macros::view;
 
+    pub use noctis_core::{RenderOptions, RenderReport};
     pub use noctis_image::tw::{
         InvalidClasses, Suggestion, Theme, ThemeError, ThemeErrorKind, ThemeNamespace, ThemeTokens,
         UnknownClass,

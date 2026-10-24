@@ -1,0 +1,11 @@
+error: [TW-01] unknown Tailwind class `animate-wiggle`; or declare `--animate-wiggle` (and its `@keyframes`) in noctis-theme.css
+ --> tests/ui-image/tw/TW-01_unknown_animation.rs:9:26
+  |
+9 |     let _: Classes = tw!("animate-wiggle");
+  |                          ^^^^^^^^^^^^^^^^
+
+error: [TW-01] unknown Tailwind class `animate-[wiggle_1s]`; or declare `@keyframes wiggle` in noctis-theme.css
+  --> tests/ui-image/tw/TW-01_unknown_animation.rs:10:26
+   |
+10 |     let _: Classes = tw!("animate-[wiggle_1s]");
+   |                          ^^^^^^^^^^^^^^^^^^^^^

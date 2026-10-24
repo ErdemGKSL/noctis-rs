@@ -1,0 +1,7 @@
+error: [TW-02] 3:3: `--animate-wiggle` uses `@keyframes wiggle`, which this file does not define (built-ins: `spin`, `ping`, `pulse`, `bounce`) (in $DIR/tests/fixtures/theme/unknown_keyframes.css)
+ --> tests/ui-image/tw/TW-02_unknown_keyframes.rs:6:20
+  |
+6 |     let _: Theme = theme!("../../fixtures/theme/unknown_keyframes.css");
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `theme` (in Nightly builds, run with -Z macro-backtrace for more info)

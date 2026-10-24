@@ -179,7 +179,7 @@ macros re-read it.
   --color-surface: #11131a;
   --font-display: "Inter", sans-serif;   /* → font-display */
   --font-weight-heavy: 900;    /* longest prefix wins: --font-weight-, not --font- */
-  --animate-rise: rise 1.2s ease-out both;   /* animate-rise is [planned, Story 10.6] */
+  --animate-rise: rise 1.2s ease-out both;   /* → animate-rise (needs @keyframes rise) */
 }
 @keyframes rise { from { opacity: 0 } to { opacity: 1 } }
 ```
@@ -194,6 +194,25 @@ from `kind()`):
   `--spacing-`, `--container-`, `--text-`, `--font-`, `--font-weight-`, `--tracking-`,
   `--leading-`, `--radius-`, `--aspect-`, `--breakpoint-`, and `--animate-`. The token
   is `[a-z0-9]([a-z0-9._-]*[a-z0-9])?`, at most 64 bytes; the value must not be empty.
+  An `--animate-` token also has no `.` and is not a number (`--animate-5` is
+  `InvalidToken`).
+- An `--animate-<token>` value is exactly one animation, in any order:
+  `<keyframes> <duration>[ <delay>][ <timing>][ <count>|infinite][ <direction>][ <fill>][ <play-state>]`.
+  Times are `0`..`999999` with up to 3 decimals and `s` or `ms` (the duration must be
+  positive; a second time is the delay); timing is `linear`, `ease`, `ease-in`,
+  `ease-out`, `ease-in-out`, `step-start` or `step-end`; the count is `infinite` or
+  1..=9999; direction `normal|reverse|alternate|alternate-reverse`; fill
+  `none|forwards|backwards|both`; play state `running|paused`; each at most once.
+  Functions (`cubic-bezier()`, `steps()`, `var()`), commas (several animations) and
+  comments are `InvalidAnimation`. Example: `rise 1s ease-out both`.
+- Its keyframes must be a built-in animation (`spin`, `ping`, `pulse`, `bounce`) or a
+  `@keyframes` of the same file, before or after it; this is checked after the whole
+  file parsed, and the first animation (in file order) naming missing keyframes is
+  `UnknownKeyframes`.
+- A `@keyframes` name is `[a-z]([a-z0-9-]*[a-z0-9])?`, at most 64 bytes, and not a CSS
+  keyword of the grammar above or `initial`/`inherit`/`unset`/`revert`/`revert-layer`/
+  `default` (`@keyframes Rise`, `@keyframes ease`, `@keyframes a_b` are
+  `InvalidKeyframesName`).
 - A name defined twice is an error, and so is a `@keyframes` or `--animate-` named
   `spin`, `ping`, `pulse` or `bounce` (the built-in animations would render static).
 - The file is at most 256 KiB.
@@ -201,12 +220,18 @@ from `kind()`):
 `ThemeErrorKind` (non-exhaustive) names the cause: `UnexpectedRule` (anything but
 `@theme`/`@keyframes` at the top level, a prelude, an at-rule inside `@theme`),
 `NotCustomProperty`, `UnknownNamespace { name }`, `InvalidToken { name }`,
-`EmptyValue { name }`, `Duplicate { name }`, `BuiltinAnimation { name }`, `Syntax`
-(an unclosed block, a declaration without `:`) and `TooLarge { bytes }`.
+`EmptyValue { name }`, `Duplicate { name }`, `BuiltinAnimation { name }`,
+`InvalidAnimation { name }` (an `--animate-*` value outside the grammar),
+`UnknownKeyframes { name, keyframes }` (an `--animate-*` value naming keyframes the
+file does not define), `InvalidKeyframesName { name }`, `Syntax` (an unclosed block, a
+declaration without `:`) and `TooLarge { bytes }`.
 
 A `Theme` also has `Theme::empty()`, `digest()` (part of the render cache key),
 `animations()` and `keyframes()` (`(name, body)` pairs), and implements
-`ThemeTokens`: `theme.contains(ThemeNamespace::Color, "brand")`. `ThemeNamespace` has
+`ThemeTokens`: `theme.contains(ThemeNamespace::Color, "brand")`,
+`theme.contains_animation("rise")` (`--animate-rise`) and
+`theme.contains_keyframes("rise")` (`@keyframes rise`); a custom `ThemeTokens` impl
+gets `false` defaults for the two animation methods. `ThemeNamespace` has
 one variant per namespace above (`Color`, `Spacing`, `Container`, `Text`, `Font`,
 `FontWeight`, `Tracking`, `Leading`, `Radius`, `Aspect`, `Breakpoint`) and
 `css_prefix()` (`"--color-"`).
@@ -277,10 +302,15 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     GIF/APNG output without `image-gif` (a hand-built `RenderJob`; the derive already
     refuses both at compile time);
   - `OverCap { id, cap, limit, actual }`: the job is over one of the App's per-job
-    caps (below); `cap` is a `RenderCap` (`JobPixels`, `FramePixels`, `Frames`,
-    `Duration`; `cap.as_str()` is `job_pixels`/`frame_pixels`/`frames`/`duration_ms`),
-    `limit` and `actual` are pixels, frames or whole milliseconds. It never entered the
-    queue; make the Template smaller or shorter, or raise the cap;
+    caps (below) or its animation over the format's fps cap; `cap` is a `RenderCap`
+    (`JobPixels`, `FramePixels`, `Frames`, `Duration`, `Fps`; `cap.as_str()` is
+    `job_pixels`/`frame_pixels`/`frames`/`duration_ms`/`fps`), `limit` and `actual`
+    are pixels, frames, whole milliseconds or frames per second. It never entered the
+    queue; make the Template smaller or shorter, lower the fps, or raise the cap (the
+    fps cap is fixed: `AnimatedFormat::max_fps()`, GIF 50, WebP/APNG 90);
+  - `SizeMismatch { id, frame, expected, declared }`: frame `frame` of an animation
+    returned a root that declares an explicit pixel size `declared` (`(w, h)`) other
+    than the Template's `expected` size (below, "Animation");
   - `OverBudget { budget, smallest }`: even the smallest encoding of the size budget's
     ladder (`smallest` bytes) is over `budget`; shrink the Template, lower its size or
     quality, or keep `still_fallback` on;
@@ -340,17 +370,52 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and
   its job is skipped while queued or stops before its next frame) and
   `noctis_render_rejected_total{app, reason}` (`queue_full`, `unknown_template`,
-  `unsupported`, `over_cap`). `OverCap` is also reported to the Render Error Sink.
+  `unsupported`, `over_cap`; an fps over the format's cap counts as `over_cap`).
+  `OverCap` and `SizeMismatch` are also reported to the Render Error Sink
+  (`SizeMismatch` and `OverBudget` have no rejected reason).
 - On `Runtime::for_test()` Apps an unknown `Classes::dynamic` class fails the render
   (Deny, §4).
-- Planned: `ctx.render_with(t, RenderOptions::new().animation(..))`, `render_report()`
-  and the fps caps (≤ 50 GIF, ≤ 90 WebP/APNG) [planned, Story 10.6].
+- Per-call options: `ctx.render_with(t, RenderOptions::new().animation(spec))` renders
+  this call as the animation `spec` (an `AnimationSpec`), in place of the Template's
+  own `ANIMATION` or its still image; `RenderOptions::new()` (= `default()`) changes
+  nothing, and `ctx.render(t)` is `ctx.render_with(t, RenderOptions::new())`.
+  `ctx.render_report(t, options)` returns a `RenderReport` (non-exhaustive) with
+  `attachment`, `format` (`OutputFormat`) and `settings_used` (`EncodeSettings`, after
+  any degradation to fit the budget). Both live on the same contexts as `ctx.render`
+  and return the same errors.
+- The fps cap per format: GIF 50, WebP and APNG 90 (`AnimatedFormat::max_fps()`;
+  `AnimationSpec::check_fps(id)`). Core checks it before calling the Renderer (the
+  Renderer is never called), and the takumi Renderer checks it again for a hand-built
+  `RenderJob`, after the fps/duration and `image-gif` checks and before the caps. The
+  derive already bounds `fps` at compile time (1..=90, GIF 1..=50).
 
 ### Animation
 
-- CSS-driven: `animate-spin|ping|pulse|bounce`, your theme `animate-*`, or arbitrary
-  `animate-[slide_1s_ease-in-out_infinite_alternate]` with `@keyframes slide` in the
-  theme. Render with an animated `format`, `fps` and `duration`.
+- CSS-driven: `animate-spin|ping|pulse|bounce` (built in), `animate-<token>` for a
+  theme `--animate-<token>` (with its `@keyframes`), or an arbitrary single animation
+  `animate-[slide_1s_ease-in-out_infinite_alternate]` (the §5 value grammar with `_`
+  for spaces) with `@keyframes slide` in the theme; `animate-[spin_2s_linear]` needs
+  no theme. An undeclared one is a `[TW-01]` compile error naming the missing
+  declaration: "or declare `--animate-wiggle` (and its `@keyframes`) in
+  noctis-theme.css" for `animate-wiggle`, "or declare `@keyframes wiggle`" for
+  `animate-[wiggle_1s]`. Render with an animated `format`,
+  `fps` and `duration` (the Template's `animation(..)` or `ctx.render_with`): takumi
+  draws each frame at its start time, so the frames follow the keyframes. A still
+  draws the animation at 0 ms (for `rise … both`, the invisible first keyframe), so
+  give CSS-animated Templates an `animation(..)`.
+
+  ```rust
+  #[derive(Template, Serialize, Deserialize)]
+  #[template(id = "badge.pop", version = 1, size = (128, 128), format = Png,
+             animation(duration_ms = 1200, fps = 20))]
+  struct Badge;
+
+  impl TemplateView for Badge {
+      fn view(&self, _frame: Frame) -> Node {
+          view! { <div tw="animate-rise w-full h-full rounded-full bg-brand" /> }
+      }
+  }
+  ```
 - Code-driven: one data value, one Template state per frame. The view receives
   `Frame { index, count }` and computes that frame's state, for example
   `let value = self.target * (frame.index + 1) / frame.count;`. Declare
@@ -361,10 +426,15 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   20 fps: 40 frames). Keep `count` within the frames cap (default 90) and
   `duration_ms` within the duration cap (default 6000), and each frame within 1 MP,
   or the render fails before it is queued with `RenderError::OverCap` (§8, "Per-job
-  caps"). Overriding the animation per call,
-  `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::DEFAULT)))`,
-  is [planned, Story 10.6]. Every frame has the job's size; a root node with a
-  different explicit size will be a typed error [planned, Story 10.6].
+  caps"). Override or add the animation per call with
+  `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::DEFAULT)))`;
+  the fps must stay within the format's cap (GIF 50, WebP/APNG 90).
+- Every frame has the Template's size. A frame whose root declares another explicit
+  pixel size fails the render with `RenderError::SizeMismatch { frame, declared, .. }`:
+  the root's `Style::width_px`/`height_px`, or a root class `w-[Npx]`, `h-[Npx]` or
+  `size-[Npx]` without a variant. Relative sizes (`w-full`, `w-64`, `width_pct`) and
+  child nodes are not checked, and neither are stills. Keep the root at
+  `w-full h-full` and animate children.
 - Default animated format: animated WebP (smaller and ~3× faster than GIF); GIF with
   `image-gif` for maximum compatibility. Design GIF Templates with flat colours.
 
@@ -403,8 +473,9 @@ assert!(out.bytes.len() as u64 <= 2_097_152);                    // default size
 println!("{:?} {}", out.settings_used, out.format.extension());
 ```
 
-`ctx.render` returns only the `Attachment`; a per-call `render_report()` is
-[planned, Story 10.6].
+`ctx.render` returns only the `Attachment`; `ctx.render_report(t, RenderOptions::new())`
+returns the same through a handler as a `RenderReport` (`report.attachment`,
+`report.format`, `report.settings_used`).
 
 ## 9. Cache
 

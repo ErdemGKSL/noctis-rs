@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `ffa3f8bcc573b85d81852ce70c373dea9397c7be4b739828f451acad81fe724e` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `f9d6f6a176bc11231e423d892adb4b70c61d6408cfecf15ab80280e883986f51` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -270,7 +270,14 @@ impl TemplateView for ProfileCard {
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);
-// the view is then called once per Frame { index, count }.
+// the view is then called once per Frame { index, count }. CSS animations play over the
+// frames: animate-spin|ping|pulse|bounce, animate-rise (a theme `--animate-rise` with its
+// `@keyframes rise`) or animate-[rise_1s_ease-out] (a still draws them at 0 ms). Per call:
+// ctx.render_with(t, RenderOptions::new().animation(AnimationSpec::new(dur, fps, format)));
+// ctx.render_report(t, RenderOptions::new()) returns a RenderReport { attachment, format,
+// settings_used }. fps caps per format: GIF 50, WebP/APNG 90 (AnimatedFormat::max_fps).
+// Every frame keeps the Template's size: a frame root with another explicit pixel size
+// (Style::width_px, w-[Npx], h-[Npx], size-[Npx]) is RenderError::SizeMismatch.
 
 // the App needs a Renderer: `.theme(noctis::image::theme!())` and/or `.image(ImageConfig::new())`
 // (AppBuilderImageExt, in the prelude); with that takumi Renderer a hand-written
@@ -289,8 +296,9 @@ impl TemplateView for ProfileCard {
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
 // errors: err.as_error().downcast_ref::<RenderError>(): QueueFull (show a busy notice),
 // NoRenderer, UnknownTemplate, Unsupported, OverCap { id, cap: RenderCap, limit, actual }
-// (over a per-job cap), OverBudget { budget, smallest } (cannot shrink enough), Failed,
-// Panicked (see references/images.md §8).
+// (over a per-job cap, or RenderCap::Fps over the format's fps cap), OverBudget { budget,
+// smallest } (cannot shrink enough), SizeMismatch { frame, .. } (an animation frame root
+// of another size), Failed, Panicked (see references/images.md §8).
 // in the render function:
 let mut files = AttachmentSet::new();
 let card = files.add(data.card.clone());

@@ -25,7 +25,8 @@ pub(crate) fn check_literal(lit: &LitStr, theme: &Theme) -> Vec<syn::Error> {
 }
 
 /// `[TW-01] <class line>`, plus the theme declarations that would make a
-/// theme utility (or custom variant) draw.
+/// theme utility, theme animation, arbitrary animation (or custom variant)
+/// draw.
 fn message(class: &UnknownClass, theme: &Theme) -> String {
     let mut missing = Vec::new();
     if !matches!(class.suggestion(), Some(Suggestion::Rename(_)))
@@ -44,6 +45,16 @@ fn message(class: &UnknownClass, theme: &Theme) -> String {
             && let Some(first) = namespaces.first()
         {
             missing.push(format!("`{}{token}`", first.css_prefix()));
+        }
+        if let Utility::Animation { token } = parsed.utility
+            && !theme.contains_animation(token)
+        {
+            missing.push(format!("`--animate-{token}` (and its `@keyframes`)"));
+        }
+        if let Utility::Keyframes { name } = parsed.utility
+            && !theme.contains_keyframes(name)
+        {
+            missing.push(format!("`@keyframes {name}`"));
         }
     }
     if missing.is_empty() {
@@ -136,12 +147,32 @@ mod tests {
             "@theme { --color-brand: #000; --animate-rise: rise 1s; }\n@keyframes rise {}",
         )
         .unwrap();
-        assert!(errors("bg-brand text-brand/50", &theme).is_empty());
+        assert!(
+            errors(
+                "bg-brand text-brand/50 animate-rise animate-[rise_1s]",
+                &theme
+            )
+            .is_empty()
+        );
         assert_eq!(
-            errors("from-brand animate-rise", &theme),
+            errors("from-brand", &theme),
+            ["[TW-01] unknown Tailwind class `from-brand`"]
+        );
+    }
+
+    #[test]
+    fn tw_01_animation_hints() {
+        assert_eq!(
+            errors(
+                "animate-wiggle animate-[wiggle_1s] animate-[wiggle]",
+                &Theme::empty()
+            ),
             [
-                "[TW-01] unknown Tailwind class `from-brand`",
-                "[TW-01] unknown Tailwind class `animate-rise`"
+                "[TW-01] unknown Tailwind class `animate-wiggle`; or declare `--animate-wiggle` \
+                 (and its `@keyframes`) in noctis-theme.css",
+                "[TW-01] unknown Tailwind class `animate-[wiggle_1s]`; or declare \
+                 `@keyframes wiggle` in noctis-theme.css",
+                "[TW-01] unknown Tailwind class `animate-[wiggle]`"
             ]
         );
     }

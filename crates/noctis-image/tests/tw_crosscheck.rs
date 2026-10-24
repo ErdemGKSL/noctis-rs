@@ -5,7 +5,9 @@
 //! `VarUtility` whose fallbacks are all `None` only reads a variable
 //! (`VarOnly`), anything else is Builtin. The grammar must agree on every
 //! sample and corpus class (Builtin <-> Builtin, Theme <-> `VarOnly`,
-//! Unknown <-> Empty), on the variant kind and on `!important`; a corpus line
+//! Unknown <-> Empty, and a theme or arbitrary animation <-> a Builtin
+//! animation naming the same token or keyframes), on the variant kind and on
+//! `!important`; a corpus line
 //! marked `narrowed=` must be Unknown to the grammar while takumi accepts it.
 //! Every sample also renders once, and must not panic.
 #![cfg(feature = "render")]
@@ -24,6 +26,10 @@ const CORPUS: &str = include_str!("tw_corpus.txt");
 enum Verdict {
     Builtin,
     Theme,
+    /// `animate-<token>`: takumi reads `--animate-<token>`.
+    Animation,
+    /// `animate-[<keyframes>_…]`: takumi plays `@keyframes <keyframes>`.
+    Keyframes,
     Unknown,
 }
 
@@ -80,6 +86,8 @@ fn verdict_of(class: Option<&Class<'_>>) -> Verdict {
     match class.map(|c| c.utility) {
         None => Verdict::Unknown,
         Some(Utility::Builtin) => Verdict::Builtin,
+        Some(Utility::Animation { .. }) => Verdict::Animation,
+        Some(Utility::Keyframes { .. }) => Verdict::Keyframes,
         Some(_) => Verdict::Theme,
     }
 }
@@ -89,7 +97,19 @@ fn compare(class: &str) -> Option<String> {
     let ours = grammar(class);
     let theirs = oracle(class);
     let verdict = verdict_of(ours.as_ref());
-    if verdict != theirs.verdict {
+    let animation = match ours.map(|c| c.utility) {
+        Some(Utility::Animation { token }) => Some(format!("token: Some(\"{token}\")")),
+        Some(Utility::Keyframes { name }) => Some(format!("name: Some(\"{name}\")")),
+        _ => None,
+    };
+    if let Some(needle) = &animation {
+        if theirs.verdict != Verdict::Builtin || !theirs.debug.contains(needle.as_str()) {
+            return Some(format!(
+                "`{class}`: grammar {verdict:?}, takumi {:?} without `{needle}`: {}",
+                theirs.verdict, theirs.debug
+            ));
+        }
+    } else if verdict != theirs.verdict {
         return Some(format!(
             "`{class}`: grammar {verdict:?}, takumi {:?}",
             theirs.verdict
@@ -142,6 +162,8 @@ fn check_corpus(corpus: &str) -> Vec<String> {
         let expected = match expected {
             "builtin" => Verdict::Builtin,
             "theme" => Verdict::Theme,
+            "animation" => Verdict::Animation,
+            "keyframes" => Verdict::Keyframes,
             "unknown" => Verdict::Unknown,
             other => {
                 failures.push(format!(

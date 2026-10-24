@@ -1,5 +1,5 @@
 # Near-miss corpus for tests/tw_crosscheck.rs.
-# One class per line: `<class> <builtin|theme|unknown> [narrowed=<reason>]`.
+# One class per line: `<class> <builtin|theme|animation|keyframes|unknown> [narrowed=<reason>]`.
 # A line without `narrowed=` must agree with takumi; a `narrowed=` line must be
 # unknown to the grammar while takumi accepts it.
 
@@ -98,7 +98,13 @@ rounded-card theme
 # Narrowings that need a regression line.
 rounded-t-5 unknown narrowed=numeric-token
 a.b:flex unknown
-animate-wiggle unknown narrowed=builtin-animations-only
+animate-wiggle animation
+animate-[wiggle_1s] keyframes
+animate-[spin_1s] builtin
+animate-5 unknown narrowed=numeric-token
+animate-[wiggle] unknown narrowed=needs-duration
+animate-[wiggle_1s_cubic-bezier(0,0,1,1)] unknown narrowed=animation-functions
+animate-[a_1s,b_1s] unknown narrowed=single-animation
 from-rebeccapurple unknown narrowed=palette-only
 bg-(--brand) unknown narrowed=var-shorthand
 bg-inf unknown narrowed=numeric-token

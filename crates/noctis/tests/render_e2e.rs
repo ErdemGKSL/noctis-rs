@@ -1,7 +1,7 @@
-//! Story 10.3: `ctx.render` with the real `ImagePlugin` through
-//! `noctis::testkit::TestApp`: the uploaded file is the Template's PNG, and a
-//! panicking view reaches the Render Error Sink while the pool keeps
-//! rendering.
+//! Stories 10.3 and 10.6: `ctx.render` and `ctx.render_with` with the real
+//! `ImagePlugin` through `noctis::testkit::TestApp`: the uploaded file is the
+//! Template's PNG (or the per-call animation's WebP), and a panicking view
+//! reaches the Render Error Sink while the pool keeps rendering.
 
 #![cfg(all(feature = "image", feature = "testkit"))]
 #![allow(
@@ -11,8 +11,12 @@
 )]
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use noctis::image::{Frame, Node, RenderError, Template, TemplateView, theme, view};
+use noctis::image::{
+    AnimatedFormat, AnimationSpec, Frame, Node, RenderError, RenderOptions, Template, TemplateView,
+    theme, view,
+};
 use noctis::prelude::*;
 use noctis::testkit::{Response, TestApp, TestError};
 use noctis::ui::{AttachmentSet, Components, MediaGallery, MediaItem, V2Message};
@@ -28,6 +32,16 @@ struct Card {
 impl TemplateView for Card {
     fn view(&self, _: Frame) -> Node {
         view! { <div tw="flex w-full h-full bg-brand">{&self.name}</div> }
+    }
+}
+
+#[derive(Template, Serialize, Deserialize)]
+#[template(id = "dot", version = 1, size = (4, 4), format = Png)]
+struct Dot;
+
+impl TemplateView for Dot {
+    fn view(&self, _: Frame) -> Node {
+        view! { <div tw="w-full h-full bg-brand" /> }
     }
 }
 
@@ -61,6 +75,21 @@ impl ShowCard {
             .render(Card {
                 name: "Ada".to_owned(),
             })
+            .await?;
+        show(&ctx, image).await
+    }
+}
+
+#[derive(SlashCommand)]
+#[command("dot", description = "Show an animated dot")]
+struct ShowDot;
+
+impl ShowDot {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let spec = AnimationSpec::new(Duration::from_millis(500), 10, AnimatedFormat::DEFAULT);
+        let image = ctx
+            .render_with(Dot, RenderOptions::new().animation(spec))
             .await?;
         show(&ctx, image).await
     }
@@ -113,7 +142,9 @@ async fn start(reports: &Arc<Reports>) -> TestApp {
             Module::new("cards")
                 .template::<Card>()
                 .template::<Boom>()
+                .template::<Dot>()
                 .add::<ShowCard>()
+                .add::<ShowDot>()
                 .add::<ShowBoom>(),
         );
     TestApp::build(&mut builder).await.unwrap()
@@ -166,5 +197,22 @@ async fn a_panicking_view_reaches_the_render_sink_and_the_next_render_works()
     let (name, _) = uploaded(&next);
     assert_eq!(name.len(), "0123456789abcdef.png".len(), "{name}");
     assert_eq!(&name[16..], ".png");
+    app.stop().await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ctx_render_with_uploads_the_per_call_animation() -> Result<(), TestError> {
+    let reports = Arc::new(Reports::default());
+    let app = start(&reports).await;
+    let response = app.command("dot").run().await?;
+    let (name, bytes) = uploaded(&response);
+    assert_eq!(
+        name.rsplit_once('.').map(|(_, ext)| ext),
+        Some("webp"),
+        "{name}"
+    );
+    assert_eq!(&bytes[8..12], b"WEBP");
+    assert!(bytes.windows(4).any(|w| w == b"ANIM"));
+    assert!(reports.0.lock().unwrap().is_empty());
     app.stop().await
 }

@@ -368,3 +368,87 @@ fn dotted_custom_variant_is_unknown() {
 fn negative_class_gets_a_hint() {
     assert!(matches!(suggest("-space-x-4"), Some(Suggestion::Hint(_))));
 }
+
+/// The renderer tests' theme (Story 10.6): one animation and its keyframes.
+const ANIMATED_THEME: &str = "@theme { --color-brand: #5865f2; --animate-fade: fade 1s linear infinite; } \
+     @keyframes fade { from { opacity: 0 } to { opacity: 1 } }";
+
+#[test]
+fn theme_animation_classes_read_their_token() {
+    for (class, token) in [
+        ("animate-fade", "fade"),
+        ("animate-fade-in", "fade-in"),
+        ("animate-a_b", "a_b"),
+    ] {
+        assert_eq!(
+            utility(class),
+            Some(Utility::Animation { token }),
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn animation_token_edges_are_unknown() {
+    for class in [
+        "animate-5",
+        "animate-a.b",
+        "animate-",
+        "-animate-fade",
+        "animate-Fade",
+    ] {
+        assert_eq!(classify(class), None, "{class}");
+    }
+}
+
+#[test]
+fn builtin_animations_keep_variant_and_important() {
+    assert_builtin_ok(&["animate-spin", "animate-none"]);
+    let sm = classify("sm:animate-pulse").unwrap();
+    assert_eq!(sm.variant, Some(Variant::Builtin("sm")));
+    assert_eq!(sm.utility, Utility::Builtin);
+    let important = classify("!animate-bounce").unwrap();
+    assert!(important.important);
+    assert_eq!(important.utility, Utility::Builtin);
+}
+
+#[test]
+fn arbitrary_animations() {
+    assert_eq!(
+        utility("animate-[fade_1s_linear_infinite]"),
+        Some(Utility::Keyframes { name: "fade" })
+    );
+    assert_eq!(utility("animate-[spin_2s]"), Some(Utility::Builtin));
+    for class in [
+        "animate-[fade]",
+        "animate-[]",
+        "animate-[fade_1s",
+        "animate-[fade_1s_cubic-bezier(0,0,1,1)]",
+    ] {
+        assert_eq!(classify(class), None, "{class}");
+    }
+}
+
+#[test]
+fn animations_validate_against_the_theme() {
+    let theme = Theme::parse(ANIMATED_THEME).unwrap();
+    assert_eq!(validate("animate-fade animate-[fade_1s]", &theme), Ok(()));
+    let err = validate("animate-fade animate-[fade_1s]", &NoTheme).unwrap_err();
+    let classes: Vec<&str> = err.classes().iter().map(UnknownClass::class).collect();
+    assert_eq!(classes, ["animate-fade", "animate-[fade_1s]"]);
+    assert_eq!(validate("animate-[spin_1s] animate-spin", &NoTheme), Ok(()));
+    // The default `ThemeTokens` methods define no animation.
+    assert!(validate("animate-fade", &Tokens(&[])).is_err());
+}
+
+#[test]
+fn samples_include_the_animation_forms() {
+    let samples = __crosscheck::samples();
+    for class in [
+        "animate-noctis-tok",
+        "animate-[noctis-tok_1s_linear_infinite]",
+        "animate-[spin_1s]",
+    ] {
+        assert!(samples.iter().any(|s| s == class), "{class}");
+    }
+}

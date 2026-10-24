@@ -65,8 +65,10 @@ const _: () = {
 };
 
 /// The takumi stylesheet of `theme`: `@theme { --<prefix><token>: <value>; … }`
-/// over every namespace's tokens. takumi reads `@theme` as `:root`, so theme
-/// utilities (`bg-brand`) resolve their `var(--color-brand)` through it.
+/// over every namespace's tokens and then every `--animate-<name>`, followed
+/// by the Theme's `@keyframes` blocks. takumi reads `@theme` as `:root`, so
+/// theme utilities (`bg-brand`, `animate-rise`) resolve their
+/// `var(--color-brand)` through it, and animations find their keyframes.
 ///
 /// # Errors
 ///
@@ -87,7 +89,21 @@ fn theme_css(theme: &Theme) -> String {
         css.push_str(value);
         css.push_str(";\n");
     }
+    for (name, value) in theme.animations() {
+        css.push_str("  --animate-");
+        css.push_str(name);
+        css.push_str(": ");
+        css.push_str(value);
+        css.push_str(";\n");
+    }
     css.push('}');
+    for (name, block) in theme.keyframes() {
+        css.push_str("\n@keyframes ");
+        css.push_str(name);
+        css.push_str(" {");
+        css.push_str(block);
+        css.push('}');
+    }
     css
 }
 
@@ -122,7 +138,8 @@ impl TakumiRenderer {
     }
 
     /// The view of `job`, checked against the registered version, the
-    /// animations this Renderer can encode and then its per-job caps.
+    /// animations this Renderer can encode, the format's fps cap and then
+    /// its per-job caps.
     fn view_of(&self, job: &RenderJob) -> Result<ViewFn, RenderError> {
         let views = self.views.read().unwrap_or_else(PoisonError::into_inner);
         let view = match views.get(job.template_id) {
@@ -146,6 +163,7 @@ impl TakumiRenderer {
             if matches!(spec.format, AnimatedFormat::Gif | AnimatedFormat::Apng) {
                 return Err(unsupported(GIF_FEATURE));
             }
+            spec.check_fps(job.template_id)?;
         }
         self.shared.caps.check(job)?;
         Ok(view)
@@ -261,7 +279,9 @@ impl Shared {
         })
     }
 
-    /// Draws one frame of `job` at its full size.
+    /// Draws one frame of `job` at its full size; a frame of an animation
+    /// whose root declares another explicit size fails with
+    /// [`RenderError::SizeMismatch`].
     fn frame(
         &self,
         view: ViewFn,
@@ -270,6 +290,16 @@ impl Shared {
         time_ms: u64,
     ) -> Result<Bitmap, RenderError> {
         let node = view.call(&job.data, frame)?;
+        if job.animation.is_some()
+            && let Some(declared) = node.root_size_mismatch(job.size)
+        {
+            return Err(RenderError::SizeMismatch {
+                id: job.template_id.to_owned(),
+                frame: frame.index,
+                expected: job.size,
+                declared,
+            });
+        }
         self.check
             .check(&node, &self.theme)
             .map_err(RenderError::failed)?;

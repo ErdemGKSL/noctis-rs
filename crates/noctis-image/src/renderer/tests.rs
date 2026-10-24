@@ -173,8 +173,12 @@ impl Template for Foreign {
     }
 }
 
+/// The renderer tests' theme: a color, one animation and its keyframes.
+const THEME: &str = "@theme { --color-brand: #5865f2; --animate-fade: fade 1s linear infinite; } \
+     @keyframes fade { from { opacity: 0 } to { opacity: 1 } }";
+
 fn theme() -> Theme {
-    Theme::parse("@theme { --color-brand: #5865f2; }").unwrap()
+    Theme::parse(THEME).unwrap()
 }
 
 fn renderer_with(threads: usize, queue_capacity: usize, mode: ClassCheckMode) -> TakumiRenderer {
@@ -222,6 +226,11 @@ fn renderer_budget(
             TemplateDescriptor::of::<StopProbe>(),
             TemplateDescriptor::of::<DropProbe>(),
             TemplateDescriptor::of::<ShareProbe>(),
+            TemplateDescriptor::of::<Fade>(),
+            TemplateDescriptor::of::<FadeArbitrary>(),
+            TemplateDescriptor::of::<Pulse>(),
+            TemplateDescriptor::of::<RootSized>(),
+            TemplateDescriptor::of::<NarrowStill>(),
         ])
         .unwrap();
     renderer
@@ -944,7 +953,7 @@ async fn a_lossy_still_fallback_takes_the_still_quality() {
 async fn a_huge_duration_is_over_cap_before_admission() {
     let r = renderer();
     let job = RenderJob {
-        animation: Some(AnimationSpec::new(Duration::MAX, 1000, WEBP80)),
+        animation: Some(AnimationSpec::new(Duration::MAX, 90, WEBP80)),
         ..noise(Format::Png)
     };
     let before = r.pool.admitted();
@@ -1172,4 +1181,250 @@ async fn animations_fill_their_share_and_a_still_is_still_admitted() {
     first.await.unwrap();
     still.await.unwrap();
     drained(&r).await;
+}
+
+#[test]
+fn the_theme_stylesheet_declares_the_animations_and_keyframes() {
+    let css = theme_css(&theme());
+    let (inside, after) = css.split_once('}').unwrap();
+    assert!(
+        inside.contains("  --animate-fade: fade 1s linear infinite;\n"),
+        "{css}"
+    );
+    assert!(
+        after.contains("@keyframes fade {from { opacity: 0 } to { opacity: 1 }}"),
+        "{css}"
+    );
+    assert!(theme_stylesheet(&theme()).is_ok());
+}
+
+/// Every frame the `Fade` view saw.
+static FADE_FRAMES: Mutex<Vec<Frame>> = Mutex::new(Vec::new());
+
+/// A 4×4 still Template that fades in through the theme animation; it
+/// records each frame and draws the same tree for every one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Fade;
+
+impl Template for Fade {
+    const ID: &'static str = "fade";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(4, 4);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl TemplateView for Fade {
+    fn view(&self, frame: Frame) -> Node {
+        FADE_FRAMES.lock().unwrap().push(frame);
+        div(Classes::__literal("animate-fade w-full h-full bg-brand"))
+    }
+}
+
+template!(
+    FadeArbitrary {},
+    "fade-arbitrary",
+    Size::new(4, 4),
+    Format::Png,
+    |_| {
+        div(Classes::__literal(
+            "animate-[fade_1s_linear_infinite] w-full h-full bg-brand",
+        ))
+    }
+);
+template!(Pulse {}, "pulse", Size::new(4, 4), Format::Png, |_| {
+    div(Classes::__literal("animate-pulse w-full h-full bg-brand"))
+});
+template!(
+    NarrowStill {},
+    "narrow-still",
+    Size::new(8, 8),
+    Format::Png,
+    |_| { div(Classes::__literal("bg-brand")).style(Style::new().width_px(4)) }
+);
+
+/// The alpha at (0, 0) of `job`'s frame at `time_ms`.
+fn alpha_at(r: &TakumiRenderer, job: &RenderJob, time_ms: u64) -> u8 {
+    let view = r.view_of(job).unwrap();
+    let bitmap = r.shared.frame(view, job, Frame::STILL, time_ms).unwrap();
+    bitmap.as_raw()[3]
+}
+
+#[track_caller]
+fn assert_fades_in(r: &TakumiRenderer, job: &RenderJob) {
+    let (start, middle, end) = (
+        alpha_at(r, job, 0),
+        alpha_at(r, job, 500),
+        alpha_at(r, job, 999),
+    );
+    assert!(start <= 10, "{start}");
+    assert!((118..=138).contains(&middle), "{middle}");
+    assert!(end >= 245, "{end}");
+}
+
+#[test]
+fn a_theme_animation_plays_over_time() {
+    let r = renderer();
+    assert_fades_in(&r, &RenderJob::of(&Fade).unwrap());
+}
+
+#[test]
+fn arbitrary_and_builtin_animations_play_over_time() {
+    let r = renderer();
+    assert_fades_in(&r, &RenderJob::of(&FadeArbitrary {}).unwrap());
+    let pulse = RenderJob::of(&Pulse {}).unwrap();
+    assert_eq!(alpha_at(&r, &pulse, 0), 255);
+    let half = alpha_at(&r, &pulse, 1000);
+    assert!((118..=138).contains(&half), "{half}");
+}
+
+#[tokio::test]
+async fn a_css_animation_renders_one_frame_per_span() {
+    let r = renderer();
+    FADE_FRAMES.lock().unwrap().clear();
+    let job = RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_secs(1), 10, WEBP80)),
+        ..RenderJob::of(&Fade).unwrap()
+    };
+    let out = r.render(job).await.unwrap();
+    assert!(has_chunk(&out.bytes, *b"ANIM"));
+    assert_eq!(out.settings_used.frames, 10);
+    let seen = std::mem::take(&mut *FADE_FRAMES.lock().unwrap());
+    let expected: Vec<Frame> = (0..10).map(|index| Frame { index, count: 10 }).collect();
+    assert_eq!(seen, expected);
+}
+
+#[tokio::test]
+async fn a_css_animation_as_a_still_draws_its_first_frame() {
+    let out = renderer()
+        .render(RenderJob::of(&FadeArbitrary {}).unwrap())
+        .await
+        .unwrap();
+    let (w, _, rgba) = decode_png(&out.bytes);
+    assert!(pixel(&rgba, w, 0, 0)[3] <= 10);
+}
+
+#[tokio::test]
+async fn the_fps_cap_comes_after_the_bounds_and_before_the_caps() {
+    let r = renderer();
+    let before = r.pool.admitted();
+    let err = r.render(anim(0, 1000, WEBP80)).await.unwrap_err();
+    assert!(matches!(err, RenderError::Unsupported { .. }), "{err}");
+    #[cfg(not(feature = "gif"))]
+    {
+        let err = r
+            .render(anim(60, 1000, AnimatedFormat::Gif))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, RenderError::Unsupported { why, .. } if why.contains("image-gif")),
+            "{err}"
+        );
+    }
+    #[cfg(feature = "gif")]
+    {
+        let err = r
+            .render(anim(60, 1000, AnimatedFormat::Gif))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                RenderError::OverCap {
+                    cap: noctis_ports::RenderCap::Fps,
+                    limit: 50,
+                    actual: 60,
+                    ..
+                }
+            ),
+            "{err}"
+        );
+    }
+    let err = r.render(anim(120, 7000, WEBP80)).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            RenderError::OverCap {
+                cap: noctis_ports::RenderCap::Fps,
+                limit: 90,
+                actual: 120,
+                ..
+            }
+        ),
+        "{err}"
+    );
+    assert_eq!(r.pool.admitted(), before);
+}
+
+/// An 8×8 Template whose root declares the size `case` names; case 0 sets
+/// a 4 px width on frame 2 only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RootSized {
+    case: u8,
+}
+
+impl Template for RootSized {
+    const ID: &'static str = "sized";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(8, 8);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl TemplateView for RootSized {
+    fn view(&self, frame: Frame) -> Node {
+        let classes = |c: &'static str| div(Classes::__literal(c));
+        match self.case {
+            0 if frame.index == 2 => classes("").style(Style::new().width_px(4)),
+            0 => classes(""),
+            1 => classes("w-[9px]"),
+            2 => classes("size-[8px]"),
+            3 => classes("sm:w-[4px]"),
+            4 => classes("!h-[3px]"),
+            5 => classes("w-full h-full"),
+            6 => classes("w-64"),
+            7 => classes("").style(Style::new().width_px(8).height_px(8)),
+            _ => classes("").style(Style::new().width_pct(50.0)),
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_animation_frame_with_another_root_size_is_a_mismatch() {
+    let r = renderer();
+    let job = |case| RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_millis(500), 10, WEBP80)),
+        ..RenderJob::of(&RootSized { case }).unwrap()
+    };
+    for (case, frame, declared) in [(0, 2, (4, 8)), (1, 0, (9, 8)), (4, 0, (8, 3))] {
+        let err = r.render(job(case)).await.unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                RenderError::SizeMismatch { id, frame: f, expected, declared: d }
+                    if id == "sized" && *f == frame && *expected == Size::new(8, 8) && *d == declared
+            ),
+            "case {case}: {err}"
+        );
+    }
+    for case in [2, 3, 5, 6, 7, 8] {
+        assert!(r.render(job(case)).await.is_ok(), "case {case}");
+    }
+}
+
+#[tokio::test]
+async fn a_still_is_not_size_checked() {
+    let out = renderer()
+        .render(RenderJob::of(&NarrowStill {}).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(out.settings_used.size, Size::new(8, 8));
 }

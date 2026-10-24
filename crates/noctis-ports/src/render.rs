@@ -212,6 +212,17 @@ pub enum AnimatedFormat {
 impl AnimatedFormat {
     /// The default animated format: animated WebP at quality 80.
     pub const DEFAULT: Self = Self::Webp { quality: 80 };
+
+    /// The highest frame rate the format plays: 50 for GIF (its delays are
+    /// whole centiseconds, so 20 ms is the shortest frame), 90 for WebP and
+    /// APNG.
+    #[must_use]
+    pub const fn max_fps(self) -> u16 {
+        match self {
+            Self::Webp { .. } | Self::Apng => 90,
+            Self::Gif => 50,
+        }
+    }
 }
 
 /// How a Template animates.
@@ -233,6 +244,26 @@ impl AnimationSpec {
             fps,
             format,
         }
+    }
+
+    /// Checks the frame rate against the format's cap
+    /// ([`AnimatedFormat::max_fps`]).
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::OverCap`] with [`RenderCap::Fps`], naming `template_id`,
+    /// when `fps` is over the cap.
+    pub fn check_fps(&self, template_id: &str) -> Result<(), RenderError> {
+        let limit = self.format.max_fps();
+        if self.fps > limit {
+            return Err(RenderError::OverCap {
+                id: template_id.to_owned(),
+                cap: RenderCap::Fps,
+                limit: u64::from(limit),
+                actual: u64::from(self.fps),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -336,11 +367,13 @@ pub enum RenderCap {
     Frames,
     /// The duration of an animation, in whole milliseconds.
     Duration,
+    /// The frame rate of an animation, capped per animated format.
+    Fps,
 }
 
 impl RenderCap {
-    /// The cap's stable name: `job_pixels`, `frame_pixels`, `frames` or
-    /// `duration_ms`.
+    /// The cap's stable name: `job_pixels`, `frame_pixels`, `frames`,
+    /// `duration_ms` or `fps`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -348,6 +381,7 @@ impl RenderCap {
             Self::FramePixels => "frame_pixels",
             Self::Frames => "frames",
             Self::Duration => "duration_ms",
+            Self::Fps => "fps",
         }
     }
 }
@@ -402,6 +436,27 @@ pub enum RenderError {
         limit: u64,
         /// The job's value, in the same unit.
         actual: u64,
+    },
+    /// A frame of an animation declared an explicit root size other than
+    /// the job's size (FR-69).
+    #[error(
+        "template `{id}` frame {frame} declares a {}x{} root, but every frame of an animation \
+         has the Template's size {}x{}",
+        declared.0,
+        declared.1,
+        expected.width(),
+        expected.height()
+    )]
+    SizeMismatch {
+        /// The Template id.
+        id: String,
+        /// The 0-based index of the frame.
+        frame: u32,
+        /// The job's size.
+        expected: Size,
+        /// The root size the frame declared: (width, height), with the job's
+        /// side where only the other one differs.
+        declared: (u32, u32),
     },
     /// The render queue is full; retry later.
     #[error("render queue is full")]
@@ -668,10 +723,53 @@ mod tests {
             (RenderCap::FramePixels, "frame_pixels"),
             (RenderCap::Frames, "frames"),
             (RenderCap::Duration, "duration_ms"),
+            (RenderCap::Fps, "fps"),
         ] {
             assert_eq!(cap.as_str(), name);
             assert_eq!(cap.to_string(), name);
         }
+    }
+
+    #[test]
+    fn render_error_size_mismatch() {
+        let err = RenderError::SizeMismatch {
+            id: "card".to_owned(),
+            frame: 3,
+            expected: Size::new(934, 282),
+            declared: (500, 282),
+        };
+        assert_eq!(
+            err.to_string(),
+            "template `card` frame 3 declares a 500x282 root, but every frame of an animation \
+             has the Template's size 934x282"
+        );
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn fps_caps_per_format() {
+        assert_eq!(AnimatedFormat::Gif.max_fps(), 50);
+        assert_eq!(AnimatedFormat::Apng.max_fps(), 90);
+        assert_eq!(AnimatedFormat::DEFAULT.max_fps(), 90);
+        let check =
+            |fps, format| AnimationSpec::new(Duration::from_secs(1), fps, format).check_fps("card");
+        let over = |fps, format| match check(fps, format) {
+            Err(RenderError::OverCap {
+                id,
+                cap: RenderCap::Fps,
+                limit,
+                actual,
+            }) if id == "card" => (limit, actual),
+            other => panic!("expected an fps OverCap, got {other:?}"),
+        };
+        let webp = AnimatedFormat::Webp { quality: 80 };
+        assert!(check(50, AnimatedFormat::Gif).is_ok());
+        assert_eq!(over(51, AnimatedFormat::Gif), (50, 51));
+        assert!(check(90, webp).is_ok());
+        assert_eq!(over(91, webp), (90, 91));
+        assert!(check(90, AnimatedFormat::Apng).is_ok());
+        assert_eq!(over(91, AnimatedFormat::Apng), (90, 91));
+        assert_eq!(over(u16::MAX, webp), (90, 65535));
     }
 
     #[test]

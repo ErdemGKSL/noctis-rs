@@ -14,6 +14,15 @@
 //!   `--animate-`; the rest is the token, `[a-z0-9]([a-z0-9._-]*[a-z0-9])?` of
 //!   at most 64 bytes;
 //! - values are kept trimmed and verbatim, and must not be empty;
+//! - an `--animate-<token>` token also has no `.` and is not a number, and
+//!   its value is one animation:
+//!   `<keyframes> <duration>[ <delay>][ <timing>][ <count>|infinite][ <direction>][ <fill>][ <play-state>]`
+//!   in any order, keywords only (no `cubic-bezier()`, `steps()`, `var()`
+//!   or commas), with a positive duration such as `rise 1s ease-out both`;
+//! - its keyframes are a built-in animation or a `@keyframes` of the same
+//!   file, before or after it; this is checked once the whole file parsed;
+//! - a `@keyframes` name is `[a-z]([a-z0-9-]*[a-z0-9])?` of at most 64 bytes
+//!   and not a CSS keyword (`none`, `ease`, `inherit`, …);
 //! - several `@theme` blocks merge; a name defined twice is an error, and so
 //!   is a `@keyframes` or `--animate-` named `spin`, `ping`, `pulse` or
 //!   `bounce` (the built-in animations);
@@ -36,6 +45,7 @@ use std::fmt;
 
 use cssparser::{Delimiter, ParseError, ParseErrorKind, Parser, SourceLocation, Token};
 
+use super::animation::{self, BUILTIN as BUILTIN_ANIMATIONS, Sep};
 use super::{ThemeNamespace, ThemeTokens, is_theme_token};
 
 /// The largest Theme file, in bytes (256 KiB).
@@ -43,9 +53,6 @@ const MAX_THEME_BYTES: usize = 256 * 1024;
 
 /// The custom-property prefix of a theme animation.
 const ANIMATE_PREFIX: &str = "--animate-";
-
-/// The built-in animation names a Theme must not redefine.
-const BUILTIN_ANIMATIONS: &[&str] = &["spin", "ping", "pulse", "bounce"];
 
 /// Every namespace, in [`slot`] order.
 const NAMESPACES: [ThemeNamespace; 11] = [
@@ -89,8 +96,9 @@ pub struct Theme {
     digest: [u8; 32],
     /// Per namespace ([`slot`] order): token → value.
     tokens: [BTreeMap<String, String>; 11],
-    /// `--animate-<name>` entries: (name, value), in file order.
-    animations: Vec<(String, String)>,
+    /// `--animate-<name>` entries: (name, value, 1-based (line, column) of
+    /// the declaration), in file order.
+    animations: Vec<(String, String, (u32, u32))>,
     /// `@keyframes` blocks: (name, raw block text), in file order.
     keyframes: Vec<(String, String)>,
 }
@@ -113,7 +121,9 @@ impl Theme {
     ///
     /// The first [`ThemeError`] in file order, with its 1-based line and
     /// column; [`ThemeErrorKind::TooLarge`] (at 1:1) when `source` is over
-    /// 256 KiB.
+    /// 256 KiB. Reference errors come after the whole file parsed: the first
+    /// `--animate-*` (in file order) whose keyframes are neither built in nor
+    /// defined by the file is [`ThemeErrorKind::UnknownKeyframes`].
     pub fn parse(source: &str) -> Result<Self, ThemeError> {
         if source.len() > MAX_THEME_BYTES {
             return Err(ThemeError {
@@ -129,6 +139,7 @@ impl Theme {
         // cssparser does not strip a UTF-8 BOM; the size check and digest keep it.
         let mut parser = Parser::new(source.strip_prefix('\u{feff}').unwrap_or(source));
         theme.parse_top_level(&mut parser)?;
+        theme.check_keyframes_references()?;
         Ok(theme)
     }
 
@@ -155,7 +166,7 @@ impl Theme {
     pub fn animations(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
         self.animations
             .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .map(|(name, value, _)| (name.as_str(), value.as_str()))
     }
 
     /// The `@keyframes` blocks as `(name, raw block text)`, in file order;
@@ -178,6 +189,28 @@ impl Theme {
         })
     }
 
+    /// Every animation's keyframes are built in or defined by the file.
+    fn check_keyframes_references(&self) -> Result<(), ThemeError> {
+        for (token, value, (line, column)) in &self.animations {
+            let Some(keyframes) = animation::parse(value, Sep::Whitespace) else {
+                continue;
+            };
+            let known = BUILTIN_ANIMATIONS.contains(&keyframes)
+                || self.keyframes.iter().any(|(name, _)| name == keyframes);
+            if !known {
+                return Err(ThemeError {
+                    line: *line,
+                    column: *column,
+                    kind: UnknownKeyframes {
+                        name: format!("{ANIMATE_PREFIX}{token}"),
+                        keyframes: keyframes.to_owned(),
+                    },
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn parse_top_level(&mut self, parser: &mut Parser<'_>) -> Result<(), ThemeError> {
         while let Some((at, token)) = next_token(parser) {
             match token {
@@ -196,6 +229,9 @@ impl Theme {
                     let name = name.to_string();
                     if BUILTIN_ANIMATIONS.contains(&name.as_str()) {
                         return Err(name_at.error(BuiltinAnimation { name }));
+                    }
+                    if !animation::is_keyframes_name(&name) {
+                        return Err(name_at.error(InvalidKeyframesName { name }));
                     }
                     if self.keyframes.iter().any(|(n, _)| *n == name) {
                         return Err(name_at.error(Duplicate { name }));
@@ -248,7 +284,7 @@ impl Theme {
     /// Records `--<name>: <value>` declared at `at`.
     fn declare(&mut self, at: Location, name: String, value: String) -> Result<(), ThemeError> {
         if let Some(token) = name.strip_prefix(ANIMATE_PREFIX) {
-            if !is_theme_token(token) {
+            if !animation::is_animation_token(token) {
                 return Err(at.error(InvalidToken { name }));
             }
             if BUILTIN_ANIMATIONS.contains(&token) {
@@ -257,10 +293,14 @@ impl Theme {
             if value.is_empty() {
                 return Err(at.error(EmptyValue { name }));
             }
-            if self.animations.iter().any(|(n, _)| n == token) {
+            if animation::parse(&value, Sep::Whitespace).is_none() {
+                return Err(at.error(InvalidAnimation { name }));
+            }
+            if self.animations.iter().any(|(n, _, _)| n == token) {
                 return Err(at.error(Duplicate { name }));
             }
-            self.animations.push((token.to_owned(), value));
+            self.animations
+                .push((token.to_owned(), value, at.line_column()));
             return Ok(());
         }
         let Some(ns) = NAMESPACES
@@ -290,6 +330,14 @@ impl Theme {
 impl ThemeTokens for Theme {
     fn contains(&self, ns: ThemeNamespace, token: &str) -> bool {
         self.tokens[slot(ns)].contains_key(token)
+    }
+
+    fn contains_animation(&self, token: &str) -> bool {
+        self.animations.iter().any(|(name, _, _)| name == token)
+    }
+
+    fn contains_keyframes(&self, name: &str) -> bool {
+        self.keyframes.iter().any(|(n, _)| n == name)
     }
 }
 
@@ -358,6 +406,27 @@ pub enum ThemeErrorKind {
         /// The keyframes or custom property name.
         name: String,
     },
+    /// An `--animate-*` value that is not one animation of the grammar in the
+    /// [module docs](self): no keyframes name, no positive duration, a
+    /// function, a comma, a comment or an unknown word.
+    InvalidAnimation {
+        /// The custom property name.
+        name: String,
+    },
+    /// An `--animate-*` value whose keyframes are neither built in nor a
+    /// `@keyframes` of the file, so it would render static.
+    UnknownKeyframes {
+        /// The custom property name.
+        name: String,
+        /// The keyframes name the value plays.
+        keyframes: String,
+    },
+    /// A `@keyframes` name that is not `[a-z]([a-z0-9-]*[a-z0-9])?` of at
+    /// most 64 bytes, or is a CSS keyword.
+    InvalidKeyframesName {
+        /// The keyframes name.
+        name: String,
+    },
     /// Malformed CSS: an unclosed block, a declaration without `:`, a
     /// `@keyframes` without a name or block.
     Syntax,
@@ -369,8 +438,8 @@ pub enum ThemeErrorKind {
 }
 
 use ThemeErrorKind::{
-    BuiltinAnimation, Duplicate, EmptyValue, InvalidToken, NotCustomProperty, Syntax,
-    UnexpectedRule, UnknownNamespace,
+    BuiltinAnimation, Duplicate, EmptyValue, InvalidAnimation, InvalidKeyframesName, InvalidToken,
+    NotCustomProperty, Syntax, UnexpectedRule, UnknownKeyframes, UnknownNamespace,
 };
 
 impl fmt::Display for ThemeErrorKind {
@@ -407,6 +476,23 @@ impl fmt::Display for ThemeErrorKind {
                 "`{name}` redefines a built-in animation (`spin`, `ping`, `pulse`, `bounce`), \
                  which would render static; give it another name"
             ),
+            Self::InvalidAnimation { name } => write!(
+                f,
+                "`{name}` is not one animation: write \
+                 `<keyframes> <duration>[ <delay>][ <timing>][ <count>|infinite][ <direction>]\
+                 [ <fill>][ <play-state>]`, such as `rise 1s ease-out both` \
+                 (no functions, no commas)"
+            ),
+            Self::UnknownKeyframes { name, keyframes } => write!(
+                f,
+                "`{name}` uses `@keyframes {keyframes}`, which this file does not define \
+                 (built-ins: `spin`, `ping`, `pulse`, `bounce`)"
+            ),
+            Self::InvalidKeyframesName { name } => write!(
+                f,
+                "`{name}`: a `@keyframes` name must match `[a-z]([a-z0-9-]*[a-z0-9])?`, \
+                 be at most 64 bytes and not be a CSS keyword"
+            ),
             Self::Syntax => f.write_str(
                 "malformed CSS: expected `--<name>: <value>;` inside `@theme { … }`, \
                  `@keyframes <name> { … }`, and closed blocks",
@@ -424,12 +510,14 @@ impl fmt::Display for ThemeErrorKind {
 struct Location(SourceLocation);
 
 impl Location {
+    /// The 1-based line and column.
+    fn line_column(self) -> (u32, u32) {
+        (self.0.line.saturating_add(1), self.0.column)
+    }
+
     fn error(self, kind: ThemeErrorKind) -> ThemeError {
-        ThemeError {
-            line: self.0.line.saturating_add(1),
-            column: self.0.column,
-            kind,
-        }
+        let (line, column) = self.line_column();
+        ThemeError { line, column, kind }
     }
 }
 

@@ -1,0 +1,4 @@
+/* TW-02 fixture: a theme animation whose keyframes the file does not define. */
+@theme {
+  --animate-wiggle: wiggle 1s ease-in-out infinite;
+}

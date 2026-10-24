@@ -210,3 +210,30 @@ fn style_later_setter_wins() {
     assert_eq!(Style::new(), Style::default());
     assert_eq!(CONST.opacity, Some(1.0));
 }
+
+#[test]
+fn root_size_mismatch_reads_pixel_styles_and_arbitrary_classes() {
+    let expected = Size::new(8, 8);
+    let with = |classes: &str, style: Style| div(Classes::dynamic(classes.to_owned())).style(style);
+    let mismatch = |classes: &str, style: Style| with(classes, style).root_size_mismatch(expected);
+    assert_eq!(mismatch("", Style::new().width_px(4)), Some((4, 8)));
+    assert_eq!(mismatch("w-[9px]", Style::new()), Some((9, 8)));
+    assert_eq!(mismatch("size-[8px]", Style::new()), None);
+    assert_eq!(mismatch("sm:w-[4px]", Style::new()), None);
+    assert_eq!(mismatch("!h-[3px]", Style::new()), Some((8, 3)));
+    assert_eq!(mismatch("h-[3px]!", Style::new()), Some((8, 3)));
+    assert_eq!(mismatch("w-full w-64 h-1/2", Style::new()), None);
+    assert_eq!(mismatch("", Style::new().width_px(8).height_px(8)), None);
+    assert_eq!(mismatch("", Style::new().width_pct(50.0)), None);
+    assert_eq!(mismatch("size-[2px]", Style::new()), Some((2, 2)));
+    // The first mismatching side wins, a matching one is skipped.
+    assert_eq!(
+        mismatch("w-[8px] w-[5px] w-[6px]", Style::new().height_px(7)),
+        Some((5, 7))
+    );
+    // Not of the `[Npx]` form, or more than 9 digits.
+    assert_eq!(
+        mismatch("w-[9rem] w-[px] w-[1234567890px]", Style::new()),
+        None
+    );
+}

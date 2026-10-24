@@ -1,7 +1,11 @@
 /* Theme tokens and keyframes for Templates (AD-15, FR-32, FR-69; TW-02).
    tw!/view! accept these tokens at compile time: bg-brand, text-brand, border-brand,
    bg-surface, text-muted, font-display, ... Gradient stops (from-*, via-*, to-*) take
-   palette colours only. animate-rise is [planned, Story 10.6]. */
+   palette colours only. animate-rise plays the rise keyframes below in an animated
+   Template (a still draws its first frame, which for `both` is invisible);
+   animate-[rise_1s_linear] works too. An --animate-* value is one animation with
+   keyframes defined here or built in: `<keyframes> <duration> [delay] [timing]
+   [count|infinite] [direction] [fill] [play-state]`, keywords only. */
 @theme {
   --color-brand: #5865f2;
   --color-brand-soft: #8b93f8;

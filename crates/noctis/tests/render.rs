@@ -1,6 +1,6 @@
-//! Stories 10.3, 10.4 and 10.5: `ImagePlugin`, `ImageConfig`, the render
-//! pool, the takumi Renderer, animated output, the size budget and the
-//! per-job caps through the facade, with derived Templates. The macros validate
+//! Stories 10.3 to 10.6: `ImagePlugin`, `ImageConfig`, the render pool, the
+//! takumi Renderer, animated output, the size budget, the per-job caps and
+//! CSS animations through the facade, with derived Templates. The macros validate
 //! against this crate's `noctis-theme.css` (`--color-brand: #5865f2`).
 
 #![cfg(feature = "image")]
@@ -17,7 +17,7 @@ use bytes::Bytes;
 use noctis::image::{
     AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Format, Frame, ImageConfig,
     ImagePlugin, Node, RenderCap, RenderCaps, RenderError, Style, Template, TemplateView, Theme,
-    div, theme, view,
+    ThemeErrorKind, div, theme, view,
 };
 use noctis::ports::{EncodeSettings, ErasedView, OutputFormat, RenderJob, Size, ValueError};
 use noctis::{App, AppBuilder, BuildError, BuildViolation, Module, Runtime};
@@ -184,6 +184,18 @@ impl TemplateView for NoiseReel {
     }
 }
 
+/// A 4×4 animation that fades in through the theme's `--animate-rise`.
+#[derive(Template, Serialize, Deserialize, Debug, Clone)]
+#[template(id = "rise", version = 1, size = (4, 4), format = Png,
+           animation(duration_ms = 1000, fps = 10))]
+struct Rise;
+
+impl TemplateView for Rise {
+    fn view(&self, _: Frame) -> Node {
+        view! { <div tw="animate-rise w-full h-full bg-brand" /> }
+    }
+}
+
 /// A hand-written Template whose view the derive did not make.
 #[derive(Serialize, Deserialize)]
 struct Foreign;
@@ -214,6 +226,7 @@ fn cards() -> Module {
         .template::<Spinner>()
         .template::<Noise>()
         .template::<NoiseReel>()
+        .template::<Rise>()
 }
 
 /// A builder on `runtime` with the test theme, `config` and [`cards`].
@@ -865,6 +878,24 @@ async fn still_fallback_false_is_over_budget_where_the_default_falls_back() {
     assert_eq!(out.settings_used.frames, 1);
     assert_eq!(out.format, OutputFormat::Png);
     assert_eq!(&out.bytes[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_theme_animation_renders_animated() {
+    let out = render(&app(), &Rise).await.unwrap();
+    assert!(out.bytes.windows(4).any(|w| w == b"ANIM"));
+    assert_eq!(out.settings_used.frames, 10);
+}
+
+#[test]
+fn builtin_keyframes_and_fps_caps() {
+    let err = Theme::parse("@keyframes spin {}").unwrap_err();
+    assert!(matches!(
+        err.kind(),
+        ThemeErrorKind::BuiltinAnimation { .. }
+    ));
+    assert_eq!(AnimatedFormat::Gif.max_fps(), 50);
+    assert_eq!(AnimatedFormat::DEFAULT.max_fps(), 90);
 }
 
 #[cfg(feature = "image-gif")]

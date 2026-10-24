@@ -274,6 +274,7 @@ pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use raw_http::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
 pub use refs::RefOps;
+pub use render::{RenderOptions, RenderReport};
 pub use responder::{
     Acked, AutoDefer, CallbackResource, CanShowModal, Command, CommandResponder, Component,
     ComponentResponder, DeferMode, Ephemerality, FollowupHandle, IntoEdit, IntoResponse, Manual,

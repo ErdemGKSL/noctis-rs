@@ -327,8 +327,8 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 
 | Id | Limit | Where |
 | --- | --- | --- |
-| TW-01 | Template classes are Tailwind v4 in Noctis's strict grammar plus `noctis-theme.css` tokens (`tw!`, `tw="…"`; `Classes::dynamic` strings when rendered) | C / R |
-| TW-02 | `noctis-theme.css`: only `@theme` and `@keyframes`, known namespaces, valid tokens, no duplicates, no built-in animation names, ≤ 256 KiB | C |
+| TW-01 | Template classes are Tailwind v4 in Noctis's strict grammar plus `noctis-theme.css` tokens (`tw!`, `tw="…"`; `Classes::dynamic` strings when rendered); `animate-<token>` needs `--animate-<token>`, `animate-[<keyframes>_1s_…]` needs `@keyframes <keyframes>` (or a built-in) | C / R |
+| TW-02 | `noctis-theme.css`: only `@theme` and `@keyframes`, known namespaces, valid tokens, no duplicates, no built-in animation names, `--animate-*` = one keyword-only animation whose `@keyframes` exist, `@keyframes` names `[a-z]([a-z0-9-]*[a-z0-9])?` ≤ 64 bytes and no CSS keyword, ≤ 256 KiB | C |
 
 ## Rendering (Noctis defaults, FR-70)
 
@@ -337,7 +337,8 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | pixels per job / per frame | 4 MP / 1 MP (`RenderCaps`, `RenderError::OverCap`) |
 | frames / duration | 90 / 6 s |
 | admission weight | still 1, animation `ceil(frames / 8)`; ¼ of `queue_capacity` reserved for stills |
-| fps | GIF ≤ 50, WebP/APNG ≤ 90 |
+| fps | GIF ≤ 50, WebP/APNG ≤ 90 (fixed per format, `AnimatedFormat::max_fps`; `RenderError::OverCap { cap: RenderCap::Fps, .. }`, checked by core before the Renderer and again by the Renderer) |
+| animation frame size | every frame root = the Template's size (`RenderError::SizeMismatch`) |
 | size target | ≈ 2 MB (and ≤ Upload Budget) |
 | auto-defer deadline | 2000 ms |
 | Ref TTL | 24 h |

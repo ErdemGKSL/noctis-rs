@@ -72,13 +72,125 @@ fn tw_02_longest_prefix_wins() {
 
 #[test]
 fn tw_02_animate_entries_are_animations_not_tokens() {
-    let theme = Theme::parse("@theme { --animate-rise: rise 1s; }").unwrap();
+    let theme = Theme::parse("@theme { --animate-rise: rise 1s; } @keyframes rise {}").unwrap();
     assert_eq!(
         theme.animations().collect::<Vec<_>>(),
         [("rise", "rise 1s")]
     );
-    // Theme animations draw only from Story 10.6 on.
-    assert!(validate("animate-rise", &theme).is_err());
+    assert!(validate("animate-rise", &theme).is_ok());
+    assert!(validate("animate-[rise_1s]", &theme).is_ok());
+    assert!(validate("animate-fall animate-[fall_1s]", &theme).is_err());
+    assert!(!theme.contains_animation("Rise"));
+    assert!(!theme.contains_keyframes("Rise"));
+}
+
+#[test]
+fn tw_02_theme_animations_ok() {
+    let theme = Theme::parse(
+        "@theme { --animate-rise: rise 1s ease-out both; } @keyframes rise { from { opacity: 0 } }",
+    )
+    .unwrap();
+    assert_eq!(
+        theme.animations().collect::<Vec<_>>(),
+        [("rise", "rise 1s ease-out both")]
+    );
+    // Keyframes before the animation work the same.
+    assert!(Theme::parse("@keyframes rise {} @theme { --animate-rise: rise 1s; }").is_ok());
+    // A built-in reference needs no keyframes.
+    assert!(Theme::parse("@theme { --animate-s: spin 2s linear infinite; }").is_ok());
+}
+
+#[test]
+fn tw_02_invalid_animation_values() {
+    for value in [
+        "x",
+        "rise 1s, b 2s",
+        "rise cubic-bezier(0,0,1,1) 1s",
+        "rise 1s /* c */",
+        "rise 0s",
+    ] {
+        assert_err(
+            &format!("@theme {{ --animate-x: {value}; }} @keyframes rise {{}}"),
+            &InvalidAnimation {
+                name: name("--animate-x"),
+            },
+            1,
+            10,
+        );
+    }
+    let text = err("@theme { --animate-x: x; }").to_string();
+    assert!(
+        text.ends_with(
+            "`--animate-x` is not one animation: write `<keyframes> <duration>[ <delay>]\
+             [ <timing>][ <count>|infinite][ <direction>][ <fill>][ <play-state>]`, such as \
+             `rise 1s ease-out both` (no functions, no commas)"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn tw_02_unknown_keyframes() {
+    assert_err(
+        "@theme { --animate-a: nope 1s; }",
+        &UnknownKeyframes {
+            name: name("--animate-a"),
+            keyframes: name("nope"),
+        },
+        1,
+        10,
+    );
+    assert_err(
+        "@theme {\n  --animate-a: rise 1s;\n  --animate-b: nope 1s;\n  --animate-c: gone 1s;\n}\n@keyframes rise {}",
+        &UnknownKeyframes {
+            name: name("--animate-b"),
+            keyframes: name("nope"),
+        },
+        3,
+        3,
+    );
+    assert_eq!(
+        err("@theme { --animate-a: nope 1s; }").to_string(),
+        "[TW-02] 1:10: `--animate-a` uses `@keyframes nope`, which this file does not define \
+         (built-ins: `spin`, `ping`, `pulse`, `bounce`)"
+    );
+}
+
+#[test]
+fn tw_02_animation_token_rules() {
+    // `\.` escapes the dot, which a CSS ident cannot hold unescaped.
+    for (source, property) in [
+        ("--animate-a\\.b", "--animate-a.b"),
+        ("--animate-5", "--animate-5"),
+    ] {
+        assert_err(
+            &format!("@theme {{ {source}: spin 1s; }}"),
+            &InvalidToken {
+                name: name(property),
+            },
+            1,
+            10,
+        );
+    }
+}
+
+#[test]
+fn tw_02_keyframes_name_rules() {
+    let long = "a".repeat(65);
+    for bad in ["Rise", "ease", "none", "a_b", long.as_str()] {
+        assert_err(
+            &format!("@keyframes {bad} {{}}"),
+            &InvalidKeyframesName { name: name(bad) },
+            1,
+            12,
+        );
+    }
+    assert!(Theme::parse(&format!("@keyframes {} {{}}", "a".repeat(64))).is_ok());
+    assert_eq!(
+        err("@keyframes Rise {}").to_string(),
+        "[TW-02] 1:12: `Rise`: a `@keyframes` name must match `[a-z]([a-z0-9-]*[a-z0-9])?`, \
+         be at most 64 bytes and not be a CSS keyword"
+    );
 }
 
 #[test]
@@ -230,12 +342,13 @@ fn tw_02_duplicates_across_blocks() {
         3,
     );
     assert_err(
-        "@theme { --animate-a: x; --animate-a: y; }",
+        // The keyframes reference is checked after the file, so Duplicate wins.
+        "@theme { --animate-a: rise 1s; --animate-a: rise 2s; }",
         &Duplicate {
             name: name("--animate-a"),
         },
         1,
-        26,
+        32,
     );
     assert_err(
         "@keyframes rise {}\n@keyframes rise {}",
@@ -384,8 +497,10 @@ fn custom_properties_list_every_token_with_its_prefix() {
             ("--font-display".to_owned(), "\"Inter\", sans-serif"),
         ]
     );
-    let heavy =
-        Theme::parse("@theme { --font-weight-heavy: 900; --animate-rise: rise 1s; }").unwrap();
+    let heavy = Theme::parse(
+        "@theme { --font-weight-heavy: 900; --animate-rise: rise 1s; } @keyframes rise {}",
+    )
+    .unwrap();
     assert_eq!(
         heavy.custom_properties().collect::<Vec<_>>(),
         [("--font-weight-heavy".to_owned(), "900")]

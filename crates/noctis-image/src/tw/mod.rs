@@ -8,7 +8,9 @@
 //! narrows the result so that only classes that draw something pass:
 //!
 //! - [`classify`] tells a built-in utility ([`Utility::Builtin`]) from one
-//!   that only reads a theme token ([`Utility::Theme`]);
+//!   that only reads a theme token ([`Utility::Theme`]), a theme animation
+//!   ([`Utility::Animation`], `animate-<token>`) or a theme `@keyframes`
+//!   ([`Utility::Keyframes`], `animate-[<keyframes>_1s_…]`);
 //! - [`validate`] accepts a class list when every class is built in or every
 //!   token it reads is defined by the [`ThemeTokens`];
 //! - [`suggest`] names the Tailwind v4 replacement of a known v3 class;
@@ -26,6 +28,7 @@
 //! );
 //! ```
 
+mod animation;
 mod generated;
 mod suffix;
 #[cfg(test)]
@@ -83,6 +86,18 @@ pub enum Utility<'a> {
         /// The token after the utility prefix.
         token: &'a str,
     },
+    /// A theme animation: `animate-<token>` draws only when the theme
+    /// defines `--animate-<token>`.
+    Animation {
+        /// The token after `animate-`.
+        token: &'a str,
+    },
+    /// An arbitrary animation (`animate-[fade_1s_linear]`) that draws only
+    /// when the theme defines `@keyframes <name>`.
+    Keyframes {
+        /// The keyframes name the animation plays.
+        name: &'a str,
+    },
 }
 
 /// The theme tokens a class list may read.
@@ -90,6 +105,19 @@ pub trait ThemeTokens {
     /// Whether the theme defines `token` in namespace `ns`
     /// (`contains(Color, "brand")` for `--color-brand`).
     fn contains(&self, ns: ThemeNamespace, token: &str) -> bool;
+
+    /// Whether the theme defines the animation `--animate-<token>`; none by
+    /// default.
+    fn contains_animation(&self, token: &str) -> bool {
+        let _ = token;
+        false
+    }
+
+    /// Whether the theme defines `@keyframes <name>`; none by default.
+    fn contains_keyframes(&self, name: &str) -> bool {
+        let _ = name;
+        false
+    }
 }
 
 /// A theme that defines no token.
@@ -269,6 +297,8 @@ fn is_satisfied(class: &str, theme: &dyn ThemeTokens) -> bool {
         Utility::Theme { namespaces, token } => {
             namespaces.iter().any(|ns| theme.contains(*ns, token))
         }
+        Utility::Animation { token } => theme.contains_animation(token),
+        Utility::Keyframes { name } => theme.contains_keyframes(name),
         _ => true,
     };
     variant_ok && utility_ok
@@ -335,6 +365,10 @@ fn classify_utility(token: &str) -> Option<Utility<'_>> {
         if let Some(matched) = match_parsers(parsers, suffix) {
             return (!negative || matched).then_some(Utility::Builtin);
         }
+        if prefix == "animate" && !negative {
+            // takumi reads any other suffix as an animation and stops here.
+            return animation_utility(suffix);
+        }
         if let Some(namespaces) = lookup(VAR_TARGETS, prefix)
             && takumi_reads_var(namespaces, suffix)
         {
@@ -343,6 +377,20 @@ fn classify_utility(token: &str) -> Option<Utility<'_>> {
         }
     }
     None
+}
+
+/// An `animate-` suffix no built-in keyword matched: an arbitrary single
+/// animation or a theme animation token.
+fn animation_utility(suffix: &str) -> Option<Utility<'_>> {
+    if let Some(inner) = suffix.strip_prefix('[') {
+        let name = animation::parse(inner.strip_suffix(']')?, animation::Sep::Underscore)?;
+        return Some(if animation::BUILTIN.contains(&name) {
+            Utility::Builtin
+        } else {
+            Utility::Keyframes { name }
+        });
+    }
+    animation::is_animation_token(suffix).then_some(Utility::Animation { token: suffix })
 }
 
 /// The first parser whose value grammar accepts `suffix`, as whether the match
@@ -474,6 +522,11 @@ pub mod __crosscheck {
                 out.push(format!("{prefix}-noctis-tok/50"));
             }
         }
+        out.extend([
+            "animate-noctis-tok".to_owned(),
+            "animate-[noctis-tok_1s_linear_infinite]".to_owned(),
+            "animate-[spin_1s]".to_owned(),
+        ]);
         out.push("brand:flex".to_owned());
         let mut seen = std::collections::BTreeSet::new();
         out.retain(|class| seen.insert(class.clone()));

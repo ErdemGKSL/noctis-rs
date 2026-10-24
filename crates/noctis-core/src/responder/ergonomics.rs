@@ -509,11 +509,14 @@ macro_rules! ctx_methods {
             /// (show a "busy" notice and retry later); `UnknownTemplate` for
             /// a Template the App did not register; `Unsupported`;
             /// `OverCap` when the job is over one of the per-job caps
-            /// (`RenderCaps`); `OverBudget` when no encoding fits the Upload
-            /// Budget; `Failed`
-            /// for a render, encode or class-check failure; `Panicked` when
-            /// the view panicked. Every one except `NoRenderer` and
-            /// `QueueFull` is also reported to the Render Error Sink.
+            /// (`RenderCaps`) or its animation over the format's fps cap
+            /// (`RenderCap::Fps`: GIF 50, WebP and APNG 90); `OverBudget`
+            /// when no encoding fits the Upload Budget; `SizeMismatch` when
+            /// a frame of an animation declares a root size other than the
+            /// Template's; `Failed` for a render, encode or class-check
+            /// failure; `Panicked` when the view panicked. Every one except
+            /// `NoRenderer` and `QueueFull` is also reported to the Render
+            /// Error Sink.
             pub fn render<T: ::noctis_ports::Template>(
                 &self,
                 template: T,
@@ -521,7 +524,80 @@ macro_rules! ctx_methods {
                 Output = $crate::HandlerResult<::noctis_ui::Attachment>,
             > + Send
                    + '_ {
-                async move { $crate::render::render(&self.0, template).await }
+                self.render_with(template, $crate::RenderOptions::new())
+            }
+
+            /// [`render`](Self::render) with per-call
+            /// [`RenderOptions`](crate::RenderOptions): `.animation(spec)`
+            /// renders this call as an animation (or another one than the
+            /// Template's `ANIMATION`), calling the view once per frame with
+            /// `Frame { index, count }`. An fps over the format's cap fails
+            /// before the Renderer is called.
+            ///
+            /// ```no_run
+            /// use std::time::Duration;
+            ///
+            /// use noctis_ports::{AnimatedFormat, AnimationSpec, ErasedView, Format, Size, Template};
+            #[doc = concat!("use noctis_core::{", stringify!($ty), ", HandlerResult, RenderOptions};")]
+            /// use noctis_ui::Attachment;
+            ///
+            /// #[derive(serde::Serialize, serde::Deserialize)]
+            /// struct Spinner;
+            ///
+            /// impl Template for Spinner {
+            ///     const ID: &'static str = "spinner";
+            ///     const VERSION: u32 = 1;
+            ///     const SIZE: Size = Size::new(64, 64);
+            ///     const FORMAT: Format = Format::Png;
+            ///     const ANIMATION: Option<AnimationSpec> = None;
+            ///     fn view() -> ErasedView {
+            ///         ErasedView::new(())
+            ///     }
+            /// }
+            ///
+            #[doc = concat!("async fn spinner(ctx: ", stringify!($ty), ") -> HandlerResult<Attachment> {")]
+            ///     let spec = AnimationSpec::new(Duration::from_secs(1), 20, AnimatedFormat::DEFAULT);
+            ///     ctx.render_with(Spinner, RenderOptions::new().animation(spec)).await
+            /// }
+            /// ```
+            ///
+            /// # Errors
+            ///
+            /// The errors of [`render`](Self::render), including the fps
+            /// `OverCap` (`RenderCap::Fps`) and `SizeMismatch`.
+            pub fn render_with<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+                options: $crate::RenderOptions,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<::noctis_ui::Attachment>,
+            > + Send
+                   + '_ {
+                async move {
+                    $crate::render::render(&self.0, template, options)
+                        .await
+                        .map(|report| report.attachment)
+                }
+            }
+
+            /// [`render_with`](Self::render_with), returning a
+            /// [`RenderReport`](crate::RenderReport): the attachment plus
+            /// the encoded `format` and the `settings_used` (size, quality,
+            /// fps and frames after any degradation to fit the budget).
+            ///
+            /// # Errors
+            ///
+            /// The errors of [`render`](Self::render), including the fps
+            /// `OverCap` (`RenderCap::Fps`) and `SizeMismatch`.
+            pub fn render_report<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+                options: $crate::RenderOptions,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<$crate::RenderReport>,
+            > + Send
+                   + '_ {
+                async move { $crate::render::render(&self.0, template, options).await }
             }
         }
     };
