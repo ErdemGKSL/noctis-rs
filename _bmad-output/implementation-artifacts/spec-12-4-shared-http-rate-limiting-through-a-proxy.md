@@ -2,8 +2,8 @@
 title: 'Story 12.4: Shared HTTP rate limiting through a proxy'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
-baseline_revision: '0b920b924c7fd845eb2298a63d180cbf549a0691'
+status: 'in-progress'
+baseline_revision: 'ed6784e5577185c1ce692e47011e60b2956a3c64'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
