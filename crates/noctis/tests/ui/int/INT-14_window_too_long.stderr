@@ -1,0 +1,5 @@
+error: [INT-14] the rate-limit window must be 1s..=1d; found "1d1s"
+ --> tests/ui/int/INT-14_window_too_long.rs:4:65
+  |
+4 | #[command("daily", description = "d", rate_limit(user, 3, per = "1d1s"))]
+  |                                                                 ^^^^^^

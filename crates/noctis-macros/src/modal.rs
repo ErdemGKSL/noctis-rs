@@ -515,8 +515,16 @@ fn apply_arg(def: &mut FieldDef, kind: Kind, name: &Ident, expr: &Expr) -> syn::
 /// bot author names as `X::<CONST>`; an input's `X::<FIELD>` handle may not
 /// shadow one. `__Kind::NAME` is left out on purpose: it is internal, only
 /// ever read as `<X as __Kind>::NAME`, and `name` is a common input field.
-const RESERVED_CONSTS: [&str; 8] = [
-    "ID", "SHAPE", "SCHEMA", "DEFAULTS", "RUNTIME", "ROUTE", "RESPONSE", "GUARDED",
+const RESERVED_CONSTS: [&str; 9] = [
+    "ID",
+    "SHAPE",
+    "SCHEMA",
+    "DEFAULTS",
+    "RUNTIME",
+    "ROUTE",
+    "RESPONSE",
+    "GUARDED",
+    "RATE_LIMITS",
 ];
 
 /// The `X::<FIELD>` handle name of an input: its unraw name in upper case.
@@ -1082,16 +1090,19 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
     })
 }
 
-/// The `__Modal` impl: the Route id and the declared `response` (AD-11).
+/// The `__Modal` impl: the Route id, the declared `response` (AD-11) and
+/// `rate_limit(..)`s (INT-14).
 fn modal_impl(name: &Ident, args: &RouteArgs) -> TokenStream {
     let core = quote!(::noctis::__private::core);
     let id = &args.id;
     let response = args.response.variant();
+    let rate_limits = args.rate_limits.const_item();
     quote! {
         #[automatically_derived]
         impl #core::__Modal for #name {
             const ROUTE: &'static ::core::primitive::str = #id;
             const RESPONSE: #core::__Response = #core::__Response::#response;
+            #rate_limits
         }
     }
 }

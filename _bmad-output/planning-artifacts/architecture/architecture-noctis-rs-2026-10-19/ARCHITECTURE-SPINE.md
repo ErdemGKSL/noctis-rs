@@ -342,7 +342,12 @@ list in CI.
       that core reads: `ttl = "…"` and `one_shot` (by_ref/spill Routes only; Story
       7.5), `owner = field`, `permissions = …` and `guard = path` (Route
       Guards; Story 7.7), and `rate_limit(..)` (Story 13.4). Each enters the derive
-      in the story named. Expired and stale handling are `#[on_expired]` /
+      in the story named. (Amended 2026-10-24, Story 13.4: `rate_limit(scope, n,
+      per = "dur"[, manual])` is not part of `RouteRuntime`; every kind trait
+      (`__SlashCommand`, `__ContextMenu`, `__Component`, `__Modal`) carries it as
+      `const RATE_LIMITS: &'static [RateLimit]` in declared order, default empty,
+      which the bind copies into the descriptor. It may repeat, one per scope, and
+      its errors cite INT-14.) Expired and stale handling are `#[on_expired]` /
       `#[on_stale]` methods in the struct's `impl`, without `self` (Story 7.3).
       `opens_modal` is not an argument anywhere (AD-11).
     - **`defaults(..)`** is mandatory and holds the FR-59 component defaults (AD-19):
@@ -1109,6 +1114,22 @@ list in CI.
   `RunOutcome::Denied`, and no `noctis_handler_duration_seconds`,
   `noctis_handler_errors_total` or Error Sink report. A custom Guard's error or panic
   is handled like the handler's.
+- **Amended (2026-10-24, Story 13.4):** stage 5 (rate limits, FR-46, INT-14) runs for
+  Commands, context menus, components and modal submits (also over the
+  `Dispatcher`), never for autocomplete, events, the Expired Handler chain or the
+  detached test seams. It checks the handler's declared limits in declared order in
+  the App-namespaced `RateLimitStore`: a non-`manual` limit is `incr_with_ttl` of its
+  counter plus, on the first use, a `put` of the window end; a `manual` limit is only
+  read (`get`), the handler counts it with `ctx.rate_limits().hit(..)`. The first
+  limit over its count stops the run before the auto-defer, so its notice is always
+  the initial type-4 ephemeral response (over the `Dispatcher`, a reply to the
+  invoking message), never a follow-up. A store error skips that limit with one
+  `warn` (fail open). The notice is the struct's `#[on_rate_limited]` method, else the
+  App's `rate_limited_handler`, else the `noctis.rate_limited` key with `{retry}` =
+  `<t:N:R>`: the one piece of author code stages 1 to 5 may run besides the
+  `LocaleResolver`, under `catch_unwind` and bounded by the ack deadline (an error,
+  panic or miss sends the default notice). A refused `one_shot` click puts its Ref
+  record back. Each refusal counts `noctis_rate_limited_total{app, kind}`.
   - Extensions are a per-interaction type map of `Send + Sync + 'static` values.
     Inserting an existing type replaces it (the child Module wins) with a debug
     trace. Middleware descriptors declare the types they provide; `App::build`

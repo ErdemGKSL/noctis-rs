@@ -240,10 +240,13 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         )
     };
     let attached = quote! {
-        #core::__AttachHooks::__attach(
-            #bind,
-            Self::__noctis_on_stale(),
-            Self::__noctis_on_expired(),
+        #core::__AttachRateLimited::__attach_rate_limited(
+            #core::__AttachHooks::__attach(
+                #bind,
+                Self::__noctis_on_stale(),
+                Self::__noctis_on_expired(),
+            ),
+            Self::__noctis_on_rate_limited(),
         )
     };
     let required: Vec<&Type> = params

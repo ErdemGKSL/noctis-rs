@@ -1,0 +1,5 @@
+error: [INT-14] scope `message` needs a message: use it on #[message_command], a component or a modal
+ --> tests/ui/int/INT-14_message_scope_on_slash.rs:4:50
+  |
+4 | #[command("daily", description = "d", rate_limit(message, 1, per = "1m"))]
+  |                                                  ^^^^^^^

@@ -60,9 +60,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 22);
+    assert_eq!(METRICS.len(), 23);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 22);
+    assert_eq!(names.len(), 23);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -95,6 +95,7 @@ fn catalog_static() {
             ("noctis_autodefer_total", &["app"][..]),
             ("noctis_ack_latency_seconds", &["app"][..]),
             ("noctis_ref_lookups_total", &["app", "result"][..]),
+            ("noctis_rate_limited_total", &["app", "kind"][..]),
             ("noctis_shard_status", &["app", "shard"][..]),
             ("noctis_http_requests_total", &["app", "status_class"][..]),
             ("noctis_http_rate_limited_total", &["app", "scope"][..]),
@@ -327,7 +328,8 @@ async fn recorded_set_core() {
     // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`);
     // the Ref lookups in `pipeline::tests::refs`; the render rows in
     // `render::tests`; the Discord cache update errors in
-    // `discord_cache::tests`.
+    // `discord_cache::tests`; the rate-limit row in the testkit's
+    // `rate_limits.rs`.
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
@@ -337,6 +339,7 @@ async fn recorded_set_core() {
                 && name != "noctis_autodefer_total"
                 && name != "noctis_ack_latency_seconds"
                 && name != "noctis_ref_lookups_total"
+                && name != "noctis_rate_limited_total"
                 && !name.starts_with("noctis_render_")
                 && name != "noctis_discord_cache_update_errors_total"
         })

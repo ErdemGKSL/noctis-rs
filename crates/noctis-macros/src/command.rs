@@ -17,6 +17,7 @@ use unicode_ident::{is_xid_continue, is_xid_start};
 use crate::common::combine;
 use crate::flags::Flags;
 use crate::meta::{self, MetaArgs};
+use crate::rate_limit::RateLimits;
 
 mod locale;
 
@@ -31,7 +32,7 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 2] = ["rate_limit", "apps"];
+const PLANNED: [&str; 1] = ["apps"];
 
 const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`";
 
@@ -55,6 +56,8 @@ struct Args {
     locales: LocaleArgs,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
+    /// `rate_limit(..)`, once per scope (INT-14).
+    rate_limits: RateLimits,
 }
 
 /// The handler arguments every Command macro shares: `response` and
@@ -219,6 +222,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         meta: MetaArgs::default(),
         locales: LocaleArgs::default(),
         flags: Flags::default(),
+        rate_limits: RateLimits::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -232,6 +236,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         };
         if let Some(error) = withdrawn("#[command]", &name, span) {
             return Err(error);
+        }
+        if name == "rate_limit" {
+            parsed.rate_limits.parse(&segment)?;
+            continue;
         }
         check_arg_name(&name, span)?;
         if seen.contains(&name) {
@@ -260,25 +268,9 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             parse_locale_arg(&mut parsed.locales, &name, &segment)?;
             continue;
         }
-        let value = value_of(&segment);
-        if name == "description" {
-            let lit = value
-                .and_then(|v| syn::parse2::<LitStr>(v).ok())
-                .ok_or_else(|| syn::Error::new(span, DESCRIPTION_LITERAL))?;
-            parsed.description = Some(lit);
-        } else {
-            let lit = value
-                .and_then(|v| syn::parse2::<LitInt>(v).ok())
-                .ok_or_else(|| syn::Error::new(span, CAP_LITERAL))?;
-            let cap = lit
-                .base10_parse::<usize>()
-                .map_err(|_| syn::Error::new(lit.span(), CAP_LITERAL))?;
-            if cap == 0 {
-                return Err(syn::Error::new(lit.span(), CAP_ZERO));
-            }
-            parsed.max_expansions = Some(cap);
-        }
+        parse_value_arg(&mut parsed, &name, &segment, span)?;
     }
+    parsed.rate_limits.reject_message()?;
     Ok(parsed)
 }
 
@@ -304,6 +296,34 @@ fn check_arg_name(name: &str, span: Span) -> syn::Result<()> {
             format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
         )),
     }
+}
+
+/// Parses `description = "…"` or `max_expansions = n` into `parsed`.
+fn parse_value_arg(
+    parsed: &mut Args,
+    name: &str,
+    segment: &[TokenTree],
+    span: Span,
+) -> syn::Result<()> {
+    let value = value_of(segment);
+    if name == "description" {
+        let lit = value
+            .and_then(|v| syn::parse2::<LitStr>(v).ok())
+            .ok_or_else(|| syn::Error::new(span, DESCRIPTION_LITERAL))?;
+        parsed.description = Some(lit);
+    } else {
+        let lit = value
+            .and_then(|v| syn::parse2::<LitInt>(v).ok())
+            .ok_or_else(|| syn::Error::new(span, CAP_LITERAL))?;
+        let cap = lit
+            .base10_parse::<usize>()
+            .map_err(|_| syn::Error::new(lit.span(), CAP_LITERAL))?;
+        if cap == 0 {
+            return Err(syn::Error::new(lit.span(), CAP_ZERO));
+        }
+        parsed.max_expansions = Some(cap);
+    }
+    Ok(())
 }
 
 /// Parses one of `locales = "<dir>"`, `default_locale = "<code>"` and the
@@ -793,6 +813,7 @@ fn expand(
         args.meta.tokens()
     };
     let ephemerality = args.handler.ephemerality();
+    let rate_limits = args.rate_limits.const_item();
     let scaffolding = crate::kind::scaffolding(
         ident,
         crate::kind::Family::Slash,
@@ -811,6 +832,7 @@ fn expand(
             const DESCRIPTIONS: &'static [&'static ::core::primitive::str] = &[#(#descriptions),*];
             const METADATA: #core::CommandMetadata = #metadata;
             const EPHEMERALITY: #core::Ephemerality = #ephemerality;
+            #rate_limits
         }
 
         #scaffolding
@@ -877,6 +899,36 @@ mod tests {
         } else {
             out
         }
+    }
+
+    /// Story 13.4 G1, G2, G13: `rate_limit(..)` emits `RATE_LIMITS` in
+    /// declared order; `message` is rejected on a slash Command.
+    #[test]
+    fn int_14_command_rate_limits() {
+        let out = run(quote! {
+            #[command("p", description = "d", rate_limit(user, 3, per = "10s"), response = ephemeral, rate_limit(guild, 100, per = "1m"))]
+            pub struct P;
+        });
+        let flat = out.replace(' ', "");
+        assert!(
+            flat.contains("constRATE_LIMITS:&'static[::noctis::__private::core::RateLimit]=&[::noctis::__private::core::RateLimit::__declare(::noctis::__private::core::RateScope::User,3u32,10u32,false),::noctis::__private::core::RateLimit::__declare(::noctis::__private::core::RateScope::Guild,100u32,60u32,false)]"),
+            "{out}"
+        );
+        let out = run(quote! {
+            #[command("p", description = "d", rate_limit(message, 3, per = "10s"))]
+            pub struct P;
+        });
+        assert!(out.contains(crate::rate_limit::NO_MESSAGE), "{out}");
+        let out = run(quote! {
+            #[command("p", description = "d", rate_limit(user, 3, per = "1s"), rate_limit(user, 5, per = "1m"))]
+            pub struct P;
+        });
+        assert!(
+            out.contains(
+                "[INT-14] a second `rate_limit` for scope `user`: declare each scope once"
+            ),
+            "{out}"
+        );
     }
 
     /// Story 6.11 Matrix 1: a unit command.
@@ -1123,7 +1175,7 @@ mod tests {
     /// Matrix 37-40: argument errors.
     #[test]
     fn argument_errors() {
-        let cases: [(TokenStream, &str); 21] = [
+        let cases: [(TokenStream, &str); 22] = [
             (quote!(), MISSING_PATTERN),
             (quote!(PATTERN), NOT_A_LITERAL),
             (quote!(description = "d"), MISSING_PATTERN),
@@ -1168,7 +1220,11 @@ mod tests {
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
-                "`#[command]` argument `rate_limit` is planned and not supported yet",
+                crate::rate_limit::MISSING_PER,
+            ),
+            (
+                quote!("ping", rate_limit(message, 3, per = "1s")),
+                crate::rate_limit::NO_MESSAGE,
             ),
             (
                 quote!("ping", description = concat!("a")),
@@ -1234,7 +1290,7 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in ["rate_limit", "apps"] {
+        for planned in PLANNED {
             let ident = quote::format_ident!("{planned}");
             assert_eq!(
                 error(quote!("ping", #ident), PING),

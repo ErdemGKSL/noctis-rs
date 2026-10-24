@@ -32,6 +32,8 @@ pub(crate) enum Hook {
     Stale,
     /// `#[on_expired]`.
     Expired,
+    /// `#[on_rate_limited]` (INT-14).
+    RateLimited,
 }
 
 impl Hook {
@@ -40,10 +42,15 @@ impl Hook {
         match self {
             Self::Stale => "on_stale",
             Self::Expired => "on_expired",
+            Self::RateLimited => "on_rate_limited",
         }
     }
 
     fn no_self(self) -> String {
+        if self == Self::RateLimited {
+            return "an `#[on_rate_limited]` method takes no `self`: the handler did not run"
+                .to_owned();
+        }
         format!(
             "an `#[{}]` method takes no `self`: the Payload did not decode",
             self.name()
@@ -67,6 +74,9 @@ impl Hook {
             Self::Stale => "an `#[on_stale]` method takes `(ctx[, r: <Kind>Responder<..>])`",
             Self::Expired => {
                 "an `#[on_expired]` method takes `(ctx, expired: Expired[, r: <Kind>Responder<..>])`"
+            }
+            Self::RateLimited => {
+                "an `#[on_rate_limited]` method takes `(ctx: RateLimitedCtx, hit: RateLimitHit)`"
             }
         }
     }
@@ -122,6 +132,30 @@ fn shape(method: &ImplItemFn, hook: Hook) -> syn::Result<(TokenStream, TokenStre
     }
 }
 
+/// The `#[on_rate_limited]` method and its hidden binding: the method's
+/// parameters and return type are checked by `__RateLimitedHook::__new`'s
+/// bounds, and a struct without rate limits (an event handler) by
+/// `__AttachRateLimited` in `descriptor()`.
+fn rate_limited(mut method: ImplItemFn) -> TokenStream {
+    let name = method.sig.ident.clone();
+    let core = quote!(::noctis::__private::core);
+    let binding = Ident::new("__noctis_on_rate_limited", name.span());
+    let item = quote_spanned! {name.span()=>
+        #[doc(hidden)]
+        pub fn #binding() -> #core::__RateLimitedHook {
+            #core::__RateLimitedHook::__new(Self::#name)
+        }
+    };
+    method
+        .attrs
+        .push(syn::parse_quote!(#[allow(clippy::unused_async)]));
+    quote! {
+        #method
+
+        #item
+    }
+}
+
 /// Checks the method's receiver, `async` and generics.
 fn check(method: &ImplItemFn, hook: Hook) -> syn::Result<()> {
     let sig = &method.sig;
@@ -160,6 +194,9 @@ pub(crate) fn expand(hook: Hook, args: TokenStream, item: TokenStream) -> syn::R
     }
     let mut method: ImplItemFn = syn::parse2(item)?;
     check(&method, hook)?;
+    if hook == Hook::RateLimited {
+        return Ok(rate_limited(method));
+    }
     let (shape, assertion) = shape(&method, hook)?;
     let name = method.sig.ident.clone();
     let core = quote!(::noctis::__private::core);
@@ -169,7 +206,7 @@ pub(crate) fn expand(hook: Hook, args: TokenStream, item: TokenStream) -> syn::R
             quote!(#core::__StaleHook),
             quote!(#core::__BindStale),
         ),
-        Hook::Expired => (
+        Hook::Expired | Hook::RateLimited => (
             Ident::new("__noctis_on_expired", name.span()),
             quote!(#core::__ExpiredHook),
             quote!(#core::__BindExpired),
@@ -343,6 +380,54 @@ mod tests {
         assert!(out.contains("compile_error"), "{out}");
         assert!(out.contains("fn f (ctx : ComponentCtx)"), "{out}");
         assert!(!out.contains("__noctis_on_stale"), "{out}");
+    }
+
+    /// Story 13.4 G17: the `#[on_rate_limited]` binding and its errors.
+    #[test]
+    fn int_14_on_rate_limited() {
+        let r = Hook::RateLimited;
+        let out = run(
+            r,
+            quote!(),
+            "async fn slow(ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> { todo!() }",
+        );
+        assert!(out.contains("pub fn __noctis_on_rate_limited ()"), "{out}");
+        assert!(
+            out.contains("__RateLimitedHook :: __new (Self :: slow)"),
+            "{out}"
+        );
+        assert_eq!(
+            run(
+                r,
+                quote!(),
+                "async fn f(self, ctx: RateLimitedCtx, hit: RateLimitHit) {}"
+            ),
+            "an `#[on_rate_limited]` method takes no `self`: the handler did not run"
+        );
+        assert_eq!(
+            run(
+                r,
+                quote!(),
+                "fn f(ctx: RateLimitedCtx, hit: RateLimitHit) {}"
+            ),
+            "an `#[on_rate_limited]` method must be `async`"
+        );
+        assert_eq!(
+            run(r, quote!(), "async fn f<T>(ctx: T, hit: RateLimitHit) {}"),
+            "an `#[on_rate_limited]` method cannot be generic"
+        );
+        assert_eq!(
+            run(
+                r,
+                quote!(x),
+                "async fn f(ctx: RateLimitedCtx, hit: RateLimitHit) {}"
+            ),
+            "`#[on_rate_limited]` takes no arguments"
+        );
+        assert_eq!(
+            r.params(),
+            "an `#[on_rate_limited]` method takes `(ctx: RateLimitedCtx, hit: RateLimitHit)`"
+        );
     }
 
     /// Middleware Matrix 10: hooks take no `Ext<T>`.

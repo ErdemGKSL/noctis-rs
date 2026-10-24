@@ -85,6 +85,7 @@ const fn row(
 /// | `noctis_autodefer_total` | counter | `app` |
 /// | `noctis_ack_latency_seconds` | histogram | `app` |
 /// | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit`, `miss`, `stale`, `forged`) |
+/// | `noctis_rate_limited_total` | counter | `app`, `kind` (`command`, `component`) |
 /// | `noctis_shard_status` | gauge | `app`, `shard` (1 up, 0 down) |
 /// | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx`, `error`) |
 /// | `noctis_http_rate_limited_total` | counter | `app`, `scope` (`user`, `global`, `shared`, `unknown`) |
@@ -151,6 +152,12 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "result"],
         "Ref lookups by result: hit, miss, stale or forged.",
+    ),
+    row(
+        "noctis_rate_limited_total",
+        MetricType::Counter,
+        &["app", "kind"],
+        "Invocations a declared rate limit refused, by kind: command or component.",
     ),
     row(
         "noctis_shard_status",

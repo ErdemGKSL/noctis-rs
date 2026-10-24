@@ -1,0 +1,5 @@
+error: [INT-14] unknown rate-limit scope `users`: expected `user`, `member`, `channel`, `guild` or `message`
+ --> tests/ui/int/INT-14_unknown_scope.rs:4:26
+  |
+4 | #[button("a", rate_limit(users, 3, per = "1s"), defaults(style = Secondary, label = "Go"))]
+  |                          ^^^^^

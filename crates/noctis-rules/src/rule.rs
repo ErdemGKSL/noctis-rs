@@ -53,7 +53,7 @@ rule_ids! {
     INT_01 = "INT-01", INT_02 = "INT-02", INT_03 = "INT-03", INT_04 = "INT-04",
     INT_05 = "INT-05", INT_06 = "INT-06", INT_07 = "INT-07", INT_08 = "INT-08",
     INT_09 = "INT-09", INT_10 = "INT-10", INT_11 = "INT-11", INT_12 = "INT-12",
-    INT_13 = "INT-13",
+    INT_13 = "INT-13", INT_14 = "INT-14",
     CID_01 = "CID-01", CID_02 = "CID-02", CID_03 = "CID-03", CID_04 = "CID-04",
     CID_05 = "CID-05", CID_06 = "CID-06", CID_07 = "CID-07",
     CV2_01 = "CV2-01", CV2_02 = "CV2-02", CV2_03 = "CV2-03", CV2_04 = "CV2-04",
@@ -305,10 +305,10 @@ mod tests {
     }
 
     #[test]
-    fn all_has_132_unique_well_formed_ids() {
-        assert_eq!(RuleId::ALL.len(), 132);
+    fn all_has_133_unique_well_formed_ids() {
+        assert_eq!(RuleId::ALL.len(), 133);
         let unique: HashSet<_> = RuleId::ALL.iter().collect();
-        assert_eq!(unique.len(), 132);
+        assert_eq!(unique.len(), 133);
         for id in RuleId::ALL {
             assert!(has_id_shape(id.as_str()), "{id}");
         }

@@ -941,6 +941,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_autodefer_total` | counter | `app` | interactions the auto-defer acknowledged (`responder.md` §2) |
 | `noctis_ack_latency_seconds` | histogram | `app` | time from gateway receipt to the initial interaction callback (reply, defer, modal or auto-defer) |
 | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit` \| `miss` \| `stale` \| `forged`) | Ref lookups of clicked or submitted Ref ids (`routes-payloads-refs.md` §7); a `RefStore` error is not counted |
+| `noctis_rate_limited_total` | counter | `app`, `kind` (`command` \| `component`; context menus count as `command`, modal submits as `component`) | invocations a declared `rate_limit(..)` refused (`modules-middleware-ratelimits.md` §7) |
 | `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
 | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx` \| `error`) | Discord HTTP upstream attempts by status class; `error` = no response |
 | `noctis_http_rate_limited_total` | counter | `app`, `scope` (`user` \| `global` \| `shared` \| `unknown`) | upstream 429 answers by `X-RateLimit-Scope` (RL-04) |

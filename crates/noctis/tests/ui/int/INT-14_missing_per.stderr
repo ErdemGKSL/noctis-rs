@@ -1,0 +1,5 @@
+error: [INT-14] `rate_limit` needs a window: `rate_limit(user, 3, per = "10s")`
+ --> tests/ui/int/INT-14_missing_per.rs:4:49
+  |
+4 | #[command("daily", description = "d", rate_limit(user, 3))]
+  |                                                 ^^^^^^^^^

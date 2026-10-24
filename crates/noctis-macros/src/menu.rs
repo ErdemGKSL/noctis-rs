@@ -14,6 +14,7 @@ use crate::command::{HandlerArgs, arg_name, segments, span_of, withdrawn};
 use crate::common::combine;
 use crate::flags::Flags;
 use crate::meta::{self, MetaArgs};
+use crate::rate_limit::RateLimits;
 
 /// Which context-menu macro is expanding.
 #[derive(Clone, Copy)]
@@ -53,7 +54,7 @@ impl Menu {
 }
 
 /// Arguments later stories add.
-const PLANNED: [&str; 2] = ["rate_limit", "apps"];
+const PLANNED: [&str; 1] = ["apps"];
 
 const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` or `flags`";
 
@@ -72,6 +73,8 @@ struct Args {
     key: Option<String>,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
+    /// `rate_limit(..)`, once per scope (INT-14).
+    rate_limits: RateLimits,
 }
 
 /// The error of a menu attribute without its name.
@@ -105,6 +108,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         meta: MetaArgs::default(),
         key: None,
         flags: Flags::default(),
+        rate_limits: RateLimits::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -121,6 +125,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
         match name.as_str() {
             "description" => return Err(syn::Error::new(span, NO_DESCRIPTION)),
+            "rate_limit" => {
+                parsed.rate_limits.parse(&segment)?;
+                continue;
+            }
             "response" | "auto_defer" | "key" | "flags" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
@@ -158,6 +166,9 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         if let Some(result) = parsed.meta.parse(&name, &segment) {
             result?;
         }
+    }
+    if matches!(menu, Menu::User) {
+        parsed.rate_limits.reject_message()?;
     }
     Ok(parsed)
 }
@@ -258,6 +269,7 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
         || quote!(::core::option::Option::None),
         |key| quote!(::core::option::Option::Some(#key)),
     );
+    let rate_limits = args.rate_limits.const_item();
     let scaffolding = crate::kind::scaffolding(
         ident,
         crate::kind::Family::Menu,
@@ -272,6 +284,7 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
             const METADATA: #core::CommandMetadata = #metadata;
             const EPHEMERALITY: #core::Ephemerality = #ephemerality;
             const KEY: ::core::option::Option<&'static ::core::primitive::str> = #key;
+            #rate_limits
 
             fn __new() -> Self {
                 Self
@@ -313,6 +326,39 @@ mod tests {
             ),
         };
         derive(menu, &input)
+    }
+
+    /// Story 13.4 G13, G14: `message` only on `#[message_command]`.
+    #[test]
+    fn int_14_menu_rate_limits() {
+        let out = expand(
+            Menu::Message,
+            quote!(
+                "Quote",
+                rate_limit(message, 2, per = "1m"),
+                rate_limit(user, 1, per = "1s")
+            ),
+            item(QUOTE),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("const RATE_LIMITS"), "{out}");
+        assert!(
+            out.contains("RateScope :: Message , 2u32 , 60u32 , false"),
+            "{out}"
+        );
+        assert_eq!(
+            error(
+                Menu::User,
+                quote!("Show", rate_limit(message, 2, per = "1m")),
+                SHOW
+            ),
+            crate::rate_limit::NO_MESSAGE
+        );
+        let out = expand(Menu::User, quote!("Show"), item(SHOW))
+            .unwrap()
+            .to_string();
+        assert!(!out.contains("RATE_LIMITS"), "{out}");
     }
 
     /// Story 6.11 Matrix 6 and 11.

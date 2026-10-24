@@ -591,26 +591,107 @@ builder
 
 ## 7. Rate limits (FR-46)
 
-Declarative, checked before the handler and before any auto-defer:
+Declare limits on the kind attribute: `#[command]`, `#[user_command]`,
+`#[message_command]`, `#[button]`, every select attribute and `#[modal]`. Noctis
+counts them after the locales are resolved and before the auto-defer, the Middleware
+and the Route Guards (AD-23 stage 5):
 
 ```rust
-#[command("profile", rate_limit(user, 3, per = "10s"))]                       // on a SlashCommand struct
-#[button("vote", rate_limit(member, 1, per = "1m"), defaults(style = Primary, label = "vote"))]  // on a component
+#[derive(SlashCommand)]
+#[command("profile", rate_limit(user, 3, per = "10s"))]          // 3 uses per user per 10 s
+pub struct Profile;
+
+#[derive(Button)]
+#[button(
+    "vote",
+    rate_limit(member, 1, per = "1m"),                            // repeatable, one per scope
+    rate_limit(message, 50, per = "1h"),
+    defaults(style = Primary, label = "Vote"),
+)]
+pub struct Vote;
 ```
 
-Scopes: `user`, `member` (user per guild), `channel`, `guild`, `message`. Semantics: N
-uses per window (not just a cooldown). A limited interaction gets an immediate
-localized ephemeral notice with the time remaining (`noctis.rate_limited`). Stored in
-the `RateLimitStore` (share it in a Cluster).
+- Grammar: `rate_limit(<scope>, <n>, per = "<dur>"[, manual])`. `<n>` is an integer
+  literal in `1..=4294967295`; `<dur>` is `d`/`h`/`m`/`s` groups in that order
+  (`"10s"`, `"1h30m"`), `1s..=1d`. Anything else is a compile error citing `[INT-14]`.
+- Scopes (`RateScope`): `user` (the user everywhere), `member` (the user in this
+  guild), `channel`, `guild` (the DM channel outside a guild), `message` (a message
+  command's target, a component's message, a component-opened modal's message).
+  `message` on `#[command]` or `#[user_command]` does not compile. A scope the
+  interaction has no key for (no channel; a `/`-opened modal for `message`) is skipped.
+- Semantics: N uses per fixed window that starts at the first use. Limits are checked
+  in declared order; the first one over its count refuses the run and the later ones
+  are not counted. A refused run gets one ephemeral notice as the initial response:
+  no defer, no Middleware, no Guard, no handler. A refused `one_shot` click keeps its
+  Ref. Autocomplete and the expired/stale hooks are never counted.
+- Default notice: `noctis.rate_limited` in the User Locale, `{retry}` = a Discord
+  relative timestamp (`<t:N:R>`); override the text with a locale overlay
+  (`i18n.md`).
+- Storage: the `RateLimitStore` port under `<app>:rate_limit:` (`adapters.md`); share
+  one store across a Cluster's processes so the limit is global. A store error lets
+  the run through with one `warn` (fail open).
+- Metric: `noctis_rate_limited_total{app, kind}` (`app-and-sharding.md` §11).
+- Clippy's `duplicated_attributes` lint fires when two `rate_limit(..)` of one attribute
+  share the same `per = ".."` text; put
+  `#[expect(clippy::duplicated_attributes, reason = "two limits with one window")]`
+  on the struct.
 
-Dynamic (e.g. charge only on success):
+`manual` limits are never counted before the handler; the handler charges them, so
+only successful uses count. They are still checked: a scope at its count refuses the
+next run.
 
 ```rust
-ctx.rate_limits()
-    .consume(RateScope::User, "bio-edit", RateLimit::new(1, Duration::from_secs(60)))
-    .await?;                                   // Err(RateLimited { retry_after }) when exhausted
-ctx.rate_limits().reset(RateScope::User, "bio-edit").await?;
+#[derive(Modal)]
+#[modal("profile.save", rate_limit(user, 1, per = "1m", manual), defaults(title = "Bio"))]
+pub struct BioForm { /* .. */ }
+
+// in the #[handler]
+ctx.kv().put(&key, &bio, None).await?;
+ctx.rate_limits().hit(RateScope::User).await?;     // Ok(count in this window)
 ```
 
-Override the notice per App, Command or Route with `rate_limited = fn` [planned]:
-`async fn(ctx: &dyn Ctx, retry_after: Duration) -> HandlerResult<StaticMessage>`.
+`ctx.rate_limits()` (on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`) returns a
+`RateLimits` handle; it works only on a scope the handler declares:
+
+| Call | Effect |
+|---|---|
+| `hit(scope).await` | counts one use, returns the window's count (`u64`) |
+| `block(scope, d).await` | refuses the scope for `d` from now (at most a day); a later live block is kept |
+| `extend(scope, d).await` | adds `d` to the live window end (else from now), at most a day from now |
+| `reset(scope).await` | clears the count; a fresh window starts now |
+
+`Duration::ZERO` makes `block`/`extend` a no-op. Errors (`RateLimitError`,
+`#[non_exhaustive]`): `Undeclared { scope }` (no `rate_limit` of that scope),
+`Unkeyed { scope }` (no key in this interaction), `Detached` (the detached test
+seams), `Store(PortError)`. Each converts into `HandlerError` with `?`.
+
+Override the notice. The struct's `#[on_rate_limited]` method wins, then the App's
+`rate_limited_handler`, then the default notice:
+
+```rust
+impl Profile {
+    #[on_rate_limited]                       // a fn without `self`, not generic
+    async fn limited(ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+        // The notice is ephemeral: write it in `ctx.user_locale()`.
+        let text = format!("`{}`: slow down, try again {}", ctx.path(), hit.relative_timestamp());
+        Ok(V2Message::new(Components::new().push(TextDisplay::new(text))))
+    }
+}
+
+// App-wide, for structs without the method (the last call wins):
+builder.rate_limited_handler(slow_down);   // async fn slow_down(RateLimitedCtx, RateLimitHit) -> HandlerResult<V2Message>
+```
+
+- `RateLimitedCtx`: `module()`, `path()` (Command Path, menu name or Route id),
+  `user_id()`, `guild_id()`, `channel_id()`, `user_locale()`, `guild_locale()`,
+  `state::<T>()`. `RateLimitHit`: `scope()`, `limit()` (`RateLimit`: `scope()`,
+  `max_uses()`, `window()`, `is_manual()`), `retry_after()`, `retry_at_unix_secs()`,
+  `relative_timestamp()`.
+- The message is always sent ephemeral (over the `Dispatcher`: a reply to the
+  invoking message). An override that errs or panics sends the default notice and
+  reports to the origin's Error Sink; one that misses the App's `ack_deadline` sends
+  the default notice with one `warn`.
+- `#[on_rate_limited]` on an `EventHandler` struct does not compile (`[INT-14]`): events
+  are never rate-limited.
+
+Test it with the testkit: `response.is_rate_limited()` (`testing.md`).

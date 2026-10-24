@@ -253,9 +253,9 @@ defaults(..))]`: the same grammar as the component attributes, in any order, aro
 - `response = edit`, `response = "update"` or a bare `response` is ``[CID-03] `response`
   takes `update`, `ephemeral` or `public` ``; `auto_defer = 0` is ``[CID-03] `auto_defer`
   takes `true` or `false` `` (help: it takes `ModalResponder<Manual>`); either given twice
-  is ``[CID-03] #[modal] argument `response` is given twice``. `rate_limit(..)` is still
-  rejected (``[CID-03] `rate_limit` is a runtime argument of #[modal] that this Noctis
-  release does not support yet``).
+  is ``[CID-03] #[modal] argument `response` is given twice``. `rate_limit(..)` works on
+  `#[modal]` like on every kind attribute (`message` = the message a component-opened
+  modal came from; `modules-middleware-ratelimits.md` §7).
 - **No modal answers a modal.** `ModalResponder` (`Manual` or not) has no `show_modal()`
   (E0599, INT-04), and any dynamic attempt to show a modal on a submit is
   `ResponderError::ModalUnavailable` with no request.

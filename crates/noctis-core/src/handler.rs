@@ -242,6 +242,12 @@ pub(crate) struct AppShared {
     pub(crate) renderer: Option<Arc<dyn noctis_ports::Renderer>>,
     /// The App-level Expired Handler (`AppBuilder::expired_handler`).
     pub(crate) expired_handler: Option<Arc<crate::component::AppExpiredFn>>,
+    /// The App's namespaced `RateLimitStore` (`<app>:rate_limit:`): stage 5
+    /// and `ctx.rate_limits()` count declared limits in it (FR-46).
+    pub(crate) rate_limits: Arc<dyn noctis_ports::RateLimitStore>,
+    /// The App-level rate-limited override
+    /// (`AppBuilder::rate_limited_handler`).
+    pub(crate) rate_limited: Option<Arc<crate::rate_limits::RateLimitedFn>>,
     /// Called with the interaction id when an interaction's pipeline task
     /// ends (the testkit's hidden seam, `__testing::observe_runs`); `None`
     /// in production. It only observes.

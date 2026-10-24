@@ -609,7 +609,8 @@ async fn recorded_set_matches_catalog() {
     // click, covered by noctis-core's Ref dispatch tests and `refs.rs`;
     // render rows need a Renderer, covered by noctis-core's `render` tests;
     // Discord cache update errors need a failing backend, covered by
-    // noctis-core's `discord_cache` tests and `discord_cache.rs`.
+    // noctis-core's `discord_cache` tests and `discord_cache.rs`; a refused
+    // interaction needs a declared rate limit, covered by `rate_limits.rs`.
     let covered_elsewhere = |name: &str| {
         name.starts_with("noctis_http_")
             || name.starts_with("noctis_interaction_")
@@ -618,6 +619,7 @@ async fn recorded_set_matches_catalog() {
             || name == "noctis_ack_latency_seconds"
             || name == "noctis_ref_lookups_total"
             || name == "noctis_discord_cache_update_errors_total"
+            || name == "noctis_rate_limited_total"
     };
     let mut all: Vec<_> = METRICS
         .iter()

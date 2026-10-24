@@ -126,6 +126,7 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
     let variant = component.variant();
     let build = build_fn(component, &declared);
     let response = attr.args.response.variant();
+    let rate_limits = attr.args.rate_limits.const_item();
     let scaffolding = scaffolding(
         ident,
         Family::Component,
@@ -153,6 +154,7 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
             const ROUTE: &'static ::core::primitive::str = #id;
             const KIND: #core::ComponentKind = #core::ComponentKind::#variant;
             const RESPONSE: #core::__Response = #core::__Response::#response;
+            #rate_limits
         }
 
         #guards
@@ -454,7 +456,7 @@ mod tests {
                 struct B;
             ),
         );
-        assert!(e.contains("`rate_limit` is a runtime argument of #[button] that this Noctis release does not support yet"), "{e}");
+        assert_eq!(e, crate::rate_limit::MISSING_PER, "{e}");
         // Route Guard Matrix 8: `owner` names a field.
         let e = run(
             Component::Button,

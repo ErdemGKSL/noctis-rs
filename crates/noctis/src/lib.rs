@@ -12,15 +12,18 @@
 //!   [`MessageCommand`](macro@MessageCommand),
 //!   [`EventHandler`](macro@EventHandler), [`Button`](macro@Button), the
 //!   select derives and [`Modal`](macro@Modal)), the [`handler`](macro@handler),
-//!   [`autocomplete`](macro@autocomplete), [`on_stale`](macro@on_stale) and
-//!   [`on_expired`](macro@on_expired) method attributes,
+//!   [`autocomplete`](macro@autocomplete), [`on_stale`](macro@on_stale),
+//!   [`on_expired`](macro@on_expired) and
+//!   [`on_rate_limited`](macro@on_rate_limited) method attributes,
 //!   [`CommandHandler`], [`CommandCtx`], [`CommandPath`],
 //!   [`UnknownCommandPath`], [`CommandMetadata`]
 //!   ([`Permissions`], [`InteractionContext`], [`IntegrationType`]),
 //!   [`ContextMenuHandler`], [`MenuKind`], [`MenuTargetError`],
 //!   [`ComponentCtx`], [`ModalSubmitCtx`], [`ComponentHandler`],
 //!   [`ModalHandler`], [`ComponentKind`], [`Expired`], [`ExpiredCtx`],
-//!   [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   the declared rate limits ([`RateScope`], [`RateLimit`],
+//!   [`RateLimitHit`], [`RateLimitedCtx`], [`RateLimits`],
+//!   [`RateLimitError`]), [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
 //!   [`BuildViolation`], [`StartError`], [`RunError`],
 //!   [`LocaleOverlayError`] and [`OverlayViolation`] (runtime locale
@@ -617,7 +620,8 @@ pub use noctis_core::{
     MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit,
     ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue, Options,
     OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions, Plugin,
-    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    RateLimit, RateLimitError, RateLimitHit, RateLimitedCtx, RateLimits, RateScope, RefOps,
+    Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
     ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
     StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
     UnknownCommandPath, Visibility,
@@ -1126,6 +1130,45 @@ pub use noctis_macros::on_stale;
 /// assert!(format!("{:?}", ConfirmBan::descriptor()).contains("on_expired: true"));
 /// ```
 pub use noctis_macros::on_expired;
+
+/// Marks the method of a Command, context-menu, component or modal struct
+/// that answers an invocation one of its declared `rate_limit(..)`s
+/// refused (FR-46, INT-14). It takes no arguments and no `self` (the
+/// handler did not run): `async fn <any>(ctx: RateLimitedCtx, hit:
+/// RateLimitHit) -> HandlerResult<V2Message>`. Its message is sent
+/// ephemeral as the initial response; it wins over
+/// [`AppBuilder::rate_limited_handler`], and without either Noctis sends the
+/// `noctis.rate_limited` notice in the User Locale. An error, a panic or a
+/// missed ack deadline sends the default notice instead.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay, V2Message};
+///
+/// #[derive(SlashCommand)]
+/// #[command("daily", description = "Claim", rate_limit(user, 1, per = "1d", manual))]
+/// struct Daily;
+///
+/// impl Daily {
+///     #[handler]
+///     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+///         // Only a successful claim is charged.
+///         ctx.rate_limits().hit(RateScope::User).await?;
+///         ctx.reply_text("claimed").await
+///     }
+///
+///     #[on_rate_limited]
+///     async fn slow(_ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+///         let text = format!("Next claim {}", hit.relative_timestamp());
+///         Ok(V2Message::new(Components::new().push(TextDisplay::new(text))))
+///     }
+/// }
+///
+/// let debug = format!("{:?}", Daily::descriptor());
+/// assert!(debug.contains("on_rate_limited: true"), "{debug}");
+/// assert_eq!(<Daily as noctis::__private::core::__SlashCommand>::RATE_LIMITS.len(), 1);
+/// ```
+pub use noctis_macros::on_rate_limited;
 
 /// Derives a `USER` context-menu command from a unit struct:
 /// `#[user_command("Name", ..)]` declares it and the `#[handler]` method
@@ -2268,7 +2311,10 @@ pub mod prelude {
     //!   method that handles the interaction and
     //!   [`autocomplete`](macro@autocomplete) an option's suggestion method;
     //!   [`on_stale`](macro@on_stale) and [`on_expired`](macro@on_expired)
-    //!   answer stale and expired ids, [`Expired`] says which.
+    //!   answer stale and expired ids, [`Expired`] says which;
+    //!   [`on_rate_limited`](macro@on_rate_limited) answers a declared
+    //!   `rate_limit(..)` hit with [`RateLimitedCtx`] and [`RateLimitHit`],
+    //!   and handlers count their limits with [`RateScope`].
     //! - [`Module`] (registration with `Module::add::<T>()`), [`App`],
     //!   [`AppBuilder`] and [`State`]: building an App and reading its typed
     //!   state.
@@ -2319,8 +2365,8 @@ pub mod prelude {
         Access, AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
         CommandResponder, ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink,
         Expired, ExpiredCtx, Ext, Flow, HandlerError, HandlerResult, IntoResponse, Manual,
-        Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RawHttp, RefOps,
-        Responded, State, Suggestions, Visibility,
+        Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RateLimitHit,
+        RateLimitedCtx, RateScope, RawHttp, RefOps, Responded, State, Suggestions, Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
@@ -2330,7 +2376,7 @@ pub mod prelude {
     /// Withdrawn forms: each fails with a `= help:` showing the struct form.
     #[doc(hidden)]
     pub use noctis_macros::{Options, Route, command, event, message_command, user_command};
-    pub use noctis_macros::{autocomplete, handler, on_expired, on_stale};
+    pub use noctis_macros::{autocomplete, handler, on_expired, on_rate_limited, on_stale};
     pub use noctis_macros::{components, content, label, placeholder, rgb, webhook_name};
     pub use noctis_rules::MessageKey;
     pub use noctis_ui::{

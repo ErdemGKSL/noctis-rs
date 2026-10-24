@@ -1696,6 +1696,8 @@ pub struct AppBuilder {
     previous_payload_key: Option<PayloadKey>,
     /// The App-level Expired Handler (`expired_handler`).
     expired_handler: Option<Arc<AppExpiredFn>>,
+    /// The App-level rate-limited override (`rate_limited_handler`).
+    rate_limited: Option<Arc<crate::rate_limits::RateLimitedFn>>,
     /// The App's locale override (`locale_resolver`).
     locale_resolver: Option<Arc<dyn crate::LocaleResolver>>,
     /// The hidden run-end observer (`__testing::observe_runs`).
@@ -1804,6 +1806,7 @@ impl AppBuilder {
             payload_key: None,
             previous_payload_key: None,
             expired_handler: None,
+            rate_limited: None,
             locale_resolver: None,
             run_observer: None,
             catalogs: Vec::new(),
@@ -2158,6 +2161,40 @@ impl AppBuilder {
         R: IntoResponse<Component> + IntoResponse<ModalSubmit>,
     {
         self.expired_handler = Some(app_expired(f));
+        self
+    }
+
+    /// Sets the App-level rate-limited override (FR-46, AD-23 stage 5): it
+    /// answers an invocation a declared `rate_limit(..)` refused when the
+    /// struct has no `#[on_rate_limited]` method. Without one, Noctis sends
+    /// the ephemeral `noctis.rate_limited` notice in the User Locale. The
+    /// last call wins.
+    ///
+    /// Its message is always sent ephemeral, as the initial response (a
+    /// type-4 callback; over the `Dispatcher` a reply to the invoking
+    /// message). It runs under `catch_unwind` with the App's `ack_deadline`
+    /// from receipt: an error or a panic sends the default notice and goes
+    /// to the origin's Error Sink; a missed deadline sends the default
+    /// notice with one `warn`.
+    ///
+    /// ```
+    /// use noctis_core::{HandlerResult, RateLimitHit, RateLimitedCtx};
+    /// use noctis_ui::{Components, TextDisplay, V2Message};
+    ///
+    /// async fn slow_down(ctx: RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message> {
+    ///     let text = format!("`{}`: slow down, try again {}", ctx.path(), hit.relative_timestamp());
+    ///     Ok(V2Message::new(Components::new().push(TextDisplay::new(text))))
+    /// }
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.rate_limited_handler(slow_down);
+    /// ```
+    pub fn rate_limited_handler<F, Fut>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(crate::RateLimitedCtx, crate::RateLimitHit) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<noctis_ui::V2Message>> + Send + 'static,
+    {
+        self.rate_limited = Some(crate::rate_limits::erase_rate_limited(f));
         self
     }
 
@@ -2914,6 +2951,7 @@ impl AppBuilder {
         }
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
         let refs: Arc<dyn RefStore> = ports.ref_store.clone();
+        let rate_limits: Arc<dyn RateLimitStore> = ports.rate_limit_store.clone();
         Ok(App {
             runtime: config.runtime,
             token: config.token,
@@ -2936,6 +2974,8 @@ impl AppBuilder {
                 payload_keys,
                 renderer: config.renderer,
                 expired_handler: config.expired_handler,
+                rate_limits,
+                rate_limited: config.rate_limited,
                 run_observer: config.run_observer,
                 gateway: GatewayHandle::detached(),
             }),
@@ -3068,6 +3108,7 @@ impl fmt::Debug for AppBuilder {
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())
             .field("expired_handler", &self.expired_handler.is_some())
+            .field("rate_limited_handler", &self.rate_limited.is_some())
             .field("locale_resolver", &self.locale_resolver.is_some())
             .field("catalogs", &catalogs)
             .field("plugins", &plugins)

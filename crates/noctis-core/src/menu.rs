@@ -19,6 +19,7 @@ use crate::command::{CommandCtx, HandlerFuture, boxed, failed, run_detached, unk
 use crate::handler::{HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, empty_resolved};
+use crate::rate_limits::{__RateLimitedHook, RateLimit, RateLimitedFn};
 use crate::responder::{
     Command, CommandResponder, DeferMode, Ephemerality, IntoResponse, Responder, Shared,
 };
@@ -111,6 +112,10 @@ pub struct ContextMenuHandler {
     requires: &'static [crate::kind::__ExtType],
     /// The `ctxcmd.<key>.name` locale key segment.
     key: Option<&'static str>,
+    /// The declared `rate_limit(..)`s (INT-14).
+    rate_limits: &'static [RateLimit],
+    /// The struct's `#[on_rate_limited]` method.
+    on_rate_limited: Option<Arc<RateLimitedFn>>,
 }
 
 impl ContextMenuHandler {
@@ -144,6 +149,8 @@ impl ContextMenuHandler {
             call: Arc::new(call),
             requires: &[],
             key: None,
+            rate_limits: &[],
+            on_rate_limited: None,
         }
     }
 
@@ -177,6 +184,8 @@ impl ContextMenuHandler {
             call: Arc::new(call),
             requires: &[],
             key: None,
+            rate_limits: &[],
+            on_rate_limited: None,
         }
     }
 
@@ -251,6 +260,37 @@ impl ContextMenuHandler {
         }
     }
 
+    /// Sets the declared rate limits; what `#[handler]` binds from the
+    /// kind trait's `RATE_LIMITS`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_rate_limits(self, rate_limits: &'static [RateLimit]) -> Self {
+        Self {
+            rate_limits,
+            ..self
+        }
+    }
+
+    /// Attaches the struct's `#[on_rate_limited]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_rate_limited(self, hook: __RateLimitedHook) -> Self {
+        Self {
+            on_rate_limited: Some(hook.0),
+            ..self
+        }
+    }
+
+    /// The declared rate limits, in declared order.
+    pub(crate) fn rate_limits(&self) -> &'static [RateLimit] {
+        self.rate_limits
+    }
+
+    /// The struct's `#[on_rate_limited]` method, if any.
+    pub(crate) fn on_rate_limited(&self) -> Option<&Arc<RateLimitedFn>> {
+        self.on_rate_limited.as_ref()
+    }
+
     /// Sets the Extension types the handler requires; what
     /// `__RequireExtensions` calls.
     pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
@@ -284,6 +324,8 @@ impl fmt::Debug for ContextMenuHandler {
             .field("auto_defer", &self.auto_defer)
             .field("metadata", &self.metadata)
             .field("key", &self.key)
+            .field("rate_limits", &self.rate_limits)
+            .field("on_rate_limited", &self.on_rate_limited.is_some())
             .finish_non_exhaustive()
     }
 }

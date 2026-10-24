@@ -14,7 +14,14 @@
 //!    code's own locale file or its sibling's), then the App's
 //!    `LocaleResolver` once. The run's one locale cell is shared by the
 //!    context, the Responder, the notices and the Middleware;
-//! 5. *rate limits: absent until Story 13.4;*
+//! 5. rate limits (FR-46, INT-14): every non-`manual` `rate_limit(..)` the
+//!    handler declares is counted in declared order in the App's namespaced
+//!    `RateLimitStore`; the first one over its count stops the run before
+//!    the auto-defer with one type-4 ephemeral notice (the struct's
+//!    `#[on_rate_limited]`, else the App's `rate_limited_handler`, else
+//!    `noctis.rate_limited` with `{retry}`), one `debug` on
+//!    `noctis::dispatch` and `noctis_rate_limited_total{app, kind}`; a store
+//!    error fails open with one warning;
 //! 6. arm the auto-defer (INT-01): a task that acknowledges the interaction
 //!    with a type-5 callback at `received_at + ack_deadline` unless the
 //!    handler answered first; an `auto_defer = false` handler gets none, only an
@@ -96,6 +103,7 @@ use noctis_gateway::{Inbound, InboundKind};
 use noctis_i18n::keys;
 use noctis_rules::MessageKey;
 use noctis_rules::command::{MenuKind, Scope};
+use noctis_ui::V2Message;
 use tokio_util::sync::CancellationToken;
 use tracing::field::Empty;
 use tracing::{Instrument, Span};
@@ -121,11 +129,12 @@ use crate::menu::MenuInput;
 use crate::middleware::{Around, Before, Chain, Invocation, RunInfo, RunOutcome};
 use crate::notice;
 use crate::options::CommandInput;
+use crate::rate_limits::{RateIds, RateLimitHit, RateLimitedCtx, RateLimitedFn, RateRun, Stage5};
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    Ephemerality, GuardPhase, InteractionTarget, MessageTarget, PENDING, ResponderError, Response,
-    ResponseValue, Shared, Transport,
+    Ephemerality, GuardPhase, InteractionTarget, MessageTarget, OutgoingMessage, PENDING,
+    ResponderError, Response, ResponseValue, Shared, Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
 use crate::worker::panic_message;
@@ -215,6 +224,22 @@ impl Resolved {
             Self::Menu(entry) => Invocation::ContextMenu {
                 name: entry.handler.menu_name(),
             },
+        }
+    }
+
+    /// The declared rate limits.
+    fn rate_limits(&self) -> &'static [crate::RateLimit] {
+        match self {
+            Self::Command { entry, .. } => entry.handler.rate_limits(),
+            Self::Menu(entry) => entry.handler.rate_limits(),
+        }
+    }
+
+    /// The struct's `#[on_rate_limited]` method.
+    fn on_rate_limited(&self) -> Option<Arc<RateLimitedFn>> {
+        match self {
+            Self::Command { entry, .. } => entry.handler.on_rate_limited().cloned(),
+            Self::Menu(entry) => entry.handler.on_rate_limited().cloned(),
         }
     }
 
@@ -784,6 +809,162 @@ pub(crate) async fn send_notice(
     }
 }
 
+/// What stage 5 needs to answer a refused run: the responder state (no
+/// callback sent yet), the run's report, the parts a [`RateLimitedCtx`]
+/// reads, the struct's `#[on_rate_limited]` method, and the override's
+/// deadline and cancel token.
+pub(crate) struct Limited<'a> {
+    pub(crate) shared: &'a Arc<Shared>,
+    pub(crate) report: &'a Report<'a>,
+    pub(crate) parts: Arc<CtxInner>,
+    pub(crate) hook: Option<Arc<RateLimitedFn>>,
+    pub(crate) deadline: tokio::time::Instant,
+    pub(crate) cancel: Option<&'a CancellationToken>,
+}
+
+/// AD-23 stage 5 (FR-46, INT-14): counts `rate`'s declared limits; on a
+/// hit, one `debug` on `noctis::rate_limit` (no ids), one
+/// `noctis_rate_limited_total{app, kind}`, a taken `one_shot` record put
+/// back, and the answer: the struct's `#[on_rate_limited]` message, else
+/// the App's `rate_limited_handler` message, else the localized
+/// `noctis.rate_limited` notice, always ephemeral. Returns whether the run
+/// was refused (no Middleware, no handler, no report then).
+pub(crate) async fn rate_limit(span: &Span, rate: &RateRun, limited: Limited<'_>) -> bool {
+    if rate.is_empty() {
+        return false;
+    }
+    let hit = match rate.stage5().instrument(span.clone()).await {
+        Stage5::Pass => return false,
+        Stage5::Hit(hit) => hit,
+    };
+    let report = limited.report;
+    let app = report.app;
+    span.in_scope(|| {
+        tracing::debug!(
+            target: "noctis::rate_limit",
+            handler = report.handler,
+            scope = hit.scope().as_str(),
+            limit = hit.limit().max_uses(),
+            window_secs = hit.limit().window().as_secs(),
+            retry_ms = u64::try_from(hit.retry_after().as_millis()).unwrap_or(u64::MAX),
+            "rate limited"
+        );
+    });
+    metrics::counter!(
+        "noctis_rate_limited_total",
+        "app" => Arc::clone(&app.app),
+        "kind" => report.origin.as_str()
+    )
+    .increment(1);
+    if let Some(restore) = &report.restore {
+        restore_ref(app, restore).instrument(span.clone()).await;
+    }
+    let hook = limited.hook.clone().or_else(|| app.rate_limited.clone());
+    let custom = match hook {
+        Some(hook) => run_rate_limited(span, &hook, &limited, hit).await,
+        None => None,
+    };
+    let sent = if let Some(msg) = custom {
+        limited
+            .shared
+            .notice_message(OutgoingMessage::V2(msg))
+            .instrument(span.clone())
+            .await
+    } else {
+        let locale = report.locales.get().user;
+        let retry = hit.relative_timestamp();
+        let text = span.in_scope(|| {
+            notice::text_with(
+                &*app.strings,
+                locale,
+                keys::RATE_LIMITED,
+                &[("retry", &retry)],
+            )
+        });
+        limited.shared.notice(text).instrument(span.clone()).await
+    };
+    if let Err(error) = sent {
+        span.in_scope(|| {
+            tracing::warn!(
+                target: "noctis::rate_limit",
+                handler = report.handler,
+                %error,
+                "could not send the rate-limit notice"
+            );
+        });
+    }
+    true
+}
+
+/// Runs a rate-limited override under `catch_unwind`, `limited.deadline`
+/// and the cancel token: its message, or `None` for the default notice (an
+/// error or a panic reported to the origin's Error Sink, a missed deadline
+/// or a cancellation one `warn`).
+async fn run_rate_limited(
+    span: &Span,
+    hook: &Arc<RateLimitedFn>,
+    limited: &Limited<'_>,
+    hit: RateLimitHit,
+) -> Option<V2Message> {
+    let report = limited.report;
+    let ctx = RateLimitedCtx::new(Arc::clone(&limited.parts));
+    let started = span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| hook(ctx, hit))));
+    let fut = match started {
+        Ok(fut) => fut,
+        Err(panic) => {
+            let message = panic_message(&*panic);
+            span.in_scope(|| {
+                report_logged(report.app, report.error_report(ReportKind::Panic(message)));
+            });
+            return None;
+        }
+    };
+    let run = AssertUnwindSafe(fut)
+        .catch_unwind()
+        .instrument(span.clone());
+    let sleep = tokio::time::sleep_until(limited.deadline);
+    let outcome = if let Some(cancel) = limited.cancel {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => None,
+            () = sleep => None,
+            result = run => Some(result),
+        }
+    } else {
+        tokio::select! {
+            biased;
+            () = sleep => None,
+            result = run => Some(result),
+        }
+    };
+    match outcome {
+        Some(Ok(Ok(msg))) => Some(msg),
+        Some(Ok(Err(error))) => {
+            span.in_scope(|| {
+                report_logged(report.app, report.error_report(ReportKind::Error(&error)));
+            });
+            None
+        }
+        Some(Err(panic)) => {
+            let message = panic_message(&*panic);
+            span.in_scope(|| {
+                report_logged(report.app, report.error_report(ReportKind::Panic(message)));
+            });
+            None
+        }
+        None => {
+            span.in_scope(|| {
+                tracing::warn!(
+                    target: "noctis::rate_limit",
+                    handler = report.handler,
+                    "the rate-limited override missed its deadline: sent the default notice"
+                );
+            });
+            None
+        }
+    }
+}
+
 /// Hands `report` to its origin's sink. A custom sink replaces [`LogSink`],
 /// so the full error chain is logged first, inside the current span, and
 /// appears in the logs exactly once either way (FR-22).
@@ -885,6 +1066,15 @@ pub(crate) async fn run_interaction(
         });
         return;
     };
+    // A message command's target is its `message` rate-limit key.
+    let target_message = match (&resolved, &interaction.data) {
+        (Resolved::Menu(entry), Some(InteractionData::ApplicationCommand(data)))
+            if entry.handler.kind() == MenuKind::Message =>
+        {
+            data.target_id.map(Id::cast::<MessageMarker>)
+        }
+        _ => None,
+    };
     // Stage 2 (Ref resolution) has nothing to do: a Command has no Ref.
     // Stage 3 (Module enablement) lands with Stories 13.2 and 13.3.
     // Stage 4: resolve the locales.
@@ -913,7 +1103,19 @@ pub(crate) async fn run_interaction(
         resolved.handler(),
     );
     let around = resolved.around(&app, shard, guild_id, channel_id, user_id, &locales);
+    let rate = Arc::new(RateRun::new(
+        Arc::clone(&app.rate_limits),
+        resolved.handler(),
+        resolved.rate_limits(),
+        RateIds {
+            user: user_id,
+            guild: guild_id,
+            channel: channel_id,
+            message: target_message,
+        },
+    ));
     let parts = CtxInner {
+        path: resolved.path(),
         module: resolved.module(),
         shard,
         guild_id,
@@ -922,9 +1124,9 @@ pub(crate) async fn run_interaction(
         locales: Arc::clone(&locales),
         app: Some(Arc::clone(&app)),
         run: around.run(),
+        rate: Some(Arc::clone(&rate)),
         ..CtxInner::detached_parts(ephemerality)
     };
-    // Stage 5 (rate limits) lands with Story 13.4.
     let transport = Transport::Interaction(InteractionTarget {
         app: Arc::clone(&app),
         application_id,
@@ -938,15 +1140,6 @@ pub(crate) async fn run_interaction(
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
     let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
     state.set_i18n(Arc::clone(&app.strings), Arc::clone(&locales));
-    // Stage 6: the auto-defer.
-    let armed = Armed {
-        handler: resolved.handler(),
-        module: resolved.module(),
-        auto_defer: resolved.auto_defer(),
-    };
-    let timer = arm(&app, &state, &armed, received_at, &span);
-    // Stage 7 (before-Middleware) runs in `run_started`, once the handler
-    // future exists; Commands have no stage 8 (Guards).
     let report = Report {
         app: &app,
         origin: ErrorOrigin::Command,
@@ -959,6 +1152,27 @@ pub(crate) async fn run_interaction(
         around: Some(around),
         restore: None,
     };
+    // Stage 5: the declared rate limits; a refused run is answered here.
+    let limited = Limited {
+        shared: &state,
+        report: &report,
+        parts: Arc::new(parts.rate_limited_parts()),
+        hook: resolved.on_rate_limited(),
+        deadline: received_at + app.ack_deadline,
+        cancel: Some(&cancel),
+    };
+    if rate_limit(&span, &rate, limited).await {
+        return;
+    }
+    // Stage 6: the auto-defer.
+    let armed = Armed {
+        handler: resolved.handler(),
+        module: resolved.module(),
+        auto_defer: resolved.auto_defer(),
+    };
+    let timer = arm(&app, &state, &armed, received_at, &span);
+    // Stage 7 (before-Middleware) runs in `run_started`, once the handler
+    // future exists; Commands have no stage 8 (Guards).
     let start = start(&resolved, raw.as_bytes(), parts);
     execute(&span, Some(&cancel), state, start, Some(timer), report).await;
 }
@@ -1618,6 +1832,17 @@ impl Dispatcher {
             },
             false,
         );
+        let rate = Arc::new(RateRun::new(
+            Arc::clone(&self.app.rate_limits),
+            entry.handler.name(),
+            entry.handler.rate_limits(),
+            RateIds {
+                user: user_id,
+                guild: guild_id,
+                channel: Some(channel_id),
+                message: None,
+            },
+        ));
         let parts = CtxInner {
             path,
             input,
@@ -1635,6 +1860,7 @@ impl Dispatcher {
             shared: None,
             values: crate::component::SelectedValues::default(),
             unknown: Vec::new(),
+            rate: Some(Arc::clone(&rate)),
         };
         let target = (channel_id, message_id);
         let shared = self.message_shared(target, ephemerality, Arc::clone(&locales));
@@ -1650,6 +1876,19 @@ impl Dispatcher {
             around: Some(around),
             restore: None,
         };
+        // Stage 5: the declared rate limits (a slash Command has no
+        // `message` scope, so the invoking message keys nothing).
+        let limited = Limited {
+            shared: &shared,
+            report: &report,
+            parts: Arc::new(parts.rate_limited_parts()),
+            hook: entry.handler.on_rate_limited().cloned(),
+            deadline: tokio::time::Instant::now() + self.app.ack_deadline,
+            cancel: None,
+        };
+        if rate_limit(&span, &rate, limited).await {
+            return Ok(());
+        }
         let entry = Arc::clone(entry);
         let start = move |shared: Arc<Shared>| {
             let parts = CtxInner {

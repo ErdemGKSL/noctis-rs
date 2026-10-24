@@ -22,6 +22,11 @@ const GUARD_KEYS: [&str; 3] = [
 ];
 /// The built-in expired notice key.
 const EXPIRED_KEY: &str = "noctis.expired";
+/// The built-in rate-limit notice key (`{retry}` is a relative
+/// timestamp).
+const RATE_LIMITED_KEY: &str = "noctis.rate_limited";
+/// What stands for `{retry}` while matching the rate-limit notice.
+const RETRY_MARK: &str = "\u{1}";
 /// The built-in error notice keys.
 const ERROR_KEYS: [&str; 2] = ["noctis.error.generic", "noctis.validation.failed"];
 
@@ -190,6 +195,10 @@ impl Run<'_> {
         let guard: Vec<String> = GUARD_KEYS.into_iter().map(text).collect();
         let expired = text(EXPIRED_KEY);
         let error: Vec<String> = ERROR_KEYS.into_iter().map(text).collect();
+        let limited =
+            self.probe
+                .notice_with(RATE_LIMITED_KEY, user, guild, &[("retry", &RETRY_MARK)]);
+        let (before, after) = limited.split_once(RETRY_MARK).unwrap_or((&limited, ""));
         let mut notices = Notices::default();
         for message in messages {
             let Some(shown) = single_text(&message.raw) else {
@@ -198,6 +207,10 @@ impl Run<'_> {
             notices.guard |= guard.iter().any(|t| t == shown);
             notices.expired |= expired == shown;
             notices.error |= error.iter().any(|t| t == shown);
+            notices.rate_limited |= shown.len() > before.len() + after.len()
+                && shown.starts_with(before)
+                && shown.ends_with(after)
+                && shown[before.len()..shown.len() - after.len()].starts_with("<t:");
         }
         notices
     }

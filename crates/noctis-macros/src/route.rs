@@ -12,6 +12,7 @@ use syn::{Attribute, Ident, Lit, LitStr, Meta};
 use crate::common::{combine, error};
 use crate::duration::{DurationError, parse_secs};
 use crate::flags::Flags;
+use crate::rate_limit::RateLimits;
 
 /// How a Route's body is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +70,8 @@ pub(crate) struct RouteArgs {
     pub(crate) guards: GuardArgs,
     /// `flags = [..]`: the Boot Flags (FR-73).
     pub(crate) flags: Flags,
+    /// `rate_limit(..)`, once per scope (AD-23 stage 5, INT-14).
+    pub(crate) rate_limits: RateLimits,
 }
 
 /// The Route Guard arguments of a kind attribute (FR-19, AD-23 stage 8);
@@ -121,7 +124,8 @@ pub(crate) struct RefArgs {
     pub(crate) one_shot: bool,
 }
 
-/// The argument names after the id, besides `defaults(..)`.
+/// The argument names after the id, besides `defaults(..)` and
+/// `rate_limit(..)`.
 const ARG_NAMES: [&str; 12] = [
     "by_ref",
     "overflow",
@@ -136,10 +140,6 @@ const ARG_NAMES: [&str; 12] = [
     "guard",
     "flags",
 ];
-
-/// The runtime arguments of AD-6 that a later story adds (`rate_limit` in
-/// 13.4).
-const RUNTIME_ARGS: [&str; 1] = ["rate_limit"];
 
 const TTL_HELP: &str = "write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")";
 
@@ -271,6 +271,7 @@ struct Seen {
     one_shot: Option<Ident>,
     guards: GuardArgs,
     flags: Flags,
+    rate_limits: RateLimits,
     names: Vec<String>,
 }
 
@@ -345,6 +346,7 @@ fn parse_list(
             },
             guards: seen.guards,
             flags: seen.flags,
+            rate_limits: seen.rate_limits,
         },
         seen.defaults,
     ))
@@ -417,8 +419,10 @@ fn parse_arg(
         return;
     };
     let key = name.to_string();
-    if let Some(error) = unsupported_runtime_arg(name, &key, a) {
-        errors.push(error);
+    if key == "rate_limit" {
+        if let Err(error) = seen.rate_limits.parse(segment) {
+            errors.push(error);
+        }
         return;
     }
     if key == "defaults" {
@@ -518,18 +522,6 @@ fn parse_defaults(
             "write `defaults(..)` with the kind's keys",
         )),
     }
-}
-
-/// The "not supported yet" error of a runtime argument this release does
-/// not take on `#[attr]` (only `rate_limit`, Story 13.4).
-fn unsupported_runtime_arg(name: &Ident, key: &str, attr: &str) -> Option<syn::Error> {
-    RUNTIME_ARGS.contains(&key).then(|| {
-        cid_03(
-            name,
-            format!("`{key}` is a runtime argument of #[{attr}] that this Noctis release does not support yet"),
-            "remove it for now; runtime arguments arrive with their release",
-        )
-    })
 }
 
 /// `response = update | ephemeral | public` (a bare identifier).
@@ -850,6 +842,7 @@ mod tests {
             ref_args: super::RefArgs::default(),
             guards: super::GuardArgs::default(),
             flags: crate::flags::Flags::default(),
+            rate_limits: crate::rate_limit::RateLimits::default(),
         }
     }
 
@@ -908,10 +901,6 @@ mod tests {
         (
             "#[button(\"a\", colour)] struct R;",
             "[CID-03] unknown #[button] argument `colour`",
-        ),
-        (
-            "#[button(\"a\", rate_limit(user, 5, per = \"1m\"))] struct R;",
-            "[CID-03] `rate_limit` is a runtime argument of #[button] that this Noctis release does not support yet",
         ),
         ("#[button(\"a\", owner)] struct R;", OWNER_TEXT),
         ("#[button(\"a\", owner = \"user\")] struct R;", OWNER_TEXT),
@@ -1016,10 +1005,6 @@ mod tests {
         (
             "#[button(\"a\", signed = true)] struct R;",
             "[CID-03] `signed` is a flag and takes no value",
-        ),
-        (
-            "#[button(\"a\", rate_limit(user, 3))] struct R;",
-            "[CID-03] `rate_limit` is a runtime argument",
         ),
         (
             "#[button(\"a\", response = edit)] struct R;",
@@ -1289,6 +1274,58 @@ mod tests {
             })
     }
 
+    /// Story 13.4 G14, G15: `rate_limit(..)` on every kind attribute,
+    /// repeated per scope, with the other runtime arguments; the codec
+    /// width is unchanged.
+    #[test]
+    fn int_14_route_rate_limits() {
+        use crate::rate_limit::Scope;
+
+        let plain: DeriveInput = parse_quote!(
+            #[button("a", by_ref)]
+            struct R;
+        );
+        let limited: DeriveInput = parse_quote!(
+            #[button("a", by_ref, rate_limit(message, 1, per = "1m"), owner = user,
+                     guard = auth::ok, rate_limit(user, 3, per = "10s", manual),
+                     defaults(style = Primary, label = "a"))]
+            struct R;
+        );
+        let plain = parse(&plain).unwrap();
+        let args = parse(&limited).unwrap();
+        let decls: Vec<_> = args
+            .rate_limits
+            .decls
+            .iter()
+            .map(|d| (d.scope, d.max_uses, d.window_secs, d.manual))
+            .collect();
+        assert_eq!(
+            decls,
+            [(Scope::Message, 1, 60, false), (Scope::User, 3, 10, true)]
+        );
+        let ty = quote::quote!(Self);
+        let width = |a: &RouteArgs| {
+            let out = route_impls(&syn::parse_quote!(R), a, &ty).to_string();
+            out.lines()
+                .filter(|l| l.contains("MAX_LEN"))
+                .collect::<String>()
+        };
+        assert_eq!(width(&plain), width(&args));
+        let modal: DeriveInput = parse_quote!(
+            #[modal("m", rate_limit(message, 2, per = "1h"), defaults(title = "T"))]
+            struct R;
+        );
+        assert_eq!(parse_modal(&modal).unwrap().rate_limits.decls.len(), 1);
+        let bad: DeriveInput = parse_quote!(
+            #[button("a", rate_limit(users, 5, per = "1m"))]
+            struct R;
+        );
+        assert_eq!(
+            parse(&bad).unwrap_err(),
+            "[INT-14] unknown rate-limit scope `users`: expected `user`, `member`, `channel`, `guild` or `message`"
+        );
+    }
+
     /// Story 7.8 rows 1-4: `#[modal]` takes `response` and `auto_defer`
     /// with the component grammar.
     #[test]
@@ -1379,7 +1416,7 @@ mod tests {
             ),
             (
                 "rate_limit(user, 3)",
-                "[CID-03] `rate_limit` is a runtime argument of #[modal] that this Noctis release does not support yet",
+                "[INT-14] `rate_limit` needs a window: `rate_limit(user, 3, per = \"10s\")`",
             ),
             ("response = edit, auto_defer = 1", RESPONSE),
         ];

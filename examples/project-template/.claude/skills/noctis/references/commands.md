@@ -97,9 +97,9 @@ Compile-time checks on the literal (each error names its rule):
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
 `description`, `max_expansions`, `response`, `auto_defer` and the metadata arguments
-`permissions`, `contexts`, `integration_types`, `nsfw` and `guilds`, plus `flags`
+`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` and `rate_limit(..)`, plus `flags`
 (Boot Flags, `modules-middleware-ratelimits.md` §2) and `locales`/`default_locale`. Every argument marked
-[planned] is a compile error today (`` `#[command]` argument `rate_limit` is planned and
+[planned] is a compile error today (`` `#[command]` argument `apps` is planned and
 not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
 argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`,
 `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or
@@ -122,7 +122,7 @@ are unknown arguments naming their replacement: `` unknown `#[command]` argument
 | `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
 | `nsfw = true` | age-restricted: `true` or `false`, anything else is `` [CMD-07] `nsfw` takes `true` or `false` `` |
 | `guilds = [123456789012345678]` | guild-scoped: published only to these guilds. Integer literals only (no consts or paths), non-zero, distinct, `u64` (`42u64` works). `contexts`/`integration_types` are then a compile error: ``[META-03] contexts: limit only on global commands, actual `[Guild]` `` with `= note: scope: guild 42` (the first id). Dev-guild publishing comes from `--publish-guild` |
-| `rate_limit(user, 3, per = "10s")` | [planned] see `modules-middleware-ratelimits.md` |
+| `rate_limit(user, 3, per = "10s")` | N uses per window per scope (`user`, `member`, `channel`, `guild`; `message` only on `#[message_command]`), repeatable, `manual` to count only `ctx.rate_limits().hit(..)`; errors cite `[INT-14]`; see `modules-middleware-ratelimits.md` §7 |
 | `flags = ["beta"]` | Boot Flags: the Command exists only when the selection is `all` or holds one of them (`modules-middleware-ratelimits.md` §2). A non-empty list of string literals, each 1-32 of `a-z`, `0-9`, `_`, `-` (not `all`/`none`), no repeats; errors: ``invalid Boot Flag `Beta` in `flags`: …``, `` `flags` needs at least one Boot Flag … ``, `` `flags` takes a list of string literals … `` |
 | `apps = ["main"]` | [planned] publish only for these Apps (multi-App) |
 
@@ -742,7 +742,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
   and `response = public | ephemeral` and `auto_defer = true | false` (with `false` the
   handler takes `r: CommandResponder<Manual>`; same `[INT-04]`/`[INT-05]` errors as
-  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `flags = ["beta"]` declares Boot Flags (same rules as §1); `rate_limit(..)` and `apps` are [planned] here; `max_expansions` and other names are
+  §1). `key = "show_profile"` names the locale key `ctxcmd.<key>.name` (one key segment: ``` `key` is one locale key segment (ASCII letters, digits, `_`, `-`) ```; a non-literal is ``` `key` takes a string literal ```). `flags = ["beta"]` declares Boot Flags (same rules as §1); `rate_limit(..)` works here (`message` scope only on `#[message_command]`); `apps` is [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
@@ -906,9 +906,12 @@ message's (or the submit's) components Noctis does not model, verbatim
 Every context also has `cache() -> DiscordCacheReader`, the Discord resource cache
 (owned values; `adapters.md` §1.2).
 
+`ctx.rate_limits()` (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`): `hit`, `block`,
+`extend`, `reset` on a declared `rate_limit(..)` scope
+(`modules-middleware-ratelimits.md` §7).
+
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
-`modules()`,
-`rate_limits()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
+`modules()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
 Command-only: `attachment_size_limit()`.
 
 ## 9. Prefix commands (`prefix` feature, P2)

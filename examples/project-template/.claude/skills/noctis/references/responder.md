@@ -273,9 +273,8 @@ Anti-patterns:
 
 `auto_defer` and `response` ship on `#[command]`, `#[user_command]`,
 `#[message_command]`, every component kind attribute and `#[modal]` (carried by the
-derive's `__Modal::RESPONSE` and `__Kind::Defer`); only `rate_limit(..)` is still
-``[CID-03] `rate_limit` is a runtime argument of #[..] that this Noctis release does not
-support yet``.
+derive's `__Modal::RESPONSE` and `__Kind::Defer`); so does `rate_limit(..)`
+(`modules-middleware-ratelimits.md` §7): a refused run never reaches the responder.
 `CommandHandler::auto_defer()` and `ContextMenuHandler::auto_defer()` read the flag,
 `ephemerality()` the declared `response`. Argument errors (the same on `#[modal]`, whose
 `auto_defer` help names `ModalResponder<Manual>`): `response = update` on a

@@ -42,6 +42,7 @@ use crate::guard::{__Guards, GuardDenied};
 use crate::handler::{HandlerError, HandlerResult};
 use crate::kind::__Response;
 use crate::pipeline::component::Rejection;
+use crate::rate_limits::{__RateLimitedHook, RateLimit, RateLimitedFn, RateLimits};
 use crate::responder::{
     AutoDefer, Component, Declared, DeferMode, Ephemerality, GuardPhase, IntoResponse, KnownFiles,
     ModalSubmit, NonceSet, Pending, Responded, Responder, ResponderKind, Response, Shared,
@@ -340,6 +341,14 @@ impl ComponentCtx {
         crate::command::limits_of(self.0.app.as_deref())
     }
 
+    /// The handler's declared rate limits (`rate_limit(..)` on its kind
+    /// attribute): count, block, extend or reset them for the next click
+    /// (FR-46). Every call of a detached test context is
+    /// `RateLimitError::Detached`.
+    pub fn rate_limits(&self) -> RateLimits {
+        self.0.rate_limits()
+    }
+
     /// The values the user picked, typed by the select's kind (see
     /// [`SelectedValues`]); empty for a button click.
     pub fn values(&self) -> &SelectedValues {
@@ -380,6 +389,14 @@ impl ModalSubmitCtx {
     /// seams.
     pub fn limits(&self) -> &Limits {
         crate::command::limits_of(self.0.app.as_deref())
+    }
+
+    /// The handler's declared rate limits (`rate_limit(..)` on its
+    /// `#[modal]` attribute): count, block, extend or reset them for the
+    /// next submit (FR-46). Every call of a detached test context is
+    /// `RateLimitError::Detached`.
+    pub fn rate_limits(&self) -> RateLimits {
+        self.0.rate_limits()
     }
 
     /// The submitted components Noctis does not model, verbatim
@@ -792,6 +809,10 @@ pub struct ComponentHandler {
     on_expired: Option<Arc<HookFn<ComponentCtx>>>,
     /// The Extension types its `Ext<T>` parameters require.
     requires: &'static [crate::kind::__ExtType],
+    /// The declared `rate_limit(..)`s (INT-14).
+    rate_limits: &'static [RateLimit],
+    /// The struct's `#[on_rate_limited]` method.
+    on_rate_limited: Option<Arc<RateLimitedFn>>,
 }
 
 impl ComponentHandler {
@@ -893,6 +914,8 @@ impl ComponentHandler {
             on_stale: None,
             on_expired: None,
             requires: &[],
+            rate_limits: &[],
+            on_rate_limited: None,
         }
     }
 
@@ -910,6 +933,37 @@ impl ComponentHandler {
     pub fn __with_on_expired(mut self, hook: __ExpiredHook<ComponentCtx>) -> Self {
         self.on_expired = Some(hook.0);
         self
+    }
+
+    /// Sets the declared rate limits; what `#[handler]` binds from the
+    /// kind trait's `RATE_LIMITS`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_rate_limits(self, rate_limits: &'static [RateLimit]) -> Self {
+        Self {
+            rate_limits,
+            ..self
+        }
+    }
+
+    /// Attaches the struct's `#[on_rate_limited]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_rate_limited(self, hook: __RateLimitedHook) -> Self {
+        Self {
+            on_rate_limited: Some(hook.0),
+            ..self
+        }
+    }
+
+    /// The declared rate limits, in declared order.
+    pub(crate) fn rate_limits(&self) -> &'static [RateLimit] {
+        self.rate_limits
+    }
+
+    /// The struct's `#[on_rate_limited]` method, if any.
+    pub(crate) fn on_rate_limited(&self) -> Option<&Arc<RateLimitedFn>> {
+        self.on_rate_limited.as_ref()
     }
 
     /// Sets the Extension types the handler requires; what
@@ -1047,6 +1101,8 @@ impl fmt::Debug for ComponentHandler {
             .field("one_shot", &self.one_shot)
             .field("on_stale", &self.on_stale.is_some())
             .field("on_expired", &self.on_expired.is_some())
+            .field("rate_limits", &self.rate_limits)
+            .field("on_rate_limited", &self.on_rate_limited.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -1076,6 +1132,10 @@ pub struct ModalHandler {
     on_expired: Option<Arc<HookFn<ModalSubmitCtx>>>,
     /// The Extension types its `Ext<T>` parameters require.
     requires: &'static [crate::kind::__ExtType],
+    /// The declared `rate_limit(..)`s (INT-14).
+    rate_limits: &'static [RateLimit],
+    /// The struct's `#[on_rate_limited]` method.
+    on_rate_limited: Option<Arc<RateLimitedFn>>,
 }
 
 impl ModalHandler {
@@ -1169,6 +1229,8 @@ impl ModalHandler {
             on_stale: None,
             on_expired: None,
             requires: &[],
+            rate_limits: &[],
+            on_rate_limited: None,
         }
     }
 
@@ -1186,6 +1248,37 @@ impl ModalHandler {
     pub fn __with_on_expired(mut self, hook: __ExpiredHook<ModalSubmitCtx>) -> Self {
         self.on_expired = Some(hook.0);
         self
+    }
+
+    /// Sets the declared rate limits; what `#[handler]` binds from the
+    /// kind trait's `RATE_LIMITS`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_rate_limits(self, rate_limits: &'static [RateLimit]) -> Self {
+        Self {
+            rate_limits,
+            ..self
+        }
+    }
+
+    /// Attaches the struct's `#[on_rate_limited]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_rate_limited(self, hook: __RateLimitedHook) -> Self {
+        Self {
+            on_rate_limited: Some(hook.0),
+            ..self
+        }
+    }
+
+    /// The declared rate limits, in declared order.
+    pub(crate) fn rate_limits(&self) -> &'static [RateLimit] {
+        self.rate_limits
+    }
+
+    /// The struct's `#[on_rate_limited]` method, if any.
+    pub(crate) fn on_rate_limited(&self) -> Option<&Arc<RateLimitedFn>> {
+        self.on_rate_limited.as_ref()
     }
 
     /// Sets the Extension types the handler requires; what
@@ -1315,6 +1408,8 @@ impl fmt::Debug for ModalHandler {
             .field("one_shot", &self.one_shot)
             .field("on_stale", &self.on_stale.is_some())
             .field("on_expired", &self.on_expired.is_some())
+            .field("rate_limits", &self.rate_limits)
+            .field("on_rate_limited", &self.on_rate_limited.is_some())
             .finish_non_exhaustive()
     }
 }

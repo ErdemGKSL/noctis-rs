@@ -11,7 +11,18 @@ use crate::options::OptionError;
 /// The text of `key` in `locale`. A key no catalog has renders the generic
 /// error text, with one `warn` on target `noctis::i18n`.
 pub(crate) fn text(strings: &dyn Translate, locale: Locale, key: MessageKey) -> String {
-    if let Some(text) = strings.translate(locale, key, &[]) {
+    text_with(strings, locale, key, &[])
+}
+
+/// The text of `key` in `locale` with its `{name}` arguments replaced;
+/// like [`text`] for a key no catalog has.
+pub(crate) fn text_with(
+    strings: &dyn Translate,
+    locale: Locale,
+    key: MessageKey,
+    args: &[(&str, &dyn std::fmt::Display)],
+) -> String {
+    if let Some(text) = strings.translate(locale, key, args) {
         return text;
     }
     tracing::warn!(target: "noctis::i18n", key = key.as_str(), "missing message key");

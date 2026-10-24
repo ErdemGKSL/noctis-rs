@@ -2280,9 +2280,20 @@ impl Shared {
     ///
     /// The follow-up cap and the token expiry apply (INT-11, INT-02).
     pub(crate) async fn notice(self: &Arc<Self>, text: String) -> Result<(), ResponderError> {
-        let mut msg = OutgoingMessage::V2(V2Message::new(
+        self.notice_message(OutgoingMessage::V2(V2Message::new(
             Components::new().push(TextDisplay::new(text)),
-        ));
+        )))
+        .await
+    }
+
+    /// Sends `msg` like [`notice`](Self::notice) sends its text: always
+    /// ephemeral over an interaction (a public reply over a message
+    /// transport), in the state's current phase. The rate-limited
+    /// overrides answer through it (FR-46).
+    pub(crate) async fn notice_message(
+        self: &Arc<Self>,
+        mut msg: OutgoingMessage,
+    ) -> Result<(), ResponderError> {
         self.prepare(&mut msg, Ephemerality::Ephemeral).await?;
         let visibility = if self.transport.is_message() {
             Ephemerality::Public

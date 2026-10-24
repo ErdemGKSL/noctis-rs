@@ -28,6 +28,7 @@ use crate::metadata::CommandMetadata;
 use crate::middleware::{Ext, ExtensionMissing, Extensions};
 use crate::module::{Descriptor, Module, sealed};
 use crate::options::Options;
+use crate::rate_limits::{__RateLimitedHook, RateLimit};
 use crate::responder::{
     AutoDefer, Command, Component, DeferMode, Ephemerality, IntoResponse, Manual, ModalSubmit,
     Pending, Responder, ResponderKind,
@@ -123,6 +124,8 @@ pub trait __SlashCommand:
     const METADATA: CommandMetadata;
     /// The declared `response`.
     const EPHEMERALITY: Ephemerality;
+    /// The declared `rate_limit(..)`s, in declared order (INT-14).
+    const RATE_LIMITS: &'static [RateLimit] = &[];
 }
 
 /// A slash Command whose Pattern has no group: its handler takes no path.
@@ -155,6 +158,7 @@ fn slash<S: __SlashCommand>(handler: CommandHandler) -> CommandHandler {
         .__with_descriptions(S::DESCRIPTIONS)
         .__with_metadata(S::METADATA)
         .__with_ephemerality(S::EPHEMERALITY)
+        .__with_rate_limits(S::RATE_LIMITS)
 }
 
 impl<S, F, Fut, R> __Bind<__C, S, F> for __SlashKind
@@ -255,6 +259,8 @@ pub trait __ContextMenu: __Kind<Kind = __MenuKind, Descriptor = ContextMenuHandl
     /// The declared `key = "…"`: the `ctxcmd.<key>.name` locale key
     /// segment, if any.
     const KEY: Option<&'static str> = None;
+    /// The declared `rate_limit(..)`s, in declared order (INT-14).
+    const RATE_LIMITS: &'static [RateLimit] = &[];
     /// The unit struct.
     fn __new() -> Self;
 }
@@ -355,6 +361,7 @@ where
         )
         .__with_ephemerality(S::EPHEMERALITY)
         .with_key_opt(S::KEY)
+        .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -373,6 +380,7 @@ where
         })
         .__with_ephemerality(S::EPHEMERALITY)
         .with_key_opt(S::KEY)
+        .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -466,6 +474,8 @@ pub trait __Component: __Kind<Kind = __ComponentKind, Descriptor = ComponentHand
     const KIND: ComponentKind;
     /// The declared `response`.
     const RESPONSE: __Response;
+    /// The declared `rate_limit(..)`s, in declared order (INT-14).
+    const RATE_LIMITS: &'static [RateLimit] = &[];
 }
 
 /// A `#[derive(Modal)]` struct.
@@ -475,6 +485,8 @@ pub trait __Modal: __Kind<Kind = __ModalKind, Descriptor = ModalHandler> {
     const ROUTE: &'static str;
     /// The declared `response` of the submit.
     const RESPONSE: __Response;
+    /// The declared `rate_limit(..)`s, in declared order (INT-14).
+    const RATE_LIMITS: &'static [RateLimit] = &[];
 }
 
 /// Never implemented: a component handler takes its context and at most a
@@ -547,6 +559,7 @@ where
             S::RESPONSE,
             move |s: S, ctx: ComponentCtx, _: Responder<Component, Pending, S::Defer>| f(s, ctx),
         )
+        .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -573,6 +586,7 @@ where
             S::RESPONSE,
             f,
         )
+        .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -599,6 +613,7 @@ where
                 f(s, ctx)
             },
         )
+        .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -619,6 +634,7 @@ where
     fn __bind(name: &'static str, f: F) -> ModalHandler {
         let route = <S as noctis_codec::Route>::ID.as_str();
         ModalHandler::__new_with_responder::<S, D, _, _, _>(name, route, S::RESPONSE, f)
+            .__with_rate_limits(S::RATE_LIMITS)
     }
 }
 
@@ -807,6 +823,11 @@ pub trait __NoHooks {
     fn __noctis_on_expired() -> __Absent {
         __Absent
     }
+
+    /// No `#[on_rate_limited]` method.
+    fn __noctis_on_rate_limited() -> __Absent {
+        __Absent
+    }
 }
 
 impl<T: ?Sized> __NoHooks for T {}
@@ -881,6 +902,64 @@ macro_rules! attach_hooks {
 
 attach_hooks!(ComponentHandler, ComponentCtx);
 attach_hooks!(ModalHandler, ModalSubmitCtx);
+
+// --- `#[on_rate_limited]` (INT-14) ------------------------------------------
+
+/// Attaches the `#[on_rate_limited]` method `H` (a [`__RateLimitedHook`] or
+/// [`__Absent`]) to a descriptor; an event descriptor takes none.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[INT-14] #[on_rate_limited] needs a Command, context-menu, component or modal struct",
+    label = "this struct has no rate limits",
+    note = "event handlers are never rate-limited: remove the `#[on_rate_limited]` method"
+)]
+pub trait __AttachRateLimited<H>: Sized {
+    /// The descriptor with the method attached.
+    #[must_use]
+    fn __attach_rate_limited(self, hook: H) -> Self;
+}
+
+macro_rules! attach_rate_limited {
+    ($($descriptor:ty),*) => {$(
+        impl __AttachRateLimited<__Absent> for $descriptor {
+            fn __attach_rate_limited(self, _: __Absent) -> Self {
+                self
+            }
+        }
+
+        impl __AttachRateLimited<__RateLimitedHook> for $descriptor {
+            fn __attach_rate_limited(self, hook: __RateLimitedHook) -> Self {
+                self.__with_on_rate_limited(hook)
+            }
+        }
+    )*};
+}
+
+attach_rate_limited!(
+    CommandHandler,
+    ContextMenuHandler,
+    ComponentHandler,
+    ModalHandler
+);
+
+/// What an event descriptor attaches: nothing. Generic over the slot, so a
+/// `#[on_rate_limited]` method on an event struct fails on this bound with
+/// the INT-14 message instead of a type mismatch.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[INT-14] #[on_rate_limited] needs a Command, context-menu, component or modal struct",
+    label = "an event handler has no rate limits",
+    note = "event handlers are never rate-limited: remove the `#[on_rate_limited]` method"
+)]
+pub trait __NoRateLimitedSlot {}
+
+impl __NoRateLimitedSlot for __Absent {}
+
+impl<H: __NoRateLimitedSlot> __AttachRateLimited<H> for EventHandler {
+    fn __attach_rate_limited(self, _: H) -> Self {
+        self
+    }
+}
 
 // --- INT-05 -----------------------------------------------------------------
 

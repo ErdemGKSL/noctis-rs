@@ -107,6 +107,10 @@ pub enum Pronouns {
 #[modal(
     "profile.save",
     owner = user,
+    // `manual`: never counted before the handler; it counts a save with
+    // `ctx.rate_limits().hit(RateScope::User)`, and the next submit within the minute
+    // is refused before the handler runs.
+    rate_limit(user, 1, per = "1m", manual),
     defaults(title = keys::PROFILE_BIO_MODAL_TITLE),
 )]
 pub struct BioForm {

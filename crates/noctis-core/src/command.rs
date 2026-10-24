@@ -18,6 +18,7 @@ use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::locale::{LocaleCell, Locales};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
+use crate::rate_limits::{__RateLimitedHook, RateLimit, RateLimitedFn, RateLimits, RateRun};
 use crate::responder::{
     Command, CommandResponder, DeferMode, Ephemerality, IntoResponse, Responder, Response,
     ResponseValue, Shared, Transport,
@@ -132,6 +133,9 @@ pub(crate) struct CtxInner {
     /// (`message.components`) for a click, of the submit for a modal
     /// submit; empty otherwise (FR-31, CV2-16).
     pub(crate) unknown: Vec<serde_json::Value>,
+    /// The run's declared rate limits and their keys (stage 5,
+    /// `ctx.rate_limits()`); `None` in the detached seams.
+    pub(crate) rate: Option<Arc<RateRun>>,
 }
 
 impl CtxInner {
@@ -179,7 +183,31 @@ impl CtxInner {
             shared: None,
             values: crate::component::SelectedValues::default(),
             unknown: Vec::new(),
+            rate: None,
         }
+    }
+
+    /// A copy of the parts a [`RateLimitedCtx`](crate::RateLimitedCtx)
+    /// reads (the input, the responder state and the run are left out).
+    pub(crate) fn rate_limited_parts(&self) -> Self {
+        Self {
+            path: self.path,
+            module: self.module,
+            shard: self.shard,
+            guild_id: self.guild_id,
+            channel_id: self.channel_id,
+            user_id: self.user_id,
+            locales: Arc::clone(&self.locales),
+            app: self.app.clone(),
+            member_permissions: self.member_permissions,
+            rate: self.rate.clone(),
+            ..Self::detached_parts(self.ephemerality)
+        }
+    }
+
+    /// The run's rate limits handle.
+    pub(crate) fn rate_limits(&self) -> RateLimits {
+        RateLimits::of(self.rate.as_ref())
     }
 }
 
@@ -290,6 +318,14 @@ impl CommandCtx {
     /// The state registered for `T` with `AppBuilder::state`, if any.
     pub fn state<T: Send + Sync + 'static>(&self) -> Option<State<T>> {
         self.0.app.as_ref()?.states.get::<T>()
+    }
+
+    /// The handler's declared rate limits (`rate_limit(..)` on its
+    /// `#[command]` or context-menu attribute): count, block, extend or
+    /// reset them for the next invocation (FR-46). Every call of a detached
+    /// test context is `RateLimitError::Detached`.
+    pub fn rate_limits(&self) -> RateLimits {
+        self.0.rate_limits()
     }
 
     /// The App's typed key-value handle over its namespaced `CacheStore`
@@ -452,6 +488,10 @@ pub struct CommandHandler {
     autocomplete: fn(&str) -> Option<__AutocompleteMethod>,
     /// The Extension types its `Ext<T>` parameters require.
     requires: &'static [crate::kind::__ExtType],
+    /// The declared `rate_limit(..)`s (INT-14).
+    rate_limits: &'static [RateLimit],
+    /// The struct's `#[on_rate_limited]` method.
+    on_rate_limited: Option<Arc<RateLimitedFn>>,
 }
 
 impl CommandHandler {
@@ -480,6 +520,8 @@ impl CommandHandler {
             call,
             autocomplete: |_| None,
             requires: &[],
+            rate_limits: &[],
+            on_rate_limited: None,
         }
     }
 
@@ -714,6 +756,37 @@ impl CommandHandler {
         Self { requires, ..self }
     }
 
+    /// Sets the declared rate limits; what `#[derive(SlashCommand)]` binds
+    /// from `RATE_LIMITS`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_rate_limits(self, rate_limits: &'static [RateLimit]) -> Self {
+        Self {
+            rate_limits,
+            ..self
+        }
+    }
+
+    /// Attaches the struct's `#[on_rate_limited]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_rate_limited(self, hook: __RateLimitedHook) -> Self {
+        Self {
+            on_rate_limited: Some(hook.0),
+            ..self
+        }
+    }
+
+    /// The declared rate limits, in declared order.
+    pub(crate) fn rate_limits(&self) -> &'static [RateLimit] {
+        self.rate_limits
+    }
+
+    /// The struct's `#[on_rate_limited]` method, if any.
+    pub(crate) fn on_rate_limited(&self) -> Option<&Arc<RateLimitedFn>> {
+        self.on_rate_limited.as_ref()
+    }
+
     /// The Extension types its `Ext<T>` parameters require, in parameter
     /// order.
     pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
@@ -784,6 +857,8 @@ impl fmt::Debug for CommandHandler {
             .field("ephemerality", &self.ephemerality)
             .field("auto_defer", &self.auto_defer)
             .field("metadata", &self.metadata)
+            .field("rate_limits", &self.rate_limits)
+            .field("on_rate_limited", &self.on_rate_limited.is_some())
             .finish_non_exhaustive()
     }
 }

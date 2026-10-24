@@ -1,7 +1,7 @@
 use noctis::prelude::*;
 
 #[derive(Button)]
-#[button("a", rate_limit(user, 5, per = "1m"), defaults(style = Secondary, label = "Go"))]
+#[button("a", rate_limit(users, 3, per = "1s"), defaults(style = Secondary, label = "Go"))]
 struct Limited;
 
 impl Limited {

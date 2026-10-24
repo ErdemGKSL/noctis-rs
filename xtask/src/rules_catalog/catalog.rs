@@ -558,7 +558,7 @@ mod tests {
         let mut problems = Problems::default();
         let catalog = parse(&text, &mut problems);
         assert!(problems.is_empty(), "{problems:?}");
-        assert_eq!(catalog.rows.len(), 132);
+        assert_eq!(catalog.rows.len(), 133);
         assert_eq!(catalog.rows[0].id, "CMD-01");
         let ids = |f: &dyn Fn(&Class) -> bool| -> Vec<&str> {
             catalog

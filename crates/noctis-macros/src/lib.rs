@@ -46,6 +46,7 @@ mod modal;
 mod options;
 mod payload;
 mod payload_enum;
+mod rate_limit;
 mod route;
 #[cfg(feature = "image")]
 mod template;
@@ -280,6 +281,16 @@ pub fn on_stale(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn on_expired(args: TokenStream, item: TokenStream) -> TokenStream {
     hook::expand_or_fallback(hook::Hook::Expired, args.into(), item.into()).into()
+}
+
+/// `#[on_rate_limited]`: the method of a Command, context-menu, component
+/// or modal struct that answers an invocation one of its declared
+/// `rate_limit(..)`s refused (INT-14): `async fn <any>(ctx:
+/// RateLimitedCtx, hit: RateLimitHit) -> HandlerResult<V2Message>`, no
+/// `self`.
+#[proc_macro_attribute]
+pub fn on_rate_limited(args: TokenStream, item: TokenStream) -> TokenStream {
+    hook::expand_or_fallback(hook::Hook::RateLimited, args.into(), item.into()).into()
 }
 
 /// `#[derive(Template)]` with `#[template(id = "..", version = N, size = (w,

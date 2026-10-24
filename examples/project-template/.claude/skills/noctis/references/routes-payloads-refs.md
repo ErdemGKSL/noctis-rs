@@ -150,14 +150,12 @@ inline Route each is ``[CID-03] `ttl` needs a by-Ref Route`` (help: add `by_ref`
 ``[CID-03] `ttl` must be between 1s and 365d, found `366d` ``; `one_shot` is a flag
 (`one_shot = true` is ``[CID-03] `one_shot` is a flag and takes no value``).
 The Route Guards `owner = field`, `permissions = A | B` and `guard = path::to::fn` work
-today on every kind attribute, `#[modal]` included (§1a below). `rate_limit(..)` is
-**[planned, Story 13.4]**: Noctis **rejects** it with ``[CID-03] `rate_limit` is a
-runtime argument of #[button] that this Noctis release does not support yet``
-(attribute name per kind; a silently ignored limit would be a hole), and accepts it
-from the release that implements it. `flags = ["beta"]` works today on every kind
-attribute and on `#[modal]` (Boot Flags, `modules-middleware-ratelimits.md` §2); its
-errors are the shared `flags` errors, without a `[CID-03]` prefix. Anything else is a
-compile error.
+today on every kind attribute, `#[modal]` included (§1a below), and so does
+`rate_limit(scope, n, per = "dur"[, manual])` (repeatable, one per scope; errors cite
+`[INT-14]`; `modules-middleware-ratelimits.md` §7). `flags = ["beta"]` works today on
+every kind attribute and on `#[modal]` (Boot Flags, `modules-middleware-ratelimits.md`
+§2); its errors are the shared `flags` errors, without a `[CID-03]` prefix. Anything
+else is a compile error.
 `#[handler]` itself takes no arguments: every setting is here.
 
 | Argument | Meaning |
@@ -175,7 +173,7 @@ compile error.
 | `owner = field` | Route Guard: only the user whose id is in `field` (an `Id<UserMarker>` Payload field) may click or submit (trusts the Payload: use `signed` or `by_ref`) |
 | `permissions = A \| B` | Route Guard: the clicking member's channel permissions contain these (`ADMINISTRATOR` passes; a DM is denied) |
 | `guard = path::to::fn` | custom Guard `async fn(ctx: &ComponentCtx, this: &Self) -> HandlerResult<Access>` (`&ModalSubmitCtx` on `#[modal]`) |
-| `rate_limit(user, 5, per = "1m")` [planned, Story 13.4] | see `modules-middleware-ratelimits.md` |
+| `rate_limit(user, 5, per = "1m")` | N uses per window per scope (`user`, `member`, `channel`, `guild`, `message`), checked before the auto-defer; add `manual` to count only `ctx.rate_limits().hit(..)`; see `modules-middleware-ratelimits.md` §7 |
 | `defaults(..)` | the component defaults (table above); mandatory |
 
 Guards run before the handler on every click or submit of the Route; a denial sends a

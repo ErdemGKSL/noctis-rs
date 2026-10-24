@@ -140,6 +140,7 @@ pub fn noctis::AppBuilder::presence(&mut self, noctis::gateway::Presence) -> &mu
 pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::RateLimitedCtx, noctis::RateLimitHit) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::V2Message>> + core::marker::Send + 'static
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
@@ -552,6 +553,7 @@ pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::c
 pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::CommandCtx::module(&self) -> &'static str
+pub fn noctis::CommandCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::shard(&self) -> u32
 pub fn noctis::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -713,6 +715,7 @@ pub fn noctis::ComponentCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ComponentCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::ComponentCtx
@@ -1495,6 +1498,7 @@ pub fn noctis::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ModalSubmitCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -1682,6 +1686,97 @@ impl noctis::ResponderState for noctis::Pending
 pub use noctis::Permissions
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+pub struct noctis::RateLimit
+impl noctis::RateLimit
+pub const fn noctis::RateLimit::is_manual(&self) -> bool
+pub const fn noctis::RateLimit::max_uses(&self) -> u32
+pub const fn noctis::RateLimit::scope(&self) -> noctis::RateScope
+pub const fn noctis::RateLimit::window(&self) -> core::time::Duration
+impl core::clone::Clone for noctis::RateLimit
+pub fn noctis::RateLimit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateLimit
+impl core::cmp::PartialEq for noctis::RateLimit
+pub fn noctis::RateLimit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateLimit
+pub fn noctis::RateLimit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::RateLimit
+impl core::marker::StructuralPartialEq for noctis::RateLimit
+#[non_exhaustive] pub enum noctis::RateLimitError
+pub noctis::RateLimitError::Detached
+pub noctis::RateLimitError::Store(noctis::ports::PortError)
+pub noctis::RateLimitError::Undeclared
+pub noctis::RateLimitError::Undeclared::scope: noctis::RateScope
+pub noctis::RateLimitError::Unkeyed
+pub noctis::RateLimitError::Unkeyed::scope: noctis::RateScope
+impl core::convert::From<noctis::ports::PortError> for noctis::RateLimitError
+pub fn noctis::RateLimitError::from(noctis::ports::PortError) -> Self
+impl core::error::Error for noctis::RateLimitError
+pub fn noctis::RateLimitError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::RateLimitError
+pub fn noctis::RateLimitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::RateLimitError
+pub fn noctis::RateLimitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::RateLimitHit
+impl noctis::RateLimitHit
+pub fn noctis::RateLimitHit::limit(&self) -> noctis::RateLimit
+pub fn noctis::RateLimitHit::relative_timestamp(&self) -> alloc::string::String
+pub fn noctis::RateLimitHit::retry_after(&self) -> core::time::Duration
+pub fn noctis::RateLimitHit::retry_at_unix_secs(&self) -> u64
+pub fn noctis::RateLimitHit::scope(&self) -> noctis::RateScope
+impl core::clone::Clone for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateLimitHit
+impl core::cmp::PartialEq for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::RateLimitHit
+impl core::marker::StructuralPartialEq for noctis::RateLimitHit
+pub struct noctis::RateLimitedCtx(_)
+impl noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::RateLimitedCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::RateLimitedCtx::guild_locale(&self) -> noctis::rules::Locale
+pub fn noctis::RateLimitedCtx::module(&self) -> &'static str
+pub fn noctis::RateLimitedCtx::path(&self) -> &'static str
+pub fn noctis::RateLimitedCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::RateLimitedCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::RateLimitedCtx::user_locale(&self) -> noctis::rules::Locale
+impl core::clone::Clone for noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::RateLimits(_)
+impl noctis::RateLimits
+pub async fn noctis::RateLimits::block(&self, noctis::RateScope, core::time::Duration) -> core::result::Result<(), noctis::RateLimitError>
+pub async fn noctis::RateLimits::extend(&self, noctis::RateScope, core::time::Duration) -> core::result::Result<(), noctis::RateLimitError>
+pub async fn noctis::RateLimits::hit(&self, noctis::RateScope) -> core::result::Result<u64, noctis::RateLimitError>
+pub async fn noctis::RateLimits::reset(&self, noctis::RateScope) -> core::result::Result<(), noctis::RateLimitError>
+impl core::clone::Clone for noctis::RateLimits
+pub fn noctis::RateLimits::clone(&self) -> Self
+impl core::fmt::Debug for noctis::RateLimits
+pub fn noctis::RateLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::RateScope
+pub noctis::RateScope::Channel
+pub noctis::RateScope::Guild
+pub noctis::RateScope::Member
+pub noctis::RateScope::Message
+pub noctis::RateScope::User
+impl noctis::RateScope
+pub const fn noctis::RateScope::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::RateScope
+pub fn noctis::RateScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateScope
+impl core::cmp::PartialEq for noctis::RateScope
+pub fn noctis::RateScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateScope
+pub fn noctis::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::RateScope
+pub fn noctis::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::RateScope
+pub fn noctis::RateScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::RateScope
+impl core::marker::StructuralPartialEq for noctis::RateScope
 pub struct noctis::RefOps
 impl noctis::RefOps
 pub fn noctis::RefOps::delete(self, noctis::codec::Ref) -> Self
@@ -2004,6 +2099,7 @@ pub proc macro noctis::#[handler]
 pub proc macro noctis::i18n!()
 pub proc macro noctis::label!()
 pub proc macro noctis::#[on_expired]
+pub proc macro noctis::#[on_rate_limited]
 pub proc macro noctis::#[on_stale]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
@@ -4738,6 +4834,7 @@ pub fn noctis::prelude::AppBuilder::presence(&mut self, noctis::gateway::Presenc
 pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::RateLimitedCtx, noctis::RateLimitHit) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::V2Message>> + core::marker::Send + 'static
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
@@ -4844,6 +4941,7 @@ pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twiligh
 pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
+pub fn noctis::prelude::CommandCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
 pub fn noctis::prelude::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -4921,6 +5019,7 @@ pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> noctis::rules::Local
 pub fn noctis::prelude::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ComponentCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::prelude::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::prelude::ComponentCtx
@@ -5179,6 +5278,7 @@ pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Loc
 pub fn noctis::prelude::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ModalSubmitCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -5221,6 +5321,57 @@ pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Payload)]
 pub proc macro noctis::prelude::#[derive(PayloadEnum)]
+pub struct noctis::prelude::RateLimitHit
+impl noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::limit(&self) -> noctis::RateLimit
+pub fn noctis::prelude::RateLimitHit::relative_timestamp(&self) -> alloc::string::String
+pub fn noctis::prelude::RateLimitHit::retry_after(&self) -> core::time::Duration
+pub fn noctis::prelude::RateLimitHit::retry_at_unix_secs(&self) -> u64
+pub fn noctis::prelude::RateLimitHit::scope(&self) -> noctis::RateScope
+impl core::clone::Clone for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::RateLimitHit
+impl core::cmp::PartialEq for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::prelude::RateLimitHit
+impl core::marker::StructuralPartialEq for noctis::prelude::RateLimitHit
+pub struct noctis::prelude::RateLimitedCtx(_)
+impl noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::RateLimitedCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::RateLimitedCtx::guild_locale(&self) -> noctis::rules::Locale
+pub fn noctis::prelude::RateLimitedCtx::module(&self) -> &'static str
+pub fn noctis::prelude::RateLimitedCtx::path(&self) -> &'static str
+pub fn noctis::prelude::RateLimitedCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::RateLimitedCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::RateLimitedCtx::user_locale(&self) -> noctis::rules::Locale
+impl core::clone::Clone for noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::prelude::RateScope
+pub noctis::prelude::RateScope::Channel
+pub noctis::prelude::RateScope::Guild
+pub noctis::prelude::RateScope::Member
+pub noctis::prelude::RateScope::Message
+pub noctis::prelude::RateScope::User
+impl noctis::prelude::RateScope
+pub const fn noctis::prelude::RateScope::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::RateScope
+impl core::cmp::PartialEq for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::prelude::RateScope
+impl core::marker::StructuralPartialEq for noctis::prelude::RateScope
 pub trait noctis::prelude::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
 pub fn noctis::prelude::RawHttp::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
 impl noctis::prelude::RawHttp for twilight_http::client::Client
@@ -5392,6 +5543,7 @@ pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::#[handler]
 pub proc macro noctis::prelude::label!()
 pub proc macro noctis::prelude::#[on_expired]
+pub proc macro noctis::prelude::#[on_rate_limited]
 pub proc macro noctis::prelude::#[on_stale]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
@@ -5780,6 +5932,7 @@ pub const noctis::rules::RuleId::INT_10: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_11: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_12: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_14: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_03: noctis::rules::RuleId
@@ -6867,6 +7020,7 @@ pub fn noctis::testkit::Response::is_ephemeral(&self) -> bool
 pub fn noctis::testkit::Response::is_error(&self) -> bool
 pub fn noctis::testkit::Response::is_expired_notice(&self) -> bool
 pub fn noctis::testkit::Response::is_guard_notice(&self) -> bool
+pub fn noctis::testkit::Response::is_rate_limited(&self) -> bool
 pub fn noctis::testkit::Response::kind(&self) -> noctis::testkit::ResponseKind
 pub fn noctis::testkit::Response::message(&self) -> core::option::Option<&noctis::testkit::TestMessage>
 pub fn noctis::testkit::Response::message_json(&self) -> serde_json::value::Value

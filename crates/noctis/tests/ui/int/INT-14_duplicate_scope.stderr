@@ -1,0 +1,5 @@
+error: [INT-14] a second `rate_limit` for scope `user`: declare each scope once
+ --> tests/ui/int/INT-14_duplicate_scope.rs:7:16
+  |
+7 |     rate_limit(user, 5, per = "1m"),
+  |                ^^^^

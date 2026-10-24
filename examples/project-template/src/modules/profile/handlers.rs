@@ -19,12 +19,14 @@ use crate::strings::{Strings, keys};
 const XP_PER_LEVEL: u64 = 100;
 
 /// `/profile [user]`: the struct's fields are the options (UD-3: fine for a quick
-/// lookup target). `Option<T>` makes this one optional.
+/// lookup target). `Option<T>` makes this one optional. `rate_limit` lets each user run
+/// it 3 times per 10 s; the 4th gets the localized `noctis.rate_limited` notice and the
+/// handler never runs.
 #[derive(SlashCommand, Debug)]
 #[command(
     "profile",
     contexts = [Guild],
-    rate_limit(user, 3, per = "10s"),      // [planned]: rejected until its release
+    rate_limit(user, 3, per = "10s"),
 )]
 pub struct Profile {
     /// The description is `cmd.profile.opt.user.description` in `locales/en-US.yaml`.
@@ -178,6 +180,8 @@ impl BioForm {
             pronouns: self.pronouns,
         };
         ctx.kv().put(&profile_key(guild, self.user), &stored, None).await?;
+        // The `manual` limit counts only saves that happened: one per user per minute.
+        ctx.rate_limits().hit(RateScope::User).await?;
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
         let card = render_profile(&data, &s, true);

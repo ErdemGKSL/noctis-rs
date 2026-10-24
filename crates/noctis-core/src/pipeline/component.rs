@@ -37,13 +37,19 @@
 //!    `expired_handler`; else the default `noctis.expired` ephemeral notice
 //!    (one type-4 callback, no timer). Each is one `debug` on target
 //!    `noctis::dispatch` naming the `reason` and the `hook`.
-//! 5. **Arm the auto-defer** (shared with Commands): at the ack deadline a
+//! 5. **Rate limits** (shared with Commands, FR-46, INT-14): once the
+//!    struct is decoded, the Route's non-`manual` `rate_limit(..)`s are
+//!    counted (`message` keyed by the source message); the first one over
+//!    its count puts a taken `one_shot` record back and answers with one
+//!    type-4 ephemeral notice instead of the handler (never for the Expired
+//!    Handler chain).
+//! 6. **Arm the auto-defer** (shared with Commands): at the ack deadline a
 //!    type-6 callback under `response = update` when a source message
 //!    exists, else type 5 (`EPHEMERAL` only for `response = ephemeral`); an
 //!    `auto_defer = false` handler or hook (a component's or a
 //!    `#[modal(.., auto_defer = false)]`) gets only the 2.9 s error log.
 //!    The App's `expired_handler` is always auto-deferred.
-//! 6. **Run and answer:** run the Module path's before-Middleware (not for
+//! 7. **Run and answer:** run the Module path's before-Middleware (not for
 //!    the Expired Handler chain), then the Route Guards (AD-23 stage 8;
 //!    `owner`, `permissions`, then a custom `guard = path`, the first
 //!    denial winning; never for the Expired Handler chain or the detached
@@ -87,8 +93,8 @@ use twilight_model::channel::message::component::ComponentType;
 use twilight_model::id::Id;
 
 use super::{
-    Armed, INTERACTION_CREATE, Report, Restore, Started, USER_INSTALL_FOLLOWUPS, arm, run_started,
-    stage4,
+    Armed, INTERACTION_CREATE, Limited, Report, Restore, Started, USER_INSTALL_FOLLOWUPS, arm,
+    rate_limit, run_started, stage4,
 };
 use crate::command::CtxInner;
 use crate::component::{
@@ -99,6 +105,7 @@ use crate::handler::AppShared;
 use crate::locale::{self, LocaleCell, Stage4};
 use crate::middleware::{Around, Invocation, RunInfo};
 use crate::notice;
+use crate::rate_limits::{RateIds, RateLimitedFn, RateRun, RateScope};
 use crate::registry::{Registry, RouteEntry, RouteHandler};
 use crate::responder::{
     Declared, Ephemerality, InteractionTarget, Shared, SourceMessage, Transport,
@@ -312,6 +319,22 @@ impl Target<'_> {
         match self {
             Self::Component(handler) => handler.response(),
             Self::Modal(handler, _) => handler.response(),
+        }
+    }
+
+    /// The declared rate limits.
+    fn rate_limits(&self) -> &'static [crate::RateLimit] {
+        match self {
+            Self::Component(handler) => handler.rate_limits(),
+            Self::Modal(handler, _) => handler.rate_limits(),
+        }
+    }
+
+    /// The struct's `#[on_rate_limited]` method.
+    fn on_rate_limited(&self) -> Option<Arc<RateLimitedFn>> {
+        match self {
+            Self::Component(handler) => handler.on_rate_limited().cloned(),
+            Self::Modal(handler, _) => handler.on_rate_limited().cloned(),
         }
     }
 
@@ -738,6 +761,25 @@ pub(crate) async fn run_component_over(
         },
         false,
     );
+    // The `message` scope keys the source message (of a click, or of a
+    // component-opened modal).
+    let limits = target.rate_limits();
+    let message = limits
+        .iter()
+        .any(|l| l.scope() == RateScope::Message)
+        .then(|| SourceMessage::from_interaction(raw.as_bytes()).map(|m| m.id))
+        .flatten();
+    let rate = Arc::new(RateRun::new(
+        Arc::clone(&app.rate_limits),
+        entry.handler.name(),
+        limits,
+        RateIds {
+            user: user_id,
+            guild: guild_id,
+            channel: channel_id,
+            message,
+        },
+    ));
     let mut parts = CtxInner {
         // The Route id: `ExpiredCtx::route` (the component contexts do not
         // read it).
@@ -763,6 +805,7 @@ pub(crate) async fn run_component_over(
             Input::Component { .. } => source_unknowns(raw.as_bytes()),
             Input::Modal(submission) => submission.unknown().to_vec(),
         },
+        rate: Some(Arc::clone(&rate)),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
     let state = shared_for(transport, target.response(), &locales);
@@ -831,7 +874,23 @@ pub(crate) async fn run_component_over(
         Err(panic) => Err(panic),
     };
     let (future, auto_defer) = match started {
-        Ok(Ok(future)) => (Ok(future), target.auto_defer()),
+        Ok(Ok(future)) => {
+            // AD-23 stage 5: the declared rate limits, once the struct
+            // decoded and before the auto-defer; the Expired Handler chain
+            // is never limited.
+            let limited = Limited {
+                shared: &state,
+                report: &report,
+                parts: Arc::clone(&parts),
+                hook: target.on_rate_limited(),
+                deadline: received_at + app.ack_deadline,
+                cancel: Some(&cancel),
+            };
+            if rate_limit(&span, &rate, limited).await {
+                return;
+            }
+            (Ok(future), target.auto_defer())
+        }
         Err(panic) => (Err(panic), target.auto_defer()),
         Ok(Err(rejection)) => {
             let Some(expired) = rejection.expired() else {

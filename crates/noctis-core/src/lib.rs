@@ -245,6 +245,7 @@ mod ports;
 mod proxy;
 pub mod publish;
 mod rate_limit;
+mod rate_limits;
 mod raw_http;
 mod refs;
 mod registry;
@@ -295,8 +296,8 @@ pub use guard::{
 pub use handler::{HandlerError, HandlerResult};
 #[doc(hidden)]
 pub use kind::{
-    __AttachHooks, __BindExpired, __BindStale, __H, __HE, __HER, __HR, __HookKind, __NoHookCtx,
-    __NoHookSlot, __NoHooks, __NotAHookStruct,
+    __AttachHooks, __AttachRateLimited, __BindExpired, __BindStale, __H, __HE, __HER, __HR,
+    __HookKind, __NoHookCtx, __NoHookSlot, __NoHooks, __NoRateLimitedSlot, __NotAHookStruct,
 };
 #[doc(hidden)]
 pub use kind::{
@@ -329,6 +330,11 @@ pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use rate_limit::{RateLimitScope, RateLimited};
+#[doc(hidden)]
+pub use rate_limits::__RateLimitedHook;
+pub use rate_limits::{
+    RateLimit, RateLimitError, RateLimitHit, RateLimitedCtx, RateLimits, RateScope,
+};
 pub use raw_http::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
 pub use refs::RefOps;
 pub use render::{RenderOptions, RenderReport};
@@ -471,6 +477,26 @@ pub mod __testing {
                     .builtin_raw(user_locale, guild_locale)
                     .user,
                 noctis_rules::MessageKey::new(key),
+            )
+        }
+
+        /// As [`notice`](Self::notice), with the key's `{name}`
+        /// arguments replaced by `args`.
+        pub fn notice_with(
+            &self,
+            key: &'static str,
+            user_locale: Option<&str>,
+            guild_locale: Option<&str>,
+            args: &[(&str, &dyn std::fmt::Display)],
+        ) -> String {
+            crate::notice::text_with(
+                &*self.shared.strings,
+                self.shared
+                    .locales
+                    .builtin_raw(user_locale, guild_locale)
+                    .user,
+                noctis_rules::MessageKey::new(key),
+                args,
             )
         }
     }

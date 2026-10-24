@@ -483,10 +483,15 @@ pub struct Response {
 
 /// Which built-in notices a run showed.
 #[derive(Debug, Clone, Copy, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags: a run may show several notices (a message and its follow-ups)"
+)]
 pub(crate) struct Notices {
     pub(crate) guard: bool,
     pub(crate) expired: bool,
     pub(crate) error: bool,
+    pub(crate) rate_limited: bool,
 }
 
 impl Response {
@@ -542,6 +547,13 @@ impl Response {
     /// Whether the built-in `noctis.expired` notice was shown.
     pub fn is_expired_notice(&self) -> bool {
         self.notices.expired
+    }
+
+    /// Whether the built-in `noctis.rate_limited` notice (a declared
+    /// `rate_limit(..)` refused the run, with its `<t:N:R>` retry time) was
+    /// shown.
+    pub fn is_rate_limited(&self) -> bool {
+        self.notices.rate_limited
     }
 
     /// Whether the built-in error notice (`noctis.error.generic` or

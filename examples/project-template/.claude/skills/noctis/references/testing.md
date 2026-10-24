@@ -144,6 +144,7 @@ Locale, default `en-US`). `CommandRun`, `MenuRun` and `AutocompleteRun` add
 | `modal()` | `Result<ModalForm, TestError>` (`NotFound { what: "modal" }` otherwise) |
 | `suggestions()` | autocomplete `(value, label)` pairs as sent, after truncation to 25 (values as strings) |
 | `is_guard_notice()`, `is_expired_notice()`, `is_error()` | the final message or a follow-up is that built-in notice in the run's locale (guard failed/owner/permissions; expired; generic error or validation failed). Custom-key notices are not recognized |
+| `is_rate_limited()` | the final message is the default `noctis.rate_limited` notice in the run's locale (any `{retry}` timestamp): a declared `rate_limit(..)` refused the run and the handler never ran. Repeat the same `run` past the limit to trigger it; an `#[on_rate_limited]` or App override message is not recognized, so assert its text |
 | `http_calls()` | `&[HttpCall]`: every request of the run (`method()`, `path()` after `/api/v10`, `json()` (the `payload_json` part of a multipart upload), `files()` (`&[RecordedFile]`: the `files[n]` parts, empty for JSON bodies)); REST routes the fake does not know answer 404 |
 | `text()` | all Text Display content (legacy: `content`) joined with `\n`; `""` without a message |
 | `button(label)`, `button_by_emoji(e)`, `component::<R>()` | `Result<TestComponent, TestError>` (`NotFound` lists what is there) |
@@ -181,8 +182,7 @@ multi-thread runtime), `Io`, `Build` (your builder's `BuildError`), `Start`, `St
 `NotAutocomplete`, `NotFound` (`what` and the `available` alternatives), `WrongComponent`, `Disabled`, `NotInteractive`,
 `NotVisible`, `SelectValues`, `NotAnOption`, `UnknownInput`, `WrongInput`,
 `InvalidInput`, `Unsupported`, `Render`, `TooFewRuns`, `ProfilerBusy`,
-`AllocatorMissing`, `MemoryGrew`. Simulating rate limits (`is_rate_limited()`) is
-[planned, Story 13.4].
+`AllocatorMissing`, `MemoryGrew`.
 
 **Attachments.** A response with files is recorded as multipart: `call.json()` is its
 `payload_json` and `call.files()` lists the uploads, each a `RecordedFile`
