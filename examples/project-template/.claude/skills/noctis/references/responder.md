@@ -142,8 +142,9 @@ What each sends, by the interaction's state:
   `NoticeText` is the conversion target, `ReplyText` the awaitable builder (its
   `Debug` hides the text).
 - **Over the Dispatcher** (a prefix Command): `respond` replies to the invoking
-  message (an ephemeral declared response is `EphemeralUnsupported`), and
-  `reply_text` is always public.
+  message, and `reply_text` is always public. A Command declaring
+  `response = ephemeral` cannot be opted into prefix mode: `PrefixPlugin::install`
+  refuses it when the App is built.
 - **Errors** come back as a `HandlerError` wrapping the `ResponderError`: find it with
   `err.as_error().downcast_ref::<ResponderError>()`. Propagate them with `?`; the
   user gets the usual error notice (§5).
