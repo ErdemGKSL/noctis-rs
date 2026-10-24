@@ -139,13 +139,13 @@ Implemented:
 | `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
 | `.ref_ttl(Duration)` | 24 h | the TTL of every Ref whose Route has no `ttl = "…"`: 1 s..=365 d, else `BuildViolation::InvalidRefTtl` (`ref TTL 0ns is out of range: use a value in 1 s..=365 d`); the last call wins. Read back with `app.ref_ttl()`; see `routes-payloads-refs.md` §7 |
 | `.expired_handler(f)` | the `noctis.expired` ephemeral notice | the App-level Expired Handler: `f: Fn(ExpiredCtx, Expired) -> impl Future<Output = HandlerResult<R>>` (an `async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<V2Message>` works), `R` a message or `Responded`; it answers a stale or Ref id of a Route without its own `#[on_stale]`/`#[on_expired]`; `ctx.route()` names the Route; no responder, always auto-deferred, the returned message follows the Route's declared `response`; the last call wins; see `routes-payloads-refs.md` §8 |
+| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()`. The effective id also selects `apps = [..]` / `Module::apps` registrations before the fold (§10) |
 | `.build()` | — | `Result<App, BuildError>` |
 
 Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()`. The effective id also selects `apps = [..]` / `Module::apps` registrations before the fold (§10) |
 | `.locales(Catalog)` | none: available `{en-US}`, default `en-US` | the first catalog's `default` is the App default; see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` | none | sync `Fn(&LocaleRequest) -> Locales`, called once per run at pipeline stage 4, result used verbatim; a panic keeps the built-in resolution; see `i18n.md` §7 |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
@@ -937,6 +937,11 @@ let acme = acme.build()?;
 tokio::try_join!(main.run(), acme.run())?;
 ```
 
+`run()` reads the process command line for every App: `--features` must equal each
+App's built selection (else `CliError::BootFlagsMismatch`) and `--publish`/`--no-resume`
+apply to all of them, so run Apps with different Boot Flag selections with
+`run_with_args(..)` each.
+
 There is no `App::from_env_prefixed` or `Runtime::run([..])`: read each App's token
 yourself. Two live Apps with the same App id are **not** detected: they would share
 port keys and metric series, so always give each App its own `.app_id(..)`.
@@ -965,9 +970,9 @@ let branding = Module::new("branding").apps(["acme"]).add::<Brand>();
 - `Module::apps([])` is unrestricted; repeated calls append.
 - Ids follow the App id grammar `[a-z0-9-]{1,32}`. In the macros a bad id is a compile
   error: ``invalid App id `Main` in `apps`: App id has `M` at index 0: use only a-z, 0-9
-  and - ([a-z0-9-]{1,32})``, ``apps` needs at least one App id: write `apps = ["main"]`
-  or remove it``, ``apps` takes a list of string literals: write `apps = ["main"]```
-  and ``a` is listed twice in `apps```. A bad `Module::apps` id is a
+  and - ([a-z0-9-]{1,32})``, `` `apps` needs at least one App id: write `apps = ["main"]`
+  or remove it ``, `` `apps` takes a list of string literals: write `apps = ["main"]` ``
+  and `` `a` is listed twice in `apps` ``. A bad `Module::apps` id is a
   `BuildViolation::InvalidAppRestriction { module, id, reason: AppIdError }` (``Module
   `m` restricts to App id `Bad`: …``), checked on the full trees. `apps` is not accepted
   on events, components or modals (restrict their Module instead).

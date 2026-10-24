@@ -18,9 +18,10 @@
 //!    port call; a disabled one gets the same immediate localized ephemeral
 //!    type-4 `noctis.module.disabled` notice, with one `debug`. Either way
 //!    nothing later runs (no locale resolver, rate limit, auto-defer,
-//!    Middleware, handler, report or duration sample). Boot Flags and App
-//!    restrictions need no runtime check: their pruned registrations never
-//!    reach the Registry;
+//!    Middleware, handler, report or duration sample), and the recorded
+//!    Guild Locale is not refreshed (stage 4 never runs). Boot Flags and
+//!    App restrictions need no runtime check: their pruned registrations
+//!    never reach the Registry;
 //! 4. resolve the locales (FR-43): the User Locale as Discord's `locale`,
 //!    then `guild_locale`, then the App's default; the Guild Locale as
 //!    `guild_locale`, then `locale`, then the default (each step the

@@ -2,16 +2,23 @@
 title: 'Story 15.2: Multiple Apps per process'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'f9fff1c222785e2da6e5c174fa5bcf9582acf27c'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-15-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-13-2-boot-time-feature-flags.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Stage 3 suppresses guild lifecycle events (GUILD_CREATE, GUILD_DELETE, member events) for unserved guilds, so an allow/deny-list App cannot react to joining a guild it does not serve (for example to leave it).
+    evidence: |-
+      crates/noctis-core/src/worker.rs Workers::dispatch calls pipeline::serves for every event with a guild_id before spawning or queueing a Job, as the intent contract requires ("A denied event runs none of its handlers"). A GuildCreate handler that leaves or notifies an unserved guild therefore never runs. Changing this needs an intent decision (exempt lifecycle events or an opt-out such as a per-event or per-Module flag).
+    location: >-
+      crates/noctis-core/src/worker.rs:199
+    severity: medium
 ---
 
 <intent-contract>
@@ -193,6 +200,33 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 23 findings — high 0, medium 4, low 12, false 7, maybe-false 0
+- findings:
+  - `[medium]` `[defer]` (blind) Guild lifecycle events of unserved guilds are dropped, so a GuildCreate "leave unserved guild" handler never runs — real (worker.rs:199 gates every event with a guild_id), but the intent contract explicitly requires denied events to run no handler; out of scope by intent, deferred as a follow-up.
+  - `[low]` `[reject]` (blind) `Module::apps` accepts repeated ids silently, unlike `Module::flags` — real (check_app_restrictions checks only the grammar), but a repeat is idempotent for selection, the intent fixes the violation reason as `AppIdError` (no duplicate variant), and the fix adds public surface.
+  - `[low]` `[reject]` (blind) No diagnostic when a restriction can never match the effective App id — real, but the intent contract specifies the effective-id rule (matrix row "apps default id"), the skill and troubleshooting document it, and the fix adds a new warn branch with no spec basis.
+  - `[false]` `[reject]` (blind) Two Apps with the same App id on one Runtime are not detected — the intent's Never list explicitly excludes detecting them (rejected in 7.4); documented in §10.
+  - `[low]` `[patch]` (blind) Broken Markdown code spans for the `apps` macro errors in app-and-sharding.md §10 — confirmed at lines 951-953 (double-backtick spans without padding before a backtick word); patch rewrites them in the padded form commands.md uses.
+  - `[medium]` `[patch]` (blind) Contradictory guidance on running several Apps — confirmed: §10 and template AGENTS.md use `try_join!(main.run(), acme.run())`, while modules-middleware-ratelimits.md §2 says to use `run_with_args` because "only `App::from_env()` reads the process command line", which is false (`run()` parses `args_os`); patch makes the docs agree and states the CLI implication. The `try_join!` choice itself is settled by the spec.
+  - `[low]` `[reject]` (blind) Panicking GuildAccessList prints the default panic hook and logs one error per call — real, but consistent with every other catch_unwind in the pipeline, "once" in the spec means once per refused call, and rate-limiting the log adds state; rarely met.
+  - `[low]` `[patch]` (blind) Modal-submit refusal (and context-menu `kind`) untested — confirmed: pipeline/tests/access.rs covers commands, components, autocomplete, the Dispatcher and the panic path only; patch adds a denied modal-submit test (and a context-menu kind assertion).
+  - `[low]` `[reject]` (blind) No pipeline-level test that a pruned Command is not dispatched; `registration_restriction` "other" case asserts only `/both` — the "acme" case already asserts `/admin` absent, a pruned Command is absent from the Registry so dispatch follows the existing unknown-command path, and the template flow test covers `UnknownCommand`.
+  - `[low]` `[reject]` (blind) `GuildAccess` lacks a bulk `replace` — a feature request beyond the spec's defined API; per-guild insert/remove meet the matrix rows.
+  - `[low]` `[reject]` (blind) multi_app.rs proves absence with a fixed 300 ms sleep and ends with `abort()` — real only as a weaker assertion under load; same pattern as existing testkit tests, and a graceful-stop rework adds complexity.
+  - `[low]` `[patch]` (blind) Stage-3 refusal skips the stage-4 guild-locale record refresh and the pipeline docs do not say so — confirmed (pipeline.rs:847 refresh runs in stage 4, after stage 3); patch adds one line to the pipeline module docs.
+  - `[low]` `[reject]` (edge) `Module::apps` repeated ids accepted (module.rs:442) — same root cause and reason as the blind repeat finding.
+  - `[low]` `[reject]` (edge) Disjoint `Module::apps` and child `apps = [..]` lists prune the registration on every App with no warning — real, but an unusual author error and the fix adds a new cross-tree check with no spec basis.
+  - `[low]` `[reject]` (edge) `default_app_id` now runs on every build, so an invalid explicit id plus an undecodable token logs a misleading "call AppBuilder::app_id" warn — real (app.rs:2920), but needs two simultaneous misconfigurations and the build fails with InvalidAppId anyway; fix adds a branch.
+  - `[medium]` `[patch]` (edge) `.app_id` row sits under the skill's "Planned (signatures may change)" table although it is shipped and required for `apps = [..]` — confirmed (app-and-sharding.md ~line 140), contradicts AC4 (no planned marker for multi-App); patch moves the row into the main AppBuilder table.
+  - `[medium]` `[patch]` (vgap) Child-Module-only and menu-only App restrictions are never exercised through the `select` short-circuit under `BootFlags::all()` — pre-verified gap; patch adds `nested_module_restriction` and `menu_only_restriction` tests to `mod app_restriction`.
+  - `[false]` `[reject]` (intent 1) AC3 "skips" versus a notice — the spec deliberately settles this with AD-23 (stage-3 notices are ephemeral replies; silence shows "did not respond").
+  - `[false]` `[reject]` (intent 2) AC2 widened from Publish-only to full existence — the intent contract chooses full pruning (one mechanism for Registry, intents and Publish).
+  - `[false]` `[reject]` (intent 3) Restriction keyed by effective AppId, silent when no explicit id — the intent contract defines the effective id and its fallback; documented.
+  - `[false]` `[reject]` (intent 4) AC1 shared resources proven through a stand-in Resource — the spec's AC1 names exactly these assertions (Resource via runtime, http Arcs, kv prefixes, metrics labels); the diff meets them.
+  - `[false]` `[reject]` (intent 5) AC3 scope wider than interactions — the intent contract requires stage 3 for events, autocomplete and the Dispatcher.
+  - `[false]` `[reject]` (intent 6) Opt-in `Shared::new` sharing not exercised — the intent keeps the existing Story 7.4 mechanism and only documents it; no new surface to test.
+
 ## Design Notes
 
 These decisions are also logged in the architecture memlog.
@@ -222,3 +256,12 @@ builder.app_id("acme").guild_access(GuildAccess::allow([customer_guild]));
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- pass
 - `cargo deny check` and `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is not run by the implementer (gate script only).
+
+## Auto Run Result
+
+- **Summary:** Several Apps run in one process sharing a Runtime (Resources, HTTP, KV prefixes, metrics labels). `apps = [..]` on commands/menus/kinds and `Module::apps` restrict registrations by effective `AppId`, pruned in the Boot Flag pass (Registry, intents, Publish consistent). A `GuildAccessList` port (memory adapter) enforces pipeline stage 3: ephemeral notice for interactions, silent for events and the Dispatcher, fail-closed on panic. `noctis-rules` validates App ids (compile-time and build-time).
+- **Files changed:** noctis-core (module.rs, registry.rs, pipeline.rs + component.rs, worker.rs, namespace.rs, tests incl. pipeline/tests/access.rs); noctis-macros (new apps.rs; command/menu/kind/flags parsing); noctis-ports (access.rs port, memory/access.rs adapter); noctis-rules (app_id.rs); noctis-testkit/tests/multi_app.rs; noctis facade re-exports + trybuild app_id_invalid; project-template code, flows test, AGENTS.md and usage skill references; xtask/public-api.txt re-blessed.
+- **Review findings:** 23 total (high 0, medium 4, low 12, false 7). Patched 6 (medium 3, low 3): Markdown code spans in app-and-sharding.md §10; consistent `try_join!(run())` guidance for several Apps; denied modal-submit and context-menu kind tests; pipeline docs note stage-3 refusal skips the guild-locale refresh; `.app_id` row moved out of the Planned table; nested-module and menu-only restriction tests under `BootFlags::all()`. Deferred 1 (medium): guild lifecycle events of unserved guilds are dropped by stage 3. Rejected 16 with reasons in the triage log (repeated `Module::apps` ids idempotent; no unmatched-restriction diagnostic; duplicate App ids out of scope per 7.4; panic logging consistent with pipeline; pruned-command dispatch covered by unknown-command path; no bulk `replace`; fixed-sleep testkit pattern; disjoint module/child lists; misleading warn needs two misconfigurations; 7 false intent/spec findings).
+- **Follow-up review recommended:** true (first pass, 3 medium patches). Named risk: the new nested-module/menu-only restriction tests and the doc rewrite of multi-App run guidance were added after review and have not been re-reviewed for whether pruning under `select` short-circuit matches the documented semantics.
+- **Verification:** local gates via tools/story-loop/gates.sh all green; CI paused by maintainer.
+- **Residual risks:** allow/deny-list Apps cannot react to GUILD_CREATE for unserved guilds (deferred); restrictions silently never match when no explicit `.app_id(..)` is set and the token-derived id differs; duplicate App ids on one Runtime undetected.

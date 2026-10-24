@@ -192,8 +192,10 @@ struct CoreBeta;
   `` - delete chat_input `x` ``). Publish from a process with the full selection, or
   accept that the subset is what users see.
 - **Several Apps in one process.** Give each App its own selection with
-  `.boot_flags(..)` and run each with `run_with_args(..)` (only `App::from_env()` reads
-  the process command line). The App restriction (`apps = [..]`, `Module::apps`) runs in
+  `.boot_flags(..)`. `run()` reads the process command line for every App:
+  `--features` must equal each App's built selection (else `BootFlagsMismatch`) and
+  `--publish`/`--no-resume` apply to all, so run Apps with different Boot Flag
+  selections with `run_with_args(..)` each (`app-and-sharding.md` §10). The App restriction (`apps = [..]`, `Module::apps`) runs in
   the same pruning pass, after the Boot Flags: an item exists only when both keep it
   (`app-and-sharding.md` §10).
 - This template flags `profile/badges` with `badges` (`src/modules/profile/mod.rs`):

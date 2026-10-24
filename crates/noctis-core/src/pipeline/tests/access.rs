@@ -9,14 +9,14 @@ use noctis_ports::GuildAccessList;
 use noctis_ports::memory::GuildAccess;
 
 use super::autocomplete;
-use super::components::click;
+use super::components::{click, submit};
 use super::*;
 use crate::kind::__Response;
 use crate::pipeline::component::run_component;
 use crate::test_support::{TestRefs, test_route};
 use crate::{
     AutoDefer, BeforeCtx, ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder, Flow,
-    LocaleRequest, Middleware,
+    LocaleRequest, Middleware, ModalHandler, ModalSubmitCtx,
 };
 
 test_route!(
@@ -27,6 +27,7 @@ test_route!(
     RouteRuntime::EMPTY.one_shot()
 );
 test_route!(Plain, "a.plain", RouteShape::INLINE, 0);
+test_route!(Form, "a.form", RouteShape::INLINE, 0);
 
 /// `noctis.module.disabled` in en-US.
 const DISABLED: &str = "This feature is disabled here.";
@@ -377,5 +378,80 @@ async fn denied_autocomplete_is_empty() {
     assert_eq!(
         requests[1].2["data"]["choices"][0]["value"], "10",
         "{requests:?}"
+    );
+}
+
+/// A denied modal submit and a denied context menu each get one
+/// ephemeral `noctis.module.disabled` notice and one `debug` naming their kind,
+/// and run no handler and no report.
+#[tokio::test]
+async fn denied_modal_and_menu_get_the_notice() {
+    let log = Log::default();
+    let sink = Arc::new(Recording::default());
+    let (form_log, menu_log, form_sink) = (log.clone(), log.clone(), Arc::clone(&sink));
+    let module = Module::new("m")
+        .__add(ModalHandler::__new::<Form, _, _>(
+            "m::Form",
+            "a.form",
+            move |f: Form, _: ModalSubmitCtx| {
+                form_log.push(format!("form:{}", f.item));
+                async { Ok(Responded::new()) }
+            },
+        ))
+        .__add(ContextMenuHandler::__new_user(
+            "m::show",
+            "Show",
+            CommandMetadata::new(),
+            move |_: CommandCtx, _: ResolvedUser, _: CommandResponder| {
+                menu_log.push("show");
+                async { Ok(v2("u")) }
+            },
+        ));
+    let p = Pipeline::start_with(module, move |b| {
+        b.guild_access(GuildAccess::deny([Id::new(DENIED)]))
+            .error_sink(ErrorOrigin::Component, form_sink);
+    })
+    .await;
+    let menu = json!({
+        "id": "9", "name": "Show", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    let capture = Capture::default();
+    {
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
+        run_component(
+            Arc::clone(p.fx.app.registry()),
+            Arc::clone(p.fx.app.shared()),
+            inbound(&in_guild(submit("0a.form:1", true), DENIED)),
+            CancellationToken::new(),
+        )
+        .await;
+        p.run(inbound(&interaction(
+            menu,
+            json!({ "guild_id": DENIED.to_string() }),
+        )))
+        .await;
+    }
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    for request in &requests {
+        assert_notice(request, DISABLED);
+    }
+    assert!(log.lines().is_empty());
+    assert!(sink.seen().is_empty());
+    assert!(p.reports().is_empty());
+    let lines = capture.lines_with(&["noctis::dispatch", "guild not served"]);
+    assert_eq!(lines.len(), 2, "{}", capture.text());
+    assert!(
+        lines[0].contains("route=\"a.form\"") && lines[0].contains("kind=\"modal\""),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains("handler=\"m::show\"") && lines[1].contains("kind=\"context_menu\""),
+        "{}",
+        lines[1]
     );
 }

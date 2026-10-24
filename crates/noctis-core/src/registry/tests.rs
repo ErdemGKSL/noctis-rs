@@ -2015,6 +2015,51 @@ mod app_restriction {
         }
     }
 
+    /// A restriction only on a child Module prunes that child alone.
+    #[test]
+    fn nested_module_restriction() {
+        let root = || {
+            Module::new("core")
+                .__add(command("ping", &["ping"], "Ping"))
+                .module(
+                    Module::new("core/acme")
+                        .apps(["acme"])
+                        .__add(command("brand", &["brand"], "Brand"))
+                        .__add(button("buy", "shop.buy")),
+                )
+        };
+        let (registry, violations) = fold(&[root()], "main");
+        assert_eq!(violations, []);
+        let rendered = tree(&registry);
+        assert!(rendered.contains("/ping"), "{rendered}");
+        assert!(!rendered.contains("/brand"), "{rendered}");
+        assert!(registry.route("shop.buy").is_none());
+        let (registry, violations) = fold(&[root()], "acme");
+        assert_eq!(violations, []);
+        let rendered = tree(&registry);
+        assert!(rendered.contains("/ping"), "{rendered}");
+        assert!(rendered.contains("/brand"), "{rendered}");
+        assert!(registry.route("shop.buy").is_some());
+    }
+
+    /// A restriction only on a context menu prunes that menu.
+    #[test]
+    fn menu_only_restriction() {
+        let m = || {
+            Module::new("m").__add_scoped(
+                &[],
+                &["main"],
+                user_menu("inspect", "Inspect", crate::CommandMetadata::new()),
+            )
+        };
+        let (registry, violations) = fold(&[m()], "main");
+        assert_eq!(violations, []);
+        assert!(tree(&registry).contains("Inspect"));
+        let (registry, violations) = fold(&[m()], "acme");
+        assert_eq!(violations, []);
+        assert!(!tree(&registry).contains("Inspect"));
+    }
+
     /// Invalid `Module::apps` ids are violations on the full trees.
     #[test]
     fn invalid_module_ids() {
