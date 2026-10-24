@@ -641,7 +641,10 @@ Discord 429s (RL-01, RL-04): without a proxy, twilight's limiter waits out a `us
 `RawHttpError::RateLimited`; a `ctx.http()` twilight error converts with
 `RateLimited::from_http_error(&err)` (`Some` only for a rate limit). Publish reports
 `PublishError::Rejected { status: 429, .. }`, startup `StartError::GatewayInfo { status:
-Some(429) }`. Wait at least `retry_after` before retrying, never in a loop:
+Some(429) }`. The initial interaction response (respond or defer) is the exception: it
+keeps the INT-01 fit rule (one retry when `retry_after` fits the ack deadline) and fails
+as `AckDeadlineMissed`, never `RateLimited`. Wait at least `retry_after` before
+retrying, never in a loop:
 
 ```rust
 use noctis::http::RateLimited;

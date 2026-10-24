@@ -1639,6 +1639,7 @@ dependencies = [
 name = "noctis-core"
 version = "0.1.0"
 dependencies = [
+ "brotli-decompressor",
  "bytes",
  "futures-util",
  "getrandom 0.4.3",

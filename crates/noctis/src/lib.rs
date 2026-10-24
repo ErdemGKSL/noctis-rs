@@ -1632,8 +1632,11 @@ pub mod http {
     //! Discord `code`, typed on every Noctis surface
     //! (`ResponderError::RateLimited`, `WebhookError::RateLimited`,
     //! [`RawHttpError::RateLimited`]) and recovered from a raw twilight call
-    //! with [`RateLimited::from_http_error`]. Wait before sending it again;
-    //! never retry it in a loop.
+    //! with [`RateLimited::from_http_error`]. The initial interaction
+    //! response (respond or defer) is the exception: it keeps the INT-01 fit
+    //! rule (one retry when `retry_after` fits the ack deadline) and fails as
+    //! `AckDeadlineMissed`, never `RateLimited`. Wait before sending it
+    //! again; never retry it in a loop.
     //!
     //! ```no_run
     //! use noctis::http::RateLimited;

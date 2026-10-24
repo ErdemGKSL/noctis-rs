@@ -4224,6 +4224,26 @@ fn rl_02_warning_text() {
     assert_eq!(capture.text().lines().count(), 1);
 }
 
+/// Story 12.4 (RL-02): an App running a Shard Range without a proxy warns
+/// exactly once; the same App with a proxy does not.
+#[tokio::test]
+async fn rl_02_app_warns_without_proxy() {
+    for (proxy, expected) in [(None, 1), (Some("127.0.0.1:1"), 0)] {
+        let mut builder = App::builder();
+        builder.token(token()).shard_total(4).shard_range(0..2);
+        if let Some(proxy) = proxy {
+            builder.http_proxy(proxy);
+        }
+        let app = builder.build().unwrap();
+        let capture = crate::test_support::Capture::default();
+        tracing::subscriber::with_default(capture.subscriber(), || {
+            app.warn_cluster_without_proxy();
+        });
+        let lines = capture.lines_with(&["WARN", "noctis::app", "RL-02"]);
+        assert_eq!(lines.len(), expected, "{proxy:?}: {}", capture.text());
+    }
+}
+
 /// Story 12.4 E11: the default request timeout is 10 s.
 #[tokio::test]
 async fn default_http_timeout_is_ten_seconds() {

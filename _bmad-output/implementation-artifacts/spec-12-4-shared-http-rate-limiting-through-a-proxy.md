@@ -2,16 +2,58 @@
 title: 'Story 12.4: Shared HTTP rate limiting through a proxy'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'ed6784e5577185c1ce692e47011e60b2956a3c64'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-12-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-5-9-warm-deadline-safe-discord-http-edge.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      bg.sh lets the first attached caller consume the job, so a second caller of the same job spins forever and an empty status exits 0.
+    evidence: |-
+      tools/story-loop/bg.sh: after status appears, the first waiter runs mv "$J" "$J.done.$$" and rm -rf; a second waiter still in `while [ ! -f "$J/status" ]` never sees the file again; `exit "$st"` with an empty st exits 0. Not caused by Story 12.4: the file is identical to origin/main (commit 2defad7).
+    location: >-
+      tools/story-loop/bg.sh:24-29
+    severity: medium
+  - summary: >-
+      bg.sh waits forever when the detached runner died before writing status (container restart, kill).
+    evidence: |-
+      tools/story-loop/bg.sh: the wait loop polls only for $J/status, with no runner pid or liveness check. Pre-existing tooling from origin/main (commit 2defad7), not this story.
+    location: >-
+      tools/story-loop/bg.sh:24
+    severity: medium
+  - summary: >-
+      lane.sh lock spins without sleep and ignores its 9-minute deadline when move fails for a non-contention reason while the lock looks free.
+    evidence: |-
+      tools/story-loop/lane.sh lock: `move "$1" "$owner" && exit 0; continue` jumps back before the `$SECONDS -ge $end` check and the `sleep 20`. Pre-existing tooling from origin/main, not this story.
+    location: >-
+      tools/story-loop/lane.sh:86-89
+    severity: medium
+  - summary: >-
+      story-loop.js resumed() ignores resumeAt 'done' outside the auto path, and a dead recovery agent in the auto path falls back to re-planning.
+    evidence: |-
+      Unverified reviewer claim on pre-existing workflow tooling (identical to origin/main). Settle by reading resumed()/retry in .claude/workflows/story-loop.js and tracing a recovery result with retry true and resumeAt 'done'.
+    location: >-
+      .claude/workflows/story-loop.js resumed()
+    severity: medium (unverified)
+  - summary: >-
+      story-loop.js mergeIntoMain can leave the merge lock held for 4 h after a failed release or a crash between merge and push-main.
+    evidence: |-
+      Unverified reviewer claim on pre-existing workflow tooling. Settle by checking whether lane.sh push-main's release reports failure and whether mergeIntoMain unlocks on every exit path.
+    location: >-
+      .claude/workflows/story-loop.js mergeIntoMain
+    severity: medium (unverified)
+  - summary: >-
+      epic-last.py may never run cargo hack for an epic when two of its stories are in progress at once across lanes, and silently ignores git fetch failures.
+    evidence: |-
+      Unverified reviewer claim on pre-existing tooling. Settle by running epic-last.py against a sprint-status with two in-progress stories of one epic and checking its fetch error handling.
+    location: >-
+      tools/story-loop/epic-last.py
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -157,6 +199,48 @@ Direct-mode relay through the edge (core `edge/tests.rs`, extend `TestServer`'s 
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 38 findings — high 0, medium 9, low 15, false 11, maybe-false 3
+- findings:
+  - `[low]` `[patch]` (blind) Callback 429s keep the INT-01 fit rule (one local retry, else `AckDeadlineMissed`), yet docs say every 429 is never retried and typed on every surface — code follows the spec's Never rule; docs overclaim. Patch: name the exception in `noctis-core` crate docs, `noctis::http` docs, template AGENTS.md and `app-and-sharding.md` §5.
+  - `[low]` `[reject]` (blind) Timeout firing during the 429 body read double-counts `requests_total` and skips the rate-limit counters — real, but needs a 429 body that stalls after headers until `http_timeout`; the fix adds a recorded-status flag (new branch), not worth it.
+  - `[low]` `[reject]` (blind) Edge timeout does not bound a streamed non-429 body after headers — matches the spec's shape (timeout around `upstream()`); a stalled body after timely headers is unlikely and bounding `Timed` adds complexity.
+  - `[low]` `[reject]` (blind) Relayed direct `user` 429 body capped at 64 KiB / empty on read error — twilight's limiter path re-sends a 429 without reading its body and Discord 429 bodies are ~100 bytes; fix adds a fallback branch.
+  - `[medium]` `[patch]` (blind) `classify_429` parses a content-encoded 429 body as raw bytes — verified: twilight-http 0.17.1 with `decompression` sends `Accept-Encoding: br` (`client/mod.rs:2952`) and `end_to_end` forwards it, so a Brotli 429 body from Discord loses body `retry_after`, `global` and `discord_code`. Patch: decode a `content-encoding: br` body (capped) before classifying.
+  - `[low]` `[reject]` (blind) `valid_reset_after` guard only on surfaced 429s, not on other relayed direct-mode responses — `relay()` behaviour is pre-existing and Discord never sends such headers; a guard on every response adds a branch on the hot path.
+  - `[low]` `[reject]` (blind) A proxy-synthesized scope-less 429 counts as an invalid request — the spec counts scope-less 429s on purpose (Cloudflare's own 429s carry no scope and are indistinguishable at the edge); overcounting only makes alerts conservative, and separating them needs heuristics.
+  - `[false]` `[reject]` (blind) Callback hitting `http_timeout` reported as `AckDeadlineMissed`, hedge window shortened — the spec settles it (`deadline = min(..)`, "result stays `DeadlineMissed`"), and `responder.md` documents both causes.
+  - `[low]` `[reject]` (blind) Edge 504 timeout body not mapped on raw/responder surfaces — twilight's per-attempt timeout starts before the edge's (which starts after the body is collected) with the same value, so the edge 504 practically never reaches an App caller; extra mappings add branches.
+  - `[low]` `[reject]` (blind) `proxied` derived in `Pool::new` and `Edge::start`, then overwritten in `start_with` — the spec prescribes this shape; production always overwrites through `EdgeOptions` and no caller diverges.
+  - `[low]` `[reject]` (blind) `RawHttpError::RateLimited` Display omits scope/retry_after (data in `source()`) — follows `RawHttpError`'s own source-chain convention; cosmetic.
+  - `[false]` `[reject]` (blind) E10 accepts twilight's own timeout, not the edge 504 — the spec's E10 expects `RawHttpError::Http` (twilight timeout); the edge bound is proven by D5 `forward_times_out` as the spec assigns.
+  - `[medium]` `[patch]` (blind) RL-02 warning has no positive test through `run`/the App method — same root as the vgap gap below. Patch: test `App::warn_cluster_without_proxy` on a built App with and without proxy.
+  - `[false]` `[reject]` (blind) Add `+5`/leading-zero/non-UTF-8 cases to R12 — `relay_429` and twilight's `parse_ratelimit_headers` use the same `to_str().parse::<u16>()` and bucket `as_bytes()`; no disagreement or bad outcome exists.
+  - `[maybe-false]` `[defer]` (blind) `story-loop.js` resume of `'done'` and dead recovery agent — pre-existing workflow tooling identical to origin/main (commit 2defad7), not this story; settle by tracing `resumed()`.
+  - `[maybe-false]` `[defer]` (blind) `mergeIntoMain` can leave the merge lock held — pre-existing tooling; settle by checking release failure handling.
+  - `[medium]` `[defer]` (blind) `bg.sh` first caller consumes the job, second caller spins; empty status exits 0 — verified in `bg.sh:24-29`; pre-existing tooling from origin/main, not this story.
+  - `[maybe-false]` `[defer]` (blind) `epic-last.py` two in-progress stories block `cargo hack`; silent fetch fallback — pre-existing tooling; settle by running it on such a status.
+  - `[false]` `[reject]` (blind) Story diff bundles unrelated tooling/AGENTS.md policy changes — those files are byte-identical to origin/main (`git diff origin/main HEAD -- tools .claude/workflows AGENTS.md` is empty; commit 2defad7 and siblings); the lane synced them, the story did not author them.
+  - `[low]` `[patch]` (blind) `.env.example` new Cluster comment repeats the line above it — direct correction. Patch: merge the two comments into one.
+  - `[low]` `[reject]` (edge) Timeout after a recorded 429 double-counts — same root and rejection as the blind timeout/429-body row.
+  - `[low]` `[reject]` (edge) Truncated/failed 429 body relayed as complete — same root and rejection as the blind relay-body row.
+  - `[medium]` `[defer]` (edge) `bg.sh` waits forever on a dead runner — verified (no liveness check); pre-existing tooling, not this story.
+  - `[medium]` `[defer]` (edge) `bg.sh` second caller gets an empty status — same root as the blind `bg.sh` row; deferred with it.
+  - `[medium]` `[defer]` (edge) `lane.sh lock` spins without sleep past its deadline on a failed move — verified (`continue` skips the deadline check and `sleep`); pre-existing tooling.
+  - `[low]` `[patch]` (edge) Callback callers never see `ResponderError::RateLimited` and may get one retry — same root as the blind callback-docs row (spec keeps the fit rule); fixed by the same doc correction.
+  - `[low]` `[reject]` (edge) Streamed body after timely headers outlasts `request_timeout` — same root and rejection as the blind streamed-body row.
+  - `[medium]` `[patch]` (vgap) RL-02 warning never verified at its `run` call site (pre-verified gap) — grouped with the blind RL-02 row. Patch: `app/tests.rs` test on a built App (`shard_total(4).shard_range(0..2)`, no proxy → one RL-02 warn; with `http_proxy` → none).
+  - `[medium]` `[patch]` (vgap) `Edge::start`'s `proxied` derivation never exercised (pre-verified gap) — Patch: `edge/tests.rs` asserts `!pool.proxied` for `Upstream::discord()` and `pool.proxied` for `Upstream::http(..)` via `Edge::start`.
+  - `[low]` `[reject]` (vgap other) `proxied` computed twice — same root and rejection as the blind duplication row.
+  - `[false]` `[reject]` (intent 1) Direct-mode `global`/`shared`/scope-less 429s surfaced too — the spec deliberately settles it (Design Notes: twilight 0.17.1 hot-loops/cannot wait these out; D2).
+  - `[false]` `[reject]` (intent 2) `ctx.http()` callers see 503 and need `from_http_error` — spec-settled decision ("Typed error everywhere"), documented in the Skill.
+  - `[medium]` `[patch]` (intent 3) RL-02 positive case untested at startup — grouped with the vgap RL-02 gap.
+  - `[false]` `[reject]` (intent 4) No-bypass shown as reachability, not absence — the spec's E1 defines the check; the single-client structure (no second client, `Never` rule) gives the absence.
+  - `[false]` `[reject]` (intent 5) Edge forward bound not distinguished end to end; callback timeout is `DeadlineMissed` — both settled by the spec (E10 expectation, D5, "result stays `DeadlineMissed`").
+  - `[false]` `[reject]` (intent 6) Unrelated repository changes in the diff — identical to origin/main; synced lane tooling, not authored by the story.
+  - `[false]` `[reject]` (intent 7) Template code not changed — the new API is additive (new type, new variants); template code matches only `UpdateUnavailable` and `WebhookError::Rejected{404}`, so no template code is affected; AGENTS.md and Skill were updated.
+  - `[false]` `[reject]` (intent 8) RL-03 excludes shared 429s and counts proxy 429s — spec-settled per Discord's docs (Design Notes, E3/E4/D6).
+
 ## Design Notes
 
 - **Why the edge rewrites some 429s** (decision): twilight-http 0.17.1 with `ratelimiter(None)` re-sends a 429 at once in an unbounded loop, and its limiter returns `None` for `global`/scope-less 429s (also an immediate retry) and panics on a negative/NaN `x-ratelimit-reset-after`. A response twilight treats as a plain error (503, chosen as "temporarily unavailable, see Retry-After") stops the loop; keeping Discord's headers lets the local limiter (direct mode) still learn the bucket. Byte-for-byte forwarding stays the rule for everything else, including the one 429 twilight handles well (direct, `user`, valid bucket headers: RL-01 per-route waiting).
@@ -190,3 +274,15 @@ Run from `/home/claude/lanes/c/noctis-rs`, release only:
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- expected: pass
 - `cargo deny check` -- expected: exit 0
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
+
+## Auto Run Result
+
+- **Summary:** Shared HTTP rate limiting through the HTTP edge/proxy: the edge classifies every upstream 429 (`classify_429`), relays only the direct-mode `user` 429 with valid bucket headers (RL-01 per-route waiting) and rewrites the rest to a 503 so twilight-http 0.17.1 stops hot-looping; typed `RateLimited` errors on Noctis surfaces (`RawHttpError`, `ResponderError`, `WebhookError`) plus `RateLimited::from_http_error` for `ctx.http()` users; RL-02 startup warning for a cluster without a proxy; RL-03 invalid-request counters (shared 429s excluded); edge forward timeout = `http_timeout`, callback deadline = min(ack deadline, `http_timeout`).
+- **Files changed:** `crates/noctis-core/src/edge/{mod,rate_limit,metrics,pool,callback,test_support}.rs` (429 classification, rewrite, timeout, metrics); `crates/noctis-core/src/rate_limit.rs` (public `RateLimited` type); `app.rs`, `raw_http.rs`, `responder*.rs`, `webhook.rs`, `publish.rs`, `observe.rs`, `lib.rs` (typed variants, RL-02 warning, metrics); tests in `edge/tests.rs`, `edge/rate_limit/tests.rs`, `app/tests.rs`, testkit `http_rate_limit.rs`, `observability.rs`; `Cargo.toml`/`noctis-core/Cargo.toml` (`brotli-decompressor` 5.0.3, already in graph); `noctis/src/lib.rs` docs; `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt`; ARCHITECTURE-SPINE + memlog; project template AGENTS.md, README, `.env.example`, Skill (`SKILL.md` API hash, `app-and-sharding.md`, `responder.md`, `components-v2.md`, `limits-cheatsheet.md`).
+- **Review findings:** 38 total (high 0, medium 9, low 15, false 11, maybe-false 3).
+  - Patched (6 entries; medium 4, low 3 counted by verdict incl. grouped): Brotli-encoded 429 body decoded before classification; RL-02 warning tested on a built App with/without proxy; `Edge::start` `proxied` derivation tested; callback-429 fit-rule exception documented in core/noctis docs, template AGENTS.md and `app-and-sharding.md`; `.env.example` duplicate comment merged.
+  - Deferred (6): pre-existing story-loop tooling issues (`bg.sh` single-consumer/empty status/no liveness check, `lane.sh lock` spin, `story-loop.js` resume, `mergeIntoMain` lock, `epic-last.py`) - not this story's code.
+  - Rejected (26): timeout during 429 body read double-count, streamed body after headers unbounded, 64 KiB relay cap, guard on non-429 relays, scope-less proxy 429 counted, edge 504 unmapped, duplicate `proxied` derivation, Display omits scope - all low-value/new-branch costs per triage; 11 false findings spec-settled (direct-mode global/shared surfaced, typed 503 for `ctx.http()`, E10/D5 timeout assignment, unrelated synced tooling diff, template code unaffected, RL-03 semantics).
+- **Follow-up review recommended: true** - four medium entries patched on a first pass; named unverified risk: the new Brotli decode path for `content-encoding: br` 429 bodies (capped decompression, fallback on decode error) has not had an independent review.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); `cargo hack` skipped (not the epic's last story). CI paused by the maintainer.
+- **Residual risks:** Brotli decode path reviewed only by its author; streamed non-429 bodies after timely headers are not bounded by the edge timeout; a 429 body stalling until `http_timeout` double-counts `requests_total`.

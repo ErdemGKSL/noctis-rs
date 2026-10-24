@@ -517,7 +517,7 @@ async fn rate_limited(
         .await
         .unwrap_or_default();
     metrics.phase(Phase::Total, started.elapsed());
-    let limited = rate_limit::classify_429(&headers, &body);
+    let limited = rate_limit::classify_429(&headers, &decoded_429(&headers, &body));
     metrics.upstream_status(StatusCode::TOO_MANY_REQUESTS.as_u16(), Some(limited.scope));
     let scope = limited.scope.as_str();
     if rate_limit::relay_429(&headers, pool.proxied) {
@@ -541,6 +541,28 @@ async fn rate_limited(
         headers,
         rate_limit::edge_body(&limited),
     )
+}
+
+/// A 429 body as JSON bytes: Brotli-decoded (capped at [`MAX_429_BODY`])
+/// when upstream sent `content-encoding: br`, else as read.
+fn decoded_429(headers: &HeaderMap, body: &Bytes) -> Bytes {
+    use std::io::Read as _;
+    let brotli = headers
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("br"));
+    if !brotli {
+        return body.clone();
+    }
+    let mut out = Vec::new();
+    let limit = u64::try_from(MAX_429_BODY).unwrap_or(u64::MAX);
+    match brotli_decompressor::Decompressor::new(&body[..], 4096)
+        .take(limit)
+        .read_to_end(&mut out)
+    {
+        Ok(_) => Bytes::from(out),
+        Err(_) => Bytes::new(),
+    }
 }
 
 /// The upstream response for twilight: hop-by-hop headers dropped, the body

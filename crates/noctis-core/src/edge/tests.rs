@@ -753,6 +753,49 @@ async fn huge_429_body_is_capped() {
     assert_eq!(limited.retry_after, Some(Duration::from_secs(7)));
 }
 
+/// `data` as a Brotli stream of one uncompressed meta-block (window 16).
+fn brotli_stored(data: &[u8]) -> Vec<u8> {
+    let len = u32::try_from(data.len() - 1).unwrap();
+    assert!(len < 1 << 16);
+    // Bits, LSB first: WBITS 0, ISLAST 0, MNIBBLES 00 (4), MLEN-1 (16 bits),
+    // ISUNCOMPRESSED 1; padded to 24 bits.
+    let header = (len << 4) | (1 << 20);
+    let mut out = header.to_le_bytes()[..3].to_vec();
+    out.extend_from_slice(data);
+    // ISLAST 1, ISLASTEMPTY 1.
+    out.push(0b11);
+    out
+}
+
+/// A Brotli-encoded upstream 429 body is decoded before classification:
+/// the surfaced edge body carries its `retry_after` and `discord_code`.
+#[tokio::test]
+async fn brotli_429_body_is_decoded() {
+    let server = answering(
+        StatusCode::TOO_MANY_REQUESTS,
+        header_map(&[("x-ratelimit-scope", "shared"), ("content-encoding", "br")]),
+        Bytes::from(brotli_stored(
+            br#"{"message":"limited","retry_after":42.0,"global":false,"code":20028}"#,
+        )),
+    )
+    .await;
+    let edge = start_limited(&server, false, Duration::from_secs(10));
+    let (status, headers, body) =
+        test_support::raw_full(edge.local_addr(), &get("/api/v10/channels/1")).await;
+    assert_eq!(status, 503);
+    assert_eq!(find(&headers, "content-encoding"), None);
+    let limited = rate_limit::parse_edge_body(503, &body).expect("an edge body");
+    assert_eq!(limited.retry_after, Some(Duration::from_secs(42)));
+    assert_eq!(limited.discord_code, Some(20028));
+}
+
+/// `Edge::start` marks only an HTTP (proxy) upstream as proxied.
+#[tokio::test]
+async fn start_derives_proxied_from_upstream() {
+    assert!(!start(Upstream::discord()).pool.proxied);
+    assert!(start(Upstream::http("127.0.0.1:1", false)).pool.proxied);
+}
+
 /// D5: a forwarded request is bounded by the request timeout (504).
 #[tokio::test]
 async fn forward_times_out() {

@@ -115,8 +115,11 @@
 //! included. An upstream 429 twilight's limiter cannot wait out (every one
 //! behind a proxy) is surfaced once, never retried, as [`RateLimited`]
 //! (`ResponderError::RateLimited` and friends, or
-//! [`RateLimited::from_http_error`] for a raw twilight call); a Cluster
-//! process without a proxy logs an RL-02 warning at `run`.
+//! [`RateLimited::from_http_error`] for a raw twilight call); the initial
+//! interaction response (respond or defer) is the exception: it keeps the
+//! INT-01 fit rule (one retry when `retry_after` fits the ack deadline) and
+//! fails as `AckDeadlineMissed`, never `RateLimited`. A Cluster process
+//! without a proxy logs an RL-02 warning at `run`.
 //!
 //! # Publishing commands
 //!
