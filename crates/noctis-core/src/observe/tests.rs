@@ -65,6 +65,9 @@ fn catalog_static() {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
         assert!(!info.description.is_empty());
+        // Story 13.1 (AD-29): the Module id is a span field and an
+        // `ErrorReport` field, never a metric label.
+        assert!(!info.labels.contains(&"module"), "{}", info.name);
         for label in info.labels {
             assert!(ALLOWED_LABELS.contains(label), "{}: {label}", info.name);
             for forbidden in FORBIDDEN_IN_NAMES {

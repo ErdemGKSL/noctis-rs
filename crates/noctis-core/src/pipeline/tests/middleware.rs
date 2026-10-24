@@ -124,7 +124,7 @@ fn tree(log: &Log, r2: BeforeMiddleware, a1: AfterMiddleware) -> Module {
         .after(after(log, "a2"))
         .__add(handler(log, "m::root", &["root"]))
         .module(
-            Module::new("child")
+            Module::new("root/child")
                 .before(pass(log, "c1"))
                 .after(after(log, "ca1"))
                 .__add(handler(log, "m::child", &["child"])),
@@ -678,7 +678,7 @@ async fn events_run_middleware_unless_filtered() {
         .before(pass(&log, "r1"))
         .after(after(&log, "a1"))
         .module(
-            Module::new("child")
+            Module::new("root/child")
                 .before(pass(&log, "c1"))
                 .after(after(&log, "ca1"))
                 .__add(crate::test_support::handler::<
@@ -740,7 +740,7 @@ async fn event_after_panic_is_reported() {
     let module = Module::new("root")
         .after(after(&log, "a0"))
         .after(a1)
-        .module(Module::new("child").after(after(&log, "ca1")).__add(
+        .module(Module::new("root/child").after(after(&log, "ca1")).__add(
             crate::test_support::handler::<
                 twilight_model::gateway::payload::incoming::MessageDelete,
                 _,

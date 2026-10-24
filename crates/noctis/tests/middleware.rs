@@ -209,7 +209,7 @@ fn provided() -> Module {
         .before(Middleware::before(load_settings).provides::<Settings>())
         .after(Middleware::after(audit))
         .module(
-            Module::new("kinds")
+            Module::new("root/kinds")
                 .add::<One>()
                 .add::<Opt>()
                 .add::<Bio>()
@@ -288,13 +288,13 @@ fn missing_providers_are_build_violations() {
         .module(
             Module::new("root")
                 .module(
-                    Module::new("kinds")
+                    Module::new("root/kinds")
                         .add::<One>()
                         .add::<Cfg>()
                         .add::<Maybe>(),
                 )
                 .module(
-                    Module::new("sibling")
+                    Module::new("root/sibling")
                         .before(Middleware::before(load_settings).provides::<Settings>()),
                 ),
         )
@@ -319,8 +319,8 @@ fn missing_providers_are_build_violations() {
     assert_eq!(
         missing,
         [
-            ("kinds", cfg.as_str(), settings.as_str()),
-            ("kinds", one.as_str(), settings.as_str()),
+            ("root/kinds", cfg.as_str(), settings.as_str()),
+            ("root/kinds", one.as_str(), settings.as_str()),
         ]
     );
     let text = err
@@ -332,9 +332,9 @@ fn missing_providers_are_build_violations() {
     assert_eq!(
         text,
         format!(
-            "handler `{here}::Cfg` (Module `kinds`) takes `Ext<{here}::Settings>`, but no \
+            "handler `{here}::Cfg` (Module `root/kinds`) takes `Ext<{here}::Settings>`, but no \
              before-Middleware on its Module path provides it: add \
-             `.before(Middleware::before(f).provides::<{here}::Settings>())` to Module `kinds` or \
+             `.before(Middleware::before(f).provides::<{here}::Settings>())` to Module `root/kinds` or \
              an ancestor, or take `Option<Ext<{here}::Settings>>`"
         )
     );

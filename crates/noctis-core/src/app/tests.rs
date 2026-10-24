@@ -658,7 +658,7 @@ mod module_locales {
     async fn modules_merge_in_pre_order() {
         let err = build(
             App::builder()
-                .module(Module::new("r1").module(Module::new("c1").locales(C)))
+                .module(Module::new("r1").module(Module::new("r1/c1").locales(C)))
                 .module(Module::new("r2").locales(S)),
         )
         .unwrap_err();
@@ -668,15 +668,15 @@ mod module_locales {
                 "shop.title",
                 "bot/mod_clash",
                 "bot/mod_shop",
-                LocaleOwner::Module("c1"),
+                LocaleOwner::Module("r1/c1"),
                 LocaleOwner::Module("r2"),
             )]
         );
         let roots = [
             Module::new("r1").locales(P).module(
-                Module::new("c1")
+                Module::new("r1/c1")
                     .locales(C)
-                    .module(Module::new("g1").locales(A)),
+                    .module(Module::new("r1/c1/g1").locales(A)),
             ),
             Module::new("r2").locales(S),
         ];
@@ -689,8 +689,8 @@ mod module_locales {
             [
                 LocaleOwner::App,
                 LocaleOwner::Module("r1"),
-                LocaleOwner::Module("c1"),
-                LocaleOwner::Module("g1"),
+                LocaleOwner::Module("r1/c1"),
+                LocaleOwner::Module("r1/c1/g1"),
                 LocaleOwner::Module("r2"),
             ]
         );
@@ -821,11 +821,17 @@ mod module_locales {
                 .module(Module::new("x").locales(C)),
         )
         .unwrap_err();
-        assert!(
-            err.violations()[0]
-                .to_string()
-                .contains("(Module `çay/ölç`)")
-        );
+        // The id itself is invalid (FR-44), and the locale clash still names it.
+        let [invalid, clash] = err.violations() else {
+            panic!("{:?}", err.violations());
+        };
+        assert!(matches!(
+            invalid,
+            BuildViolation::InvalidModuleId {
+                id: "çay/ölç", ..
+            }
+        ));
+        assert!(clash.to_string().contains("(Module `çay/ölç`)"));
     }
 
     /// Story 11.2 Matrix 22
@@ -1320,6 +1326,43 @@ async fn plugin_order_and_nesting() {
         .build()
         .unwrap();
     assert_eq!(*log.lock().unwrap(), ["P1", "P2", "P3"]);
+}
+
+/// A 3-level Module tree (Story 13.1 T1).
+fn ops_tree() -> Module {
+    Module::new("ops").module(Module::new("ops/audit").module(Module::new("ops/audit/log")))
+}
+
+/// Story 13.1 T13: one tree on two Apps builds on both (ids are unique per
+/// App).
+#[tokio::test]
+async fn module_tree_on_two_apps() {
+    let tree = ops_tree();
+    App::builder().module(tree.clone()).build().unwrap();
+    App::builder().module(tree).build().unwrap();
+}
+
+struct MountsOps;
+
+impl Plugin for MountsOps {
+    fn install(&self, app: &mut AppBuilder) {
+        app.module(ops_tree());
+    }
+}
+
+/// Story 13.1 T14: a plugin-mounted root that repeats a mounted id is a
+/// `DuplicateModule`.
+#[tokio::test]
+async fn plugin_mounted_duplicate_module() {
+    let err = App::builder()
+        .module(Module::new("ops"))
+        .plugin(MountsOps)
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::DuplicateModule { id: "ops" }]
+    );
 }
 
 struct Value(u8, Arc<AtomicUsize>);

@@ -817,15 +817,19 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
 /// A thread-local capturing subscriber; the test runs on one thread so
 /// the shard task logs into it.
 ///
-/// A process-wide no-op dispatcher stays registered beside it: with a
-/// single registered dispatcher, tracing-core caches a callsite's interest
-/// from the registering thread's default only, so a callsite first hit by
-/// a parallel test without a subscriber would stay disabled here too.
+/// It first registers a process-wide no-op dispatcher that never drops.
+/// With only one dispatcher registered, `tracing-core` takes its
+/// "just one" fast path: a callsite first hit on another test's thread
+/// computes its interest from that thread's default (none), caches
+/// `never` for every thread, and the event this test waits for is lost.
+/// A second live dispatcher keeps every interest computed against all
+/// registered dispatchers, the capturing one included.
 fn capture_lines() -> (Lines, impl Sized) {
+    use std::sync::OnceLock;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    static KEEP: std::sync::OnceLock<tracing::Dispatch> = std::sync::OnceLock::new();
-    KEEP.get_or_init(|| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default()));
+    static KEEPER: OnceLock<tracing::Dispatch> = OnceLock::new();
+    KEEPER.get_or_init(|| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default()));
     let lines = Lines::default();
     let guard = tracing_subscriber::fmt()
         .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)

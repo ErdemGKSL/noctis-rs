@@ -599,7 +599,7 @@ async fn event_middleware_order_and_extensions() {
             .before(Middleware::before(r1).events_only().provides::<Level>())
             .after(Middleware::after(a1))
             .module(
-                Module::new("child")
+                Module::new("root/child")
                     .before(Middleware::before(event_gate).events_only())
                     .after(Middleware::after(ca1))
                     .add::<OnMessage>(),
@@ -649,7 +649,7 @@ async fn slash_command_parent_child_order_and_stop() {
             .after(Middleware::after(a1))
             .after(Middleware::after(a2))
             .module(
-                Module::new("child")
+                Module::new("root/child")
                     .before(Middleware::before(c1))
                     .after(Middleware::after(ca1))
                     .add::<Leveled>()
@@ -760,7 +760,7 @@ async fn extension_reaches_handler_and_after() {
             .after(Middleware::after(a1))
             .after(Middleware::after(a2))
             .module(
-                Module::new("child")
+                Module::new("root/child")
                     .before(Middleware::before(c1))
                     .after(Middleware::after(ca1))
                     .add::<LevelButton>()

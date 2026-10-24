@@ -15,8 +15,8 @@ use noctis_ports::PortError;
 use noctis_rules::Locale;
 
 use crate::{
-    AppIdError, GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict,
-    TokenError,
+    AppIdError, GatewayUrlError, HttpConfigError, HttpProxyError, ModuleIdError, Plugin,
+    ResourceConflict, TokenError,
 };
 
 /// Every error `App::from_env`, `build` and `run` return.
@@ -290,6 +290,50 @@ pub enum BuildViolation {
     InvalidAppId {
         /// Why the App id was rejected.
         reason: AppIdError,
+    },
+    /// A mounted Module's id breaks the id grammar or its tree position
+    /// (FR-44): see [`Module`](crate::Module)'s Ids section.
+    ///
+    /// ```
+    /// use noctis_core::{BuildViolation, ModuleIdError};
+    ///
+    /// let v = BuildViolation::InvalidModuleId {
+    ///     id: "badges",
+    ///     reason: ModuleIdError::NotUnderParent { parent: "profile" },
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "invalid Module id `badges`: it is nested in Module `profile`, so it must be \
+    ///      `profile/<name>` with exactly one segment after `profile/`"
+    /// );
+    /// ```
+    #[error("invalid Module id `{id}`: {reason}")]
+    InvalidModuleId {
+        /// The rejected id.
+        id: &'static str,
+        /// Why it was rejected.
+        reason: ModuleIdError,
+    },
+    /// Two mounted Modules share an id (FR-44); one per later occurrence in
+    /// fold order.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateModule { id: "shop" };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "Module id `shop` is mounted twice: give each Module its own id (a Module tree is \
+    ///      mounted at most once per App)"
+    /// );
+    /// ```
+    #[error(
+        "Module id `{id}` is mounted twice: give each Module its own id (a Module tree is \
+         mounted at most once per App)"
+    )]
+    DuplicateModule {
+        /// The shared id.
+        id: &'static str,
     },
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]

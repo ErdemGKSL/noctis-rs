@@ -349,6 +349,8 @@ pub noctis::BuildViolation::DuplicateLocaleKey::first_owner: noctis::LocaleOwner
 pub noctis::BuildViolation::DuplicateLocaleKey::key: &'static str
 pub noctis::BuildViolation::DuplicateLocaleKey::second: &'static str
 pub noctis::BuildViolation::DuplicateLocaleKey::second_owner: noctis::LocaleOwner
+pub noctis::BuildViolation::DuplicateModule
+pub noctis::BuildViolation::DuplicateModule::id: &'static str
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateRoute
@@ -387,6 +389,9 @@ pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
 pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
+pub noctis::BuildViolation::InvalidModuleId
+pub noctis::BuildViolation::InvalidModuleId::id: &'static str
+pub noctis::BuildViolation::InvalidModuleId::reason: noctis::ModuleIdError
 pub noctis::BuildViolation::InvalidRefTtl
 pub noctis::BuildViolation::InvalidRefTtl::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidShardTotal
@@ -1368,6 +1373,31 @@ impl core::clone::Clone for noctis::Module
 pub fn noctis::Module::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Module
 pub fn noctis::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::ModuleIdError
+pub noctis::ModuleIdError::Empty
+pub noctis::ModuleIdError::EmptySegment
+pub noctis::ModuleIdError::EmptySegment::index: usize
+pub noctis::ModuleIdError::InvalidChar
+pub noctis::ModuleIdError::InvalidChar::ch: char
+pub noctis::ModuleIdError::InvalidChar::index: usize
+pub noctis::ModuleIdError::NotUnderParent
+pub noctis::ModuleIdError::NotUnderParent::parent: &'static str
+pub noctis::ModuleIdError::PathAtRoot
+pub noctis::ModuleIdError::PathAtRoot::segments: usize
+pub noctis::ModuleIdError::TooLong
+pub noctis::ModuleIdError::TooLong::len: usize
+impl core::clone::Clone for noctis::ModuleIdError
+pub fn noctis::ModuleIdError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ModuleIdError
+impl core::cmp::PartialEq for noctis::ModuleIdError
+pub fn noctis::ModuleIdError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::ModuleIdError
+impl core::fmt::Debug for noctis::ModuleIdError
+pub fn noctis::ModuleIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ModuleIdError
+pub fn noctis::ModuleIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::ModuleIdError
+impl core::marker::StructuralPartialEq for noctis::ModuleIdError
 #[non_exhaustive] pub enum noctis::NoticeText
 pub noctis::NoticeText::Key(noctis::prelude::MessageKey)
 pub noctis::NoticeText::Text(alloc::borrow::Cow<'static, str>)

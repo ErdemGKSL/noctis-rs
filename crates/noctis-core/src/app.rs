@@ -2146,6 +2146,13 @@ impl AppBuilder {
     /// (GW-05). The trees' locale catalogs ([`Module::locales`]) merge
     /// after the App's own ([`locales`](Self::locales)).
     ///
+    /// The root's id is one segment and each nested id its parent's plus
+    /// one (`"profile"` → `"profile/badges"`); ids are unique per App across
+    /// every tree. `build()` reports a broken id as
+    /// [`BuildViolation::InvalidModuleId`] and a repeated one as
+    /// [`BuildViolation::DuplicateModule`], so a tree is mounted at most
+    /// once per App (it may be mounted on several Apps).
+    ///
     /// ```
     /// use noctis_core::{App, Module};
     ///

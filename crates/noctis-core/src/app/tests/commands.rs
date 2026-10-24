@@ -442,8 +442,20 @@ fn split_modules(
     path: impl Fn(usize) -> String,
     metadata: CommandMetadata,
 ) -> [Module; 2] {
-    let mut a = Module::new("a");
-    let mut b = Module::new("b");
+    split_modules_in(["a", "b"], count, split, path, metadata)
+}
+
+/// [`split_modules`] into the Modules `ids` (Module ids are unique per
+/// App).
+fn split_modules_in(
+    ids: [&'static str; 2],
+    count: usize,
+    split: usize,
+    path: impl Fn(usize) -> String,
+    metadata: CommandMetadata,
+) -> [Module; 2] {
+    let mut a = Module::new(ids[0]);
+    let mut b = Module::new(ids[1]);
     for i in 0..count {
         let handler = command("m::h", leak_paths(&path(i)), "d").__with_metadata(metadata);
         if i < split {
@@ -542,7 +554,9 @@ async fn reg_01_chat_input_count() {
 }
 
 fn menus(kind: &str, count: usize, metadata: CommandMetadata) -> Module {
-    (0..count).fold(Module::new("a"), |module, i| {
+    // One Module id per kind, so both kinds can be mounted together.
+    let id = if kind == "user" { "a" } else { "b" };
+    (0..count).fold(Module::new(id), |module, i| {
         let name = leak(format!("M{i}"));
         match kind {
             "user" => module.__add(user_menu("a::u", name, metadata)),
@@ -576,7 +590,7 @@ async fn reg_02_guild_counts() {
     assert_eq!(rules(&errs), [RuleId::REG_02]);
     assert_eq!(errs[0].notes, ["registered by `a`", "scope: guild 1"]);
     let [a, b] = split_modules(100, 100, |i| format!("c{i}"), CommandMetadata::new());
-    let [c, d] = split_modules(100, 100, |i| format!("c{i}"), guild);
+    let [c, d] = split_modules_in(["c", "d"], 100, 100, |i| format!("c{i}"), guild);
     build([a, b, c, d]).unwrap();
 }
 

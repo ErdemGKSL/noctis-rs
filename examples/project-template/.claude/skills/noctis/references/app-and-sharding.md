@@ -108,7 +108,7 @@ Implemented:
 | `.token(Token)` | env `NOCTIS_TOKEN` | `Token::new(s)` / `s.parse::<Token>()`; redacted `Debug`/`Display`; never logged |
 | `.state(T)` | — | typed shared state, read as `State<T>` (one per type; a second is `BuildViolation::DuplicateState`) |
 | `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it. Event handlers add their non-privileged intents themselves; request privileged ones (`GUILD_MEMBERS`, `GUILD_PRESENCES`, `MESSAGE_CONTENT`) here |
-| `.module(Module)` | — | mount a Module tree (`modules-middleware-ratelimits.md` §1); trees fold in mount order (plugins included), parent before child; handler intents are derived and added (GW-05). Unique ids are checked from Story 13.1 [planned] |
+| `.module(Module)` | — | mount a Module tree (`modules-middleware-ratelimits.md` §1); trees fold in mount order (plugins included), parent before child; handler intents are derived and added (GW-05). Ids are unique per App, a root id is one segment and a child adds one (`InvalidModuleId`, `DuplicateModule`; `modules-middleware-ratelimits.md` §1, Module trees) |
 | `.event_lane(capacity, overflow)` | 4096, 16384 | bound the event lane: `capacity` queued events (1..=1048576) and `overflow` non-droppable events behind a full lane (0..=4194304); else `BuildViolation::InvalidEventLane`; the last call wins; see §4 |
 | `.handler_concurrency(usize)` | 256 | how many events run their handlers at once (1..=65536, else `BuildViolation::InvalidHandlerConcurrency`); interactions never wait for it; the last call wins; see §4 |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |

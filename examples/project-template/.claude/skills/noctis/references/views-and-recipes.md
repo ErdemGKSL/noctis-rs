@@ -1412,7 +1412,7 @@ are how every Noctis bot should be written.
    and its Routes, the feature's storage keys), `view.rs` (render functions),
    `handlers.rs` (slash Commands, component and modal handlers; schwi's `setup.ts` and
    `commands.ts`), `events.rs` (gateway events; schwi's `trigger.ts`). Module ids are
-   path-like when nested (`Module::new("modules/ticket")`).
+   full paths when nested (`Module::new("modules/ticket")` inside `modules`).
 2. **`render_x(data, &strings, ids…) -> V2Message` is the single source of truth**,
    reused by the slash Command and every component and modal handler (§1).
 3. **State only in typed Payload fields** of the module's own Routes: the selected

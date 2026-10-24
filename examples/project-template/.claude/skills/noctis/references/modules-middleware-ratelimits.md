@@ -11,7 +11,7 @@ use noctis::prelude::*;                    // Module, EventHandler, EventCtx, Ha
 use noctis::BaseMeta;                      // Module::base metadata (not in the prelude)
 
 pub fn module() -> Module {
-    Module::new("profile")                 // path-like id: "a/b/c"
+    Module::new("profile")                 // root id: one segment
         .add::<AwardXp>()                  // #[derive(EventHandler)]
         .add::<ProfileShow>()              // #[derive(SlashCommand)] #[command("profile show")]
         .add::<BadgesList>()               // #[derive(SlashCommand)] #[command("profile badges list")]
@@ -23,7 +23,7 @@ pub fn module() -> Module {
         .locales(profile_strings::catalog())   // Module-scoped strings (App-wide keys)
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // Middleware (§5)
         .after(Middleware::after(audit))
-        .module(sub_module())              // nesting
+        .module(Module::new("profile/badges").add::<Badge>())   // child = parent + "/" + one segment
         .flags(["profiles"])               // Boot Flags [planned]
 }
 
@@ -68,8 +68,43 @@ derives implement).
   `commands.md` §1 and §6.
 - The same Module tree can be mounted on several Apps (`Module` is `Clone`); each App
   folds its own copy.
-- Ids are not validated yet: unique, path-shaped ids are checked from Story 13.1
-  [planned]; use `a/b/c` ids now so nothing breaks then.
+
+### Module trees (FR-44)
+
+```rust
+Module::new("profile")
+    .add::<Profile>()
+    .module(
+        Module::new("profile/badges")          // child = parent + "/" + one segment
+            .add::<Badge>()
+            .module(Module::new("profile/badges/admin").add::<GrantBadge>()),
+    )
+```
+
+- The id you write **is** the Module's full path; `.module(..)` never rewrites it.
+  Grammar: one or more segments of `a-z`, `0-9`, `_`, `-` joined by single `/`,
+  1 to 64 characters in total (no uppercase, `.`, `:`, spaces or empty segments).
+- A root Module (mounted with `AppBuilder::module`, also from a plugin's `install`) has
+  exactly **one** segment; a child's id is exactly `<parent id>/<one segment>`.
+- Ids are **unique per App** across every mounted tree, so a tree is mounted at most
+  once per App (mounting the same tree on two Apps is fine). A reusable library Module
+  is a root with its own one-segment id; it cannot be re-parented without changing ids.
+- `Module::new` never fails; `build()` (and `--publish --dry-run`) checks every mounted
+  id and lists every problem, before the other build checks:
+  - ``invalid Module id `…`: <reason>`` is `BuildViolation::InvalidModuleId { id,
+    reason: ModuleIdError }`. `ModuleIdError` is `Empty`, `TooLong { len }`,
+    `InvalidChar { index, ch }` or `EmptySegment { index }` (grammar; character
+    indexes), and, only when the grammar holds, `PathAtRoot { segments }` (a root with
+    more than one segment: nest it with `.module(..)` in its parent) or
+    `NotUnderParent { parent }` (rename it `<parent>/<name>`).
+  - ``Module id `…` is mounted twice`` is `BuildViolation::DuplicateModule { id }`, one
+    per later occurrence in fold order. Give each Module its own id or mount the tree
+    once.
+- Middleware runs parent before child at every depth: before-Middleware `profile`,
+  `profile/badges`, `profile/badges/admin`, then the handler, then the
+  after-Middleware in reverse (§5).
+- The full-path id is the `module` field of the `noctis.interaction` and `noctis.event`
+  spans and `ErrorReport.module` in Error Sinks (§6). No metric has a `module` label.
 
 ## 2. Boot Flags (FR-73)
 
