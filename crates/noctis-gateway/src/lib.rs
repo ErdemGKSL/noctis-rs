@@ -72,6 +72,11 @@
 //!   [`GatewayError::RateLimited`], 10 s without an answer is
 //!   [`GatewayError::Timeout`]. Chunks and `RATE_LIMITED` events still
 //!   reach the sink when a handler wants them.
+//! - [`GatewayHandle::update_voice_state`] sends a [`VoiceStateRequest`]
+//!   (op 4, VC-01) to the guild's owning shard; `noctis-voice` joins and
+//!   leaves voice channels only through it.
+//!   [`GatewayHandle::current_user_id`] is the bot user id of the last
+//!   READY.
 //!
 //! Each shard admits at most 110 commands per 60 s (GW-04, Discord's 120
 //! minus twilight's heartbeat reserve): one more is
@@ -150,7 +155,9 @@ mod session;
 mod shard;
 mod shard_config;
 
-pub use command::{GatewayError, GatewayHandle, GuildMembers, MemberRequest, PresenceHandle};
+pub use command::{
+    GatewayError, GatewayHandle, GuildMembers, MemberRequest, PresenceHandle, VoiceStateRequest,
+};
 pub use gateway::{CloseMode, Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use lanes::{

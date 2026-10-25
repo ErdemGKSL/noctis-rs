@@ -7,6 +7,8 @@ cmdword:
   dashboard: panel
   profile: profil
   bio: biyografi
+  join: katıl
+  leave: ayrıl
 
 cmd:
   setup:
@@ -33,6 +35,14 @@ cmd:
       name:
         name: ad
         description: Rozet adı
+  join:
+    description: Bir ses kanalına katıl
+    opt:
+      channel:
+        name: kanal
+        description: Katılınacak ses veya sahne kanalı
+  leave:
+    description: Ses kanalından ayrıl
 
 ctxcmd:
   show_profile:
@@ -104,3 +114,8 @@ profile:
     she: o (kadın)
     they: onlar
     any: herhangi biri
+
+voice:
+  joined: "{channel} kanalına katıldım."
+  left: Ses kanalından ayrıldım.
+  failed: "Ses hatası: {error}"

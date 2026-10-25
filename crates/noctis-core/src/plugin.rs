@@ -6,6 +6,7 @@ use crate::AppBuilder;
 
 /// An optional feature that configures an App through the public
 /// [`AppBuilder`] methods (`renderer`, port setters, `intents`, `runtime`,
+/// `module`, [`shutdown_task`](AppBuilder::shutdown_task),
 /// [`report`](AppBuilder::report)).
 ///
 /// [`AppBuilder::build`] calls every plugin's `install` exactly once, in

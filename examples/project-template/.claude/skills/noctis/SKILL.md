@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `3fe2cc3389faaa0fd3a5935b33099370fc1fd3669b34df391f94bbaa807fb064` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `56f4076ebb74e129b5d8e816dcee40a3312a7e025bb3c08412eb5fa84d90189a` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -497,5 +497,6 @@ Read only what the task touches.
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |
 | `references/testing.md` | test commands, clicks, Views, message snapshots, Template pixel snapshots (`assert_render_snapshot!`, `Tolerance`), Adapters, memory |
+| `references/voice.md` | join and leave voice channels (`voice` feature, C compiler and cmake: `.voice(VoiceConfig)`, `ctx.voice().join/leave/call`, `CallHandle`, `VoiceError` with `[VC-01]`/`[VC-02]`, the shutdown leave), raw op 4 (`GatewayHandle::update_voice_state`, `VoiceStateRequest`, `current_user_id`) |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |

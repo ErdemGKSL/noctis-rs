@@ -39,6 +39,11 @@
 //! (`src/**/*.rs`, test files exempt) only `src/remote/fetch.rs` names the
 //! hyper-util legacy client.
 //!
+//! The `songbird-gated` rule (AD-30) keeps the voice driver in one crate:
+//! only `noctis-voice` may depend on `songbird`, and only as a normal
+//! dependency (the facade reaches it through its optional `voice` feature,
+//! so default builds never contain Songbird).
+//!
 //! The `keyed-map` rule (AD-25) keeps framework memory bounded per guild: in
 //! the sources (`src/**/*.rs`) of every internal crate except
 //! `noctis-testkit` (test infrastructure), no line may declare a map or set
@@ -139,6 +144,11 @@ fn calls_session_store(line: &str) -> bool {
     })
 }
 
+/// The voice driver crate (AD-30).
+const SONGBIRD: &str = "songbird";
+/// The one crate that may depend on `songbird`.
+const VOICE: &str = "noctis-voice";
+
 /// The map and set types the `keyed-map` rule looks at, with their `<`.
 const KEYED_MAP_OPENERS: [&str; 9] = [
     "HashMap<",
@@ -193,7 +203,7 @@ fn scans_keyed_maps(krate: &str) -> bool {
 }
 
 /// The internal crates the spine's Invariants graph draws.
-const CRATES: [&str; 12] = [
+const CRATES: [&str; 13] = [
     "noctis",
     "noctis-rules",
     "noctis-codec",
@@ -206,11 +216,14 @@ const CRATES: [&str; 12] = [
     "noctis-image",
     "noctis-prefix",
     "noctis-testkit",
+    "noctis-voice",
 ];
 
 /// Ungated drawn edges (from, to), excluding the facade's edges.
 const GRAPH: &[(&str, &str)] = &[
     ("noctis-prefix", "noctis-core"),
+    ("noctis-voice", "noctis-core"),
+    ("noctis-voice", "noctis-gateway"),
     ("noctis-testkit", "noctis-core"),
     ("noctis-testkit", "noctis-gateway"),
     ("noctis-testkit", "noctis-ports"),
@@ -233,12 +246,18 @@ const GRAPH: &[(&str, &str)] = &[
     ("noctis-macros", "noctis-image"),
 ];
 
+/// Test-only edges (from, to): allowed as `[dev-dependencies]` only. The
+/// voice end-to-end tests drive `FakeGateway`, which the facade does not
+/// re-export; `noctis-testkit` never depends on `noctis-voice` (AD-30).
+const DEV_ONLY: &[(&str, &str)] = &[(VOICE, TESTKIT)];
+
 /// Feature-gated drawn edges (from, to, feature).
 const GATED: &[(&str, &str, &str)] = &[
     ("noctis-image", "noctis-core", RENDER),
     ("noctis-image", "noctis-ports", RENDER),
     ("noctis-image", "noctis-ui", RENDER),
     (FACADE, TESTKIT, TESTKIT_FEATURE),
+    (FACADE, VOICE, "voice"),
 ];
 
 /// Whether `name` is an internal crate name (`noctis` or `noctis-*`).
@@ -455,6 +474,7 @@ impl Workspace {
                             || d.name == TWILIGHT_HTTP
                             || is_takumi(&d.name)
                             || is_asset_http(&d.name)
+                            || d.name == SONGBIRD
                     })
                     .map(|d| Dep {
                         name: d.name.clone(),
@@ -515,6 +535,7 @@ pub(crate) enum Rule {
     SessionStore,
     AssetHttp,
     KeyedMap,
+    SongbirdGated,
 }
 
 impl Rule {
@@ -533,6 +554,7 @@ impl Rule {
             Self::SessionStore => "session-store",
             Self::AssetHttp => "asset-http",
             Self::KeyedMap => "keyed-map",
+            Self::SongbirdGated => "songbird-gated",
         }
     }
 }
@@ -605,6 +627,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
     check_session_store(ws, &mut out);
     check_asset_http(ws, &mut out);
     check_keyed_map(ws, &mut out);
+    check_songbird(ws, &mut out);
     for member in &ws.crates {
         if !is_internal(&member.name) {
             check_non_internal(member, facade, &mut out);
@@ -620,11 +643,12 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
             ));
             continue;
         }
-        for dep in member
-            .deps
-            .iter()
-            .filter(|d| d.name != TWILIGHT_HTTP && !is_takumi(&d.name) && !is_asset_http(&d.name))
-        {
+        for dep in member.deps.iter().filter(|d| {
+            d.name != TWILIGHT_HTTP
+                && d.name != SONGBIRD
+                && !is_takumi(&d.name)
+                && !is_asset_http(&d.name)
+        }) {
             if let Some(v) = check_edge(&member.name, dep) {
                 out.insert(v);
             }
@@ -679,6 +703,31 @@ fn check_session_store(ws: &Workspace, out: &mut BTreeSet<Violation>) {
                 site.location
             ),
         ));
+    }
+}
+
+/// Only `noctis-voice` depends on `songbird`, as a normal dependency
+/// (AD-30).
+fn check_songbird(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for member in &ws.crates {
+        for dep in member.deps.iter().filter(|d| d.name == SONGBIRD) {
+            let reason = if member.name != VOICE {
+                format!(
+                    "only `{VOICE}` may depend on {SONGBIRD}, behind the facade's `voice` (AD-30)"
+                )
+            } else if dep.kind != Kind::Normal {
+                format!("`{VOICE}` must depend on {SONGBIRD} as a normal dependency (AD-30)")
+            } else {
+                continue;
+            };
+            out.insert(Violation::edge(
+                Rule::SongbirdGated,
+                &member.name,
+                &dep.name,
+                dep.kind,
+                reason,
+            ));
+        }
     }
 }
 
@@ -880,6 +929,9 @@ fn check_edge(from: &str, dep: &Dep) -> Option<Violation> {
                 ),
             )
         });
+    }
+    if dep.kind == Kind::Dev && DEV_ONLY.contains(&(from, to)) {
+        return None;
     }
     let facade_allowed = from == FACADE && CRATES.contains(&to);
     if facade_allowed || (to == FACADE && dep.kind == Kind::Dev) || GRAPH.contains(&(from, to)) {
@@ -1136,9 +1188,9 @@ mod tests {
     #[test]
     fn graph_encodes_every_drawn_non_facade_edge() {
         // The facade's drawn ungated edges (core, macros, image, i18n, prefix)
-        // are covered by its any-crate rule, so GRAPH holds the other 20.
-        assert_eq!(GRAPH.len(), 20);
-        assert_eq!(GATED.len(), 4);
+        // are covered by its any-crate rule, so GRAPH holds the other 22.
+        assert_eq!(GRAPH.len(), 22);
+        assert_eq!(GATED.len(), 5);
     }
 
     #[test]
@@ -1310,6 +1362,102 @@ mod tests {
               HTTP client; only noctis-core builds the App's one client (AD-24) [http-client]"
             ]
         );
+    }
+
+    fn songbird_rule(crates: Vec<Member>) -> Vec<String> {
+        let ws = Workspace {
+            crates,
+            client_sites: Vec::new(),
+            session_sites: Vec::new(),
+            legacy_client_sites: Vec::new(),
+            keyed_map_sites: Vec::new(),
+        };
+        check(&ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::SongbirdGated)
+            .map(|v| v.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn dev_only_edge_is_dev_only() {
+        let dev = Dep {
+            kind: Kind::Dev,
+            optional: false,
+            ..dep(TESTKIT)
+        };
+        assert!(check_edge(VOICE, &dev).is_none());
+        let normal = Dep {
+            optional: false,
+            ..dep(TESTKIT)
+        };
+        assert_eq!(
+            check_edge(VOICE, &normal).map(|v| v.rule),
+            Some(Rule::UndrawnEdge)
+        );
+        assert_eq!(
+            check_edge(
+                TESTKIT,
+                &Dep {
+                    kind: Kind::Dev,
+                    ..dep(VOICE)
+                }
+            )
+            .map(|v| v.rule),
+            Some(Rule::UndrawnEdge)
+        );
+    }
+
+    #[test]
+    fn songbird_on_voice_passes() {
+        let voice = Member {
+            name: VOICE.to_owned(),
+            deps: vec![Dep {
+                optional: false,
+                ..dep(SONGBIRD)
+            }],
+            ..member(&[])
+        };
+        assert_eq!(songbird_rule(vec![voice]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn songbird_elsewhere_or_as_dev_fails() {
+        let other = Member {
+            name: "noctis-core".to_owned(),
+            deps: vec![dep(SONGBIRD)],
+            ..member(&[])
+        };
+        let dev = Member {
+            name: VOICE.to_owned(),
+            deps: vec![Dep {
+                kind: Kind::Dev,
+                ..dep(SONGBIRD)
+            }],
+            ..member(&[])
+        };
+        assert_eq!(
+            songbird_rule(vec![other, dev]),
+            [
+                "deps-check: noctis-core -> songbird (normal): only `noctis-voice` may depend \
+                 on songbird, behind the facade's `voice` (AD-30) [songbird-gated]",
+                "deps-check: noctis-voice -> songbird (dev): `noctis-voice` must depend on \
+                 songbird as a normal dependency (AD-30) [songbird-gated]"
+            ]
+        );
+    }
+
+    #[test]
+    fn from_metadata_keeps_the_songbird_dep() {
+        let metadata = MetadataCommand::new()
+            .manifest_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.toml"))
+            .no_deps()
+            .exec()
+            .expect("cargo metadata on the repo");
+        let ws = Workspace::from_metadata(&metadata);
+        let voice = ws.member(VOICE).expect("noctis-voice is a member");
+        assert!(voice.deps.iter().any(|d| d.name == SONGBIRD));
+        assert_eq!(songbird_rule(ws.crates.clone()), Vec::<String>::new());
     }
 
     fn takumi_rule(image: Member) -> Vec<String> {

@@ -32,6 +32,14 @@ cmd:
       name:
         name: name
         description: Badge name
+  join:
+    description: Join a voice channel
+    opt:
+      channel:
+        name: channel
+        description: The voice or stage channel to join
+  leave:
+    description: Leave the voice channel
 
 ctxcmd:
   show_profile:
@@ -104,6 +112,11 @@ profile:
     she: she/her
     they: they/them
     any: any pronouns
+
+voice:
+  joined: "Joined {channel}."
+  left: Left the voice channel.
+  failed: "Voice failed: {error}"
 
 # --- Overrides of framework strings (optional) ------------------------------------------
 # Keys under `noctis.` are owned by Noctis (built-in notices) and ship with defaults; define one only

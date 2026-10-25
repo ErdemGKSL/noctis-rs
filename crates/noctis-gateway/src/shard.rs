@@ -2,6 +2,7 @@
 //! pushes parsed [`Inbound`] items (FR-2, AD-10, AD-21).
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -20,7 +21,7 @@ use twilight_model::gateway::event::{GatewayEvent, GatewayEventDeserializer};
 use twilight_model::gateway::payload::incoming::RateLimited;
 use twilight_model::gateway::payload::incoming::rate_limited::RateLimitMetadata;
 use twilight_model::id::Id;
-use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::marker::{GuildMarker, UserMarker};
 
 use crate::command::{Answer, Pending, ShardInbox, answer_nonce, last_presence};
 use crate::gateway::CloseMode;
@@ -47,6 +48,41 @@ pub(crate) struct Classified {
     /// The `d` of an op 9 `INVALID_SESSION` (whether it is resumable);
     /// `None` for any other frame, or when `d` is not a boolean.
     pub(crate) invalid_session: Option<bool>,
+    /// The bot user id of a `READY` (`d.user.id`); `None` for any other
+    /// frame, or when the id is unreadable.
+    pub(crate) ready_user: Option<Id<UserMarker>>,
+}
+
+/// The part of a `READY` dispatch the gateway keeps: `d.user.id`.
+#[derive(Deserialize)]
+struct ReadyUser {
+    d: ReadyData,
+}
+
+#[derive(Deserialize)]
+struct ReadyData {
+    user: ReadyDataUser,
+}
+
+#[derive(Deserialize)]
+struct ReadyDataUser {
+    id: Id<UserMarker>,
+}
+
+/// Reads `d.user.id` of a `READY` payload; `None` (with a `warn` that never
+/// names the payload) when it is unreadable.
+fn ready_user(text: &str) -> Option<Id<UserMarker>> {
+    let user = serde_json::from_str::<ReadyUser>(text)
+        .ok()
+        .map(|ready| ready.d.user.id);
+    if user.is_none() {
+        tracing::warn!(
+            target: "noctis::gateway",
+            event_type = "READY",
+            "READY without a readable `d.user.id`; bot user id unknown"
+        );
+    }
+    user
 }
 
 /// An op 9 payload's `d`.
@@ -91,6 +127,11 @@ pub(crate) fn classify(
         }),
         _ => None,
     };
+    let ready_user = if matches!(status, Some(ShardEvent::Ready { .. })) {
+        ready_user(&text)
+    } else {
+        None
+    };
     if op == INVALID_SESSION {
         let invalid_session = serde_json::from_str::<InvalidSession>(&text)
             .ok()
@@ -112,6 +153,7 @@ pub(crate) fn classify(
             );
             return Classified {
                 status,
+                ready_user,
                 ..Classified::default()
             };
         };
@@ -129,6 +171,7 @@ pub(crate) fn classify(
                 kind: InboundKind::Event(Box::new(event)),
             }),
             invalid_session: None,
+            ready_user,
         };
     }
 
@@ -161,6 +204,7 @@ pub(crate) fn classify(
             kind,
         }),
         invalid_session: None,
+        ready_user,
     }
 }
 
@@ -457,6 +501,9 @@ async fn drive(
                 let received_at = Instant::now();
                 let classified = classify(text, lane.wanted, id, received_at);
                 let stale = resume.on_frame(classified.status.as_ref(), classified.invalid_session);
+                if let Some(user) = classified.ready_user {
+                    lane.inbox.user.store(user.get(), Ordering::Release);
+                }
                 if matches!(classified.status, Some(ShardEvent::Ready { .. }))
                     && let Some(presence) = last_presence(&lane.inbox.presence)
                 {
@@ -835,6 +882,26 @@ mod tests {
         assert!(out.inbound.is_none());
     }
 
+    /// VC-01: READY's `d.user.id` is kept for the voice path; any other
+    /// frame, or a READY without a readable id, carries none.
+    #[test]
+    fn vc_01_ready_user_id() {
+        let ready = dispatch(
+            "READY",
+            r#"{"v":10,"user":{"id":"77","username":"b","discriminator":"0","avatar":null},"guilds":[],"session_id":"s","resume_gateway_url":"ws://x","application":{"id":"1","flags":0}}"#,
+        );
+        assert_eq!(
+            run(&ready, EventTypeFlags::empty()).ready_user,
+            Some(Id::new(77))
+        );
+        let broken = dispatch("READY", r#"{"v":10,"user":{"username":"b"}}"#);
+        let out = run(&broken, EventTypeFlags::empty());
+        assert_eq!(out.status, Some(ShardEvent::Ready { shard: 2 }));
+        assert_eq!(out.ready_user, None);
+        let resumed = dispatch("RESUMED", "null");
+        assert_eq!(run(&resumed, EventTypeFlags::all()).ready_user, None);
+    }
+
     #[test]
     fn non_dispatch_yields_nothing() {
         for text in [
@@ -887,6 +954,7 @@ mod tests {
             inbox: ShardInbox {
                 commands,
                 presence: Arc::default(),
+                user: Arc::default(),
             },
             pending: Arc::default(),
         };

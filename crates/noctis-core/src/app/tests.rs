@@ -2805,6 +2805,151 @@ async fn shutdown_sequence_order() {
     assert!(controls.tracker.is_closed() && controls.tracker.is_empty());
 }
 
+/// Runs `app`'s shutdown sequence against two shards that never connect,
+/// with the App's gateway handle attached as in a run.
+async fn shut_down_unconnected(app: &App) {
+    use std::num::NonZeroU16;
+
+    use noctis_gateway::EventTypeFlags;
+
+    use crate::worker::Shutdown;
+
+    let controls = Shutdown::default();
+    let (sender, receiver) = noctis_gateway::lanes(app.lane_config());
+    let mut drain = AbortOnDrop(tokio::spawn(drain(receiver, app.workers(controls.clone()))));
+    let options = GatewayOptions {
+        app: Arc::from("default"),
+        token: SECRET.to_owned(),
+        intents: Intents::GUILDS,
+        gateway_url: Some("ws://127.0.0.1:1".to_owned()),
+        event_types: EventTypeFlags::INTERACTION_CREATE,
+        identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+        resume: true,
+        presence: None,
+        large_threshold: LargeThreshold::default(),
+        shards: 0..2,
+        total: NonZeroU32::new(2).unwrap(),
+        max_concurrency: NonZeroU16::MIN,
+        close_timeout: SHARD_CLOSE_TIMEOUT,
+    };
+    let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).unwrap();
+    let _attached = Attached::new(&app.shared.gateway, &gateway);
+    let status = status(2);
+    let watch = Watch {
+        events: &mut events,
+        status: &status,
+        lifecycle: &app.shared.lifecycle,
+    };
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        app.shut_down(
+            Stop::Requested,
+            ShutdownReason::Requested,
+            gateway,
+            watch,
+            &controls,
+            &mut drain,
+            &HookRun::start(app.shared()),
+        ),
+    )
+    .await
+    .unwrap();
+}
+
+/// Shutdown Tasks run after `ShutdownStarted` and before the shards close:
+/// a gateway command still succeeds inside them.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_tasks_run_before_close() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut builder = App::builder();
+    let record = Arc::clone(&seen);
+    builder
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::from_millis(500))
+        .shutdown_task("presence", move |app| {
+            let gateway = app.gateway();
+            let record = Arc::clone(&record);
+            async move {
+                let sent = gateway.presence().set(Presence::online());
+                record.lock().unwrap().push(sent);
+            }
+        });
+    let app = builder.build().unwrap();
+    assert!(format!("{app:?}").contains("shutdown_tasks: [\"presence\"]"));
+    shut_down_unconnected(&app).await;
+    assert_eq!(*seen.lock().unwrap(), [Ok(())]);
+    assert_eq!(
+        app.gateway().presence().set(Presence::online()),
+        Err(noctis_gateway::GatewayError::NotRunning)
+    );
+}
+
+/// Sets its flag when dropped.
+struct DropFlag(Arc<AtomicUsize>);
+
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// The tasks share `min(shutdown_grace, 5 s)`: a task still running then
+/// is dropped and named in one warning; a finished one is not.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_tasks_cut_at_budget() {
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let finished = Arc::new(AtomicUsize::new(0));
+    let mut builder = App::builder();
+    let flag = Arc::clone(&dropped);
+    let done = Arc::clone(&finished);
+    builder
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::from_millis(200))
+        .shutdown_task("stuck", move |_| {
+            let guard = DropFlag(Arc::clone(&flag));
+            async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            }
+        })
+        .shutdown_task("quick", move |_| {
+            let done = Arc::clone(&done);
+            async move {
+                done.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+    let app = builder.build().unwrap();
+    let started = Instant::now();
+    shut_down_unconnected(&app).await;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    let warnings = capture.lines_with(&["WARN", "shutdown tasks did not finish in time"]);
+    assert_eq!(warnings.len(), 1, "{}", capture.text());
+    assert!(warnings[0].contains("stuck") && !warnings[0].contains("quick"));
+}
+
+/// With a grace of zero no Shutdown Task runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_tasks_skipped_at_grace_zero() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = App::builder();
+    let counter = Arc::clone(&calls);
+    builder
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::ZERO)
+        .shutdown_task("never", move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async {}
+        });
+    let app = builder.build().unwrap();
+    shut_down_unconnected(&app).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
 // ---- HttpConfig and the edge (Story 5.9 Matrix 1-5, 7, 24) ----
 
 fn ms(n: u64) -> Duration {

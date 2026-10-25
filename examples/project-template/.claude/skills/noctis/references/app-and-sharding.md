@@ -124,6 +124,7 @@ Implemented:
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
+| `.shutdown_task(name, \|app\| async move { .. })` | — | a Shutdown Task (plugins: `voice` leaves every channel with it): `Fn(&App) -> impl Future<Output = ()> + Send + 'static`; every task runs concurrently after `ShutdownStarted` and before the shards close, for at most `min(shutdown_grace, 5 s)` (then dropped, one `warn` naming the unfinished ones); skipped at grace 0; see §8 |
 | `.report(BuildViolation)` | — | record a violation (plugins); `build()` returns it with the others |
 | `.renderer(impl Renderer)` | none (`.theme(..)`/`.image(..)` set the takumi one) | replace the Renderer with your own (`noctis::image::unstable::Renderer`, outside semver; also `Arc<R>` / `Arc<dyn Renderer>`); one per App: a second one, or one together with `.theme`/`.image`, is `BuildViolation::DuplicateRenderer { first, second }`: an explicit `.renderer(..)` is always `first` and kept, the image plugin's Renderer is always `second` (plugins install in `build`), whatever the call order; see `adapters.md` §2b |
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
@@ -707,6 +708,7 @@ Everything lives in `noctis::gateway` and is always compiled (no cargo feature).
 ```rust
 use noctis::gateway::{
     Activity, GatewayError, GuildMembers, LargeThreshold, MemberRequest, Presence, Status,
+    VoiceStateRequest,
 };
 
 // Identify: every shard identifies with this presence and `large_threshold`.
@@ -755,6 +757,11 @@ calls them); never call them.
   block. Each shard remembers the latest presence set at run time and sends it again after
   a new session's READY, so a re-identify keeps it (a resume needs nothing).
 - `gateway.shard_for_guild(guild)`: the owning shard, `(guild_id >> 22) % total`.
+- `gateway.update_voice_state(VoiceStateRequest)`: Voice State Update (op 4, VC-01) to the
+  guild's owning shard, synchronous; `VoiceStateRequest::join(guild, channel)` /
+  `leave(guild)` plus `.self_mute(bool)` / `.self_deaf(bool)`. With the `voice` feature
+  use `ctx.voice()` instead (`voice.md`). `gateway.current_user_id()`: the bot's user id
+  from the first READY (`None` before).
 - `gateway.request_guild_members(MemberRequest)`: Request Guild Members (op 8, GW-07) to the
   guild's owning shard; Noctis sets the nonce and collects every `GUILD_MEMBERS_CHUNK` into
   `GuildMembers { members, presences, not_found }` (chunk order). Cancel-safe: dropping the
@@ -768,8 +775,8 @@ the query, `limit` 1..=100; `MemberRequest::all(guild)` asks for every member an
 the `GUILD_MEMBERS` intent; `.presences(true)` adds presences and needs
 `GUILD_PRESENCES` (request privileged intents with `.intents(..)`).
 
-**Budget (GW-04).** Each shard accepts at most 110 commands (presence sets plus member
-requests) per sliding 60 s: Discord allows 120 per connection and twilight reserves up
+**Budget (GW-04).** Each shard accepts at most 110 commands (presence sets, voice state updates and
+member requests) per sliding 60 s: Discord allows 120 per connection and twilight reserves up
 to 10 for heartbeats. The next one is `GatewayError::SendLimit { shard, retry_after }`
 and is not queued; retry after `retry_after`. Noctis's own presence re-send after
 READY is not counted.
@@ -781,7 +788,7 @@ carry the token, nonce or payloads):
 | --- | --- |
 | `NotRunning` | the App is not running the shards (see above) |
 | `ShardNotInRange { shard, range }` | `set_shard` outside this process's Shard Range |
-| `GuildNotInRange { guild, shard, range }` | the guild's owning shard runs in another Cluster process; nothing is sent (ask that process, e.g. through your own queue) |
+| `GuildNotInRange { guild, shard, range }` | (member requests, voice state updates) the guild's owning shard runs in another Cluster process; nothing is sent (ask that process, e.g. through your own queue) |
 | `ShardClosed { shard }` | that shard's task ended (a fatal close code) |
 | `SendLimit { shard, retry_after }` | `[GW-04]` the shard's budget of 110 per 60 s is used up |
 | `RateLimited { guild, retry_after }` | `[GW-07]` Discord answered the member request with `RATE_LIMITED` |
@@ -908,26 +915,31 @@ resolves, and both also when every shard has ended (then they return
 1. `info` log `shutdown started` (`reason = "signal"` from `run()`,
    `"requested"` from `run_until` or `"all shards ended"`, `grace`); the
    `ShutdownStarted` Lifecycle Hook fires here (§7).
-2. Every shard closes with code 4000 (resumable; Discord keeps the session); once
+2. The Shutdown Tasks (`AppBuilder::shutdown_task`, for example the `voice` plugin's
+   op 4 leave for every call, `voice.md` §5) run concurrently while the gateway still
+   sends, for at most `min(shutdown_grace, 5 s)`; at that budget the unfinished ones
+   are dropped with one `warn` (`shutdown tasks did not finish in time; dropped`,
+   field `tasks`). With a grace of 0 they are skipped.
+3. Every shard closes with code 4000 (resumable; Discord keeps the session); once
    Discord acknowledges the close, the shard's session id, last received sequence and
    resume URL are written to the `SessionStore` (§4 Session resume). With
    `.resume_sessions(false)` / `--no-resume` every shard closes with 1000 instead and its
    stored entry is deleted. From here no new gateway event enters the lanes.
-3. Both lanes drain (interactions first) and running handlers finish, for at most
+4. Both lanes drain (interactions first) and running handlers finish, for at most
    `shutdown_grace` (default 10 s). `ctx.http()` keeps working the whole time.
-4. At the deadline every handler still running, or queued behind one (ordered
+5. At the deadline every handler still running, or queued behind one (ordered
    handlers), is cancelled: its future is dropped at its next `.await` and it is
    reported once to the `Event` Error Sink as `ReportKind::Cancelled` (`LogSink`:
    `"event handler cancelled at shutdown"`). Events still in the lanes are discarded
    with one `warn` (`lanes discarded at shutdown`, counts only). Shutdown waits 1 s
    more; a handler that blocks its thread (no `.await`) cannot be cancelled and is
    logged as `handlers still running after cancellation`.
-5. Shutdown waits up to 6 s for the shards to close, then `info` log
+6. Shutdown waits up to 6 s for the shards to close, then `info` log
    `shutdown complete`; the ports drop with the App. The HTTP edge and its warm
    connection stay up through every step and close only after the shards have
    closed, when the App drops.
 
-Shutdown takes at most `shutdown_grace` + 7 s, so keep the grace below your
+Shutdown takes at most `shutdown_grace` + 7 s (plus up to 5 s of Shutdown Tasks), so keep the grace below your
 orchestrator's kill timeout (Kubernetes: 30 s by default). Dropping the `run`
 future (e.g. aborting its task) cancels every handler too. Do not spawn work that
 must outlive a handler; put it behind a port.

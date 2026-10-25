@@ -11,6 +11,9 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::StreamExt;
+use futures_util::future::BoxFuture;
+use futures_util::stream::FuturesUnordered;
 use noctis_codec::{PayloadKey, PayloadKeys};
 use noctis_gateway::{
     CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, EventTypeFlags, Gateway,
@@ -105,6 +108,8 @@ const REF_TTL_RANGE: RangeInclusive<Duration> =
 const CANCEL_WAIT: Duration = Duration::from_secs(1);
 /// How long a closing shard waits for the gateway's close frame.
 const SHARD_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+/// The longest the Shutdown Tasks run, within `shutdown_grace`.
+const SHUTDOWN_TASK_BUDGET: Duration = Duration::from_secs(5);
 /// The HTTP request timeout when `http_timeout` is not called.
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
@@ -175,6 +180,18 @@ pub struct App {
     boot_flags: BootFlags,
     /// How often a running App polls the `ModuleStateStore` version.
     module_state_poll: Duration,
+    /// The Shutdown Tasks, in registration order.
+    shutdown_tasks: Vec<ShutdownTask>,
+}
+
+/// A Shutdown Task's body, erased.
+type ShutdownTaskFn = dyn Fn(&App) -> BoxFuture<'static, ()> + Send + Sync;
+
+/// One Shutdown Task (`AppBuilder::shutdown_task`).
+#[derive(Clone)]
+struct ShutdownTask {
+    name: &'static str,
+    run: Arc<ShutdownTaskFn>,
 }
 
 /// Keeps the App's [`GatewayHandle`] attached to a running [`Gateway`];
@@ -959,7 +976,9 @@ impl App {
     ///
     /// When `shutdown` resolves (also during startup), or every shard has
     /// ended, the shutdown runs in this order (AD-21): log `shutdown
-    /// started`; close every shard with code 4000 (resumable: once the
+    /// started`; run the [Shutdown Tasks](AppBuilder::shutdown_task)
+    /// (concurrently, at most `min(shutdown_grace, 5 s)`, none at grace 0)
+    /// while the shards are still connected; close every shard with code 4000 (resumable: once the
     /// gateway acknowledges the close, its session id, last received
     /// sequence and resume URL are written to the `SessionStore`), or with
     /// code 1000 and the stored entry deleted when
@@ -1207,6 +1226,7 @@ impl App {
         tracing::info!(target: "noctis::app", reason = reason.as_str(), grace = ?grace, "shutdown started");
         self.shared.lifecycle.send(LifecycleEvent::ShutdownStarted);
         hooks.shutdown_started(reason);
+        watch.during(self.run_shutdown_tasks(grace)).await;
         gateway.close_all(if self.resume_sessions {
             CloseMode::Resumable
         } else {
@@ -1225,6 +1245,54 @@ impl App {
         drop(gateway);
         watch.flush();
         tracing::info!(target: "noctis::app", "shutdown complete");
+    }
+
+    /// Runs every Shutdown Task concurrently, for at most
+    /// `min(grace, SHUTDOWN_TASK_BUDGET)`; none at grace 0. At the budget the
+    /// unfinished ones are dropped and named in one warning.
+    async fn run_shutdown_tasks(&self, grace: Duration) {
+        if grace.is_zero() || self.shutdown_tasks.is_empty() {
+            return;
+        }
+        let budget = grace.min(SHUTDOWN_TASK_BUDGET);
+        let mut running: FuturesUnordered<_> = self
+            .shutdown_tasks
+            .iter()
+            .enumerate()
+            .map(|(index, task)| {
+                let fut = (task.run)(self);
+                async move {
+                    fut.await;
+                    index
+                }
+            })
+            .collect();
+        let mut done = vec![false; self.shutdown_tasks.len()];
+        let finished = tokio::time::timeout(budget, async {
+            while let Some(index) = running.next().await {
+                if let Some(flag) = done.get_mut(index) {
+                    *flag = true;
+                }
+            }
+        })
+        .await;
+        // Dropping the futures still running is the cut.
+        drop(running);
+        if finished.is_err() {
+            let unfinished: Vec<&str> = self
+                .shutdown_tasks
+                .iter()
+                .zip(&done)
+                .filter(|(_, done)| !**done)
+                .map(|(task, _)| task.name)
+                .collect();
+            tracing::warn!(
+                target: "noctis::app",
+                tasks = ?unfinished,
+                budget = ?budget,
+                "shutdown tasks did not finish in time; dropped"
+            );
+        }
     }
 
     /// Loads the runtime locale overlays through the `LocaleSource` port,
@@ -1751,6 +1819,14 @@ impl fmt::Debug for App {
             .field("presence", &self.presence)
             .field("large_threshold", &self.large_threshold)
             .field("dev_guild", &self.dev_guild)
+            .field(
+                "shutdown_tasks",
+                &self
+                    .shutdown_tasks
+                    .iter()
+                    .map(|t| t.name)
+                    .collect::<Vec<_>>(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -1852,6 +1928,8 @@ pub struct AppBuilder {
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
     plugin_types: HashSet<TypeId>,
+    /// The Shutdown Tasks (`shutdown_task`), in registration order.
+    shutdown_tasks: Vec<ShutdownTask>,
     violations: Vec<BuildViolation>,
 }
 
@@ -1959,6 +2037,7 @@ impl AppBuilder {
             catalogs: Vec::new(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
+            shutdown_tasks: Vec::new(),
             violations: Vec::new(),
         }
     }
@@ -2812,6 +2891,38 @@ impl AppBuilder {
             .and_then(|e| e.plugin.as_any_mut().downcast_mut::<P>())
     }
 
+    /// Adds a Shutdown Task named `name`: work that must happen while the
+    /// shards are still connected, such as leaving voice channels.
+    ///
+    /// When the App shuts down, after `ShutdownStarted` (the event and the
+    /// hooks) and before the shards close, every task's future runs
+    /// concurrently for at most `min(shutdown_grace, 5 s)`. Futures still
+    /// running then are dropped and named in one `noctis::app` warning. With
+    /// a `shutdown_grace` of zero no task runs. Plugins call it from
+    /// [`Plugin::install`].
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.shutdown_task("flush", |app| {
+    ///     let gateway = app.gateway();
+    ///     async move {
+    ///         let _ = gateway.current_user_id();
+    ///     }
+    /// });
+    /// ```
+    pub fn shutdown_task<F, Fut>(&mut self, name: &'static str, task: F) -> &mut Self
+    where
+        F: Fn(&App) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let run = move |app: &App| -> BoxFuture<'static, ()> { Box::pin(task(app)) };
+        self.shutdown_tasks.push(ShutdownTask {
+            name,
+            run: Arc::new(run),
+        });
+        self
+    }
+
     /// Records a violation; `build` returns it with every other one. Plugins
     /// report with [`BuildViolation::plugin`].
     ///
@@ -3216,6 +3327,7 @@ impl AppBuilder {
             dev_guild: config.dev_guild,
             boot_flags: config.boot_flags,
             module_state_poll: config.module_state_poll,
+            shutdown_tasks: config.shutdown_tasks,
         })
     }
 
@@ -3332,6 +3444,14 @@ impl fmt::Debug for AppBuilder {
             .field("locale_resolver", &self.locale_resolver.is_some())
             .field("catalogs", &catalogs)
             .field("plugins", &plugins)
+            .field(
+                "shutdown_tasks",
+                &self
+                    .shutdown_tasks
+                    .iter()
+                    .map(|t| t.name)
+                    .collect::<Vec<_>>(),
+            )
             .field("violations", &self.violations)
             .finish()
     }

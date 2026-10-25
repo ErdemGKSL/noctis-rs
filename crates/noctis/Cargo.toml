@@ -33,6 +33,11 @@ i18n = ["noctis-macros/i18n"]
 # Opt-in prefix commands (noctis-prefix, P2): `noctis::prefix::PrefixPlugin`.
 # Needs the privileged MESSAGE_CONTENT intent.
 prefix = ["dep:noctis-prefix"]
+# Voice channels through Noctis's gateway (noctis-voice, Songbird 0.6 as the
+# voice driver): `noctis::voice`, `.voice(VoiceConfig)` and `ctx.voice()`.
+# Off by default. Needs a C compiler and cmake: libopus is built from source
+# (through `opus2`).
+voice = ["dep:noctis-voice"]
 # Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.
 testkit = ["dep:noctis-testkit"]
 
@@ -48,6 +53,7 @@ noctis-prefix = { workspace = true, optional = true }
 noctis-rules.workspace = true
 noctis-testkit = { workspace = true, optional = true }
 noctis-ui.workspace = true
+noctis-voice = { workspace = true, optional = true }
 twilight-http.workspace = true
 twilight-model.workspace = true
 

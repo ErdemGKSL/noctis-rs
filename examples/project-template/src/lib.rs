@@ -7,6 +7,7 @@
 //!   hand and whose Modules tab toggles features (UD-5, UD-6).
 //! - `profile` — `/profile` and the "Show profile" user command render a card image into
 //!   a Media Gallery (UD-2), with a modal to edit the bio.
+//! - `voice` (template feature `voice`) — `/join channel` and `/leave` (FR-80).
 //!
 //! [`configure`] wires every Module, Adapter and piece of state onto an [`AppBuilder`];
 //! `main.rs` and the tests share it.
@@ -76,6 +77,14 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // `!badge gold` run the same handlers as `/profile` and `/badge`. Message text needs
     // the privileged MESSAGE_CONTENT intent (enable it in the Developer Portal too);
     // without `.intents(..)` the build fails with `[GW-05]` MissingIntent.
+    // Voice channels (template feature `voice`, off by default; needs a C compiler and
+    // cmake for libopus): `.voice(..)` installs voice and adds GUILD_VOICE_STATES, and
+    // the `voice` Module's `/join` and `/leave` call `ctx.voice()`. At shutdown every
+    // call leaves its channel before the shards close.
+    #[cfg(feature = "voice")]
+    builder
+        .voice(noctis::voice::VoiceConfig::default())
+        .module(modules::voice::module());
     #[cfg(feature = "prefix")]
     builder.intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT).plugin(
         noctis::prefix::PrefixPlugin::new("!")

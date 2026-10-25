@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-const CRATES: [&str; 12] = [
+const CRATES: [&str; 13] = [
     "noctis",
     "noctis-rules",
     "noctis-codec",
@@ -25,6 +25,7 @@ const CRATES: [&str; 12] = [
     "noctis-image",
     "noctis-prefix",
     "noctis-testkit",
+    "noctis-voice",
 ];
 
 /// A fixture workspace: every member lives in `crates/<name>`, so path deps are
@@ -157,10 +158,11 @@ fn full_graph(test: &'static str) -> Fixture {
     let facade_deps: Vec<&str> = CRATES[1..]
         .iter()
         .copied()
-        .filter(|c| *c != "noctis-testkit")
+        .filter(|c| *c != "noctis-testkit" && *c != "noctis-voice")
         .collect();
     fixture(test)
         .with("noctis-prefix", &deps(&["noctis-core"]))
+        .with("noctis-voice", &deps(&["noctis-core", "noctis-gateway"]))
         .with(
             "noctis-testkit",
             &deps(&["noctis-core", "noctis-gateway", "noctis-ports"]),
@@ -196,7 +198,7 @@ noctis-ui = { path = "../noctis-ui", optional = true }
         .with(
             "noctis",
             &format!(
-                "[features]\ntestkit = [\"dep:noctis-testkit\"]\n\n{}noctis-testkit = {{ path = \"../noctis-testkit\", optional = true }}\n",
+                "[features]\ntestkit = [\"dep:noctis-testkit\"]\nvoice = [\"dep:noctis-voice\"]\n\n{}noctis-testkit = {{ path = \"../noctis-testkit\", optional = true }}\nnoctis-voice = {{ path = \"../noctis-voice\", optional = true }}\n",
                 deps(&facade_deps)
             ),
         )
@@ -209,7 +211,7 @@ fn clean_workspace_passes() {
     assert_exit(
         &fixture("clean").run(),
         0,
-        &["deps-check: ok (12 internal crates, 0 internal edges)"],
+        &["deps-check: ok (13 internal crates, 0 internal edges)"],
     );
 }
 
@@ -218,7 +220,7 @@ fn full_graph_passes() {
     assert_exit(
         &full_graph("full_graph").run(),
         0,
-        &["deps-check: ok (12 internal crates, 32 internal edges)"],
+        &["deps-check: ok (13 internal crates, 35 internal edges)"],
     );
 }
 

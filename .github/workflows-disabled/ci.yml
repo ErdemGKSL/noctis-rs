@@ -143,6 +143,13 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- deps-check
+      # AD-30: the default facade graph never contains Songbird.
+      - name: No songbird in the default graph
+        run: |
+          if cargo tree -p noctis -e normal --prefix none | grep -q '^songbird '; then
+            echo "songbird is in noctis's default dependency graph" >&2
+            exit 1
+          fi
 
   # Required on every push, takumi bumps included (NFR-8, AD-28): the grammar
   # fingerprint, the takumi oracle and the reference card pixel snapshot.
@@ -203,4 +210,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
+        working-directory: examples/project-template
+      # The `voice` feature (Story 17.1): libopus needs a C compiler and cmake.
+      - run: cargo build --release --features voice
+        working-directory: examples/project-template
+      - run: cargo test --release --features voice
         working-directory: examples/project-template

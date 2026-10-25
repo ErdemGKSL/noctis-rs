@@ -26,6 +26,9 @@ default = []
 # Prefix commands: `!profile @user` and `!badge gold` run the slash handlers. Off by
 # default because it needs the privileged MESSAGE_CONTENT intent (src/lib.rs).
 prefix = ["noctis/prefix"]
+# Voice channels: `/join channel` and `/leave` (src/modules/voice). Off by default:
+# Noctis's `voice` feature builds libopus from source (a C compiler and cmake).
+voice = ["noctis/voice"]
 
 [dependencies]
 # Inside the monorepo the template builds against the workspace crate.
@@ -33,7 +36,8 @@ prefix = ["noctis/prefix"]
 #   noctis = { version = "0.1", features = ["image", "default-font", "i18n"] }
 noctis = { path = "../../crates/noctis", features = ["image", "default-font", "i18n"] }
 # Optional Noctis features: "image-gif" (GIF/APNG output), "image-emoji" (Twemoji
-# colour emoji in Templates), "prefix" (prefix commands, P2; see `[features]`).
+# colour emoji in Templates), "prefix" (prefix commands, P2; see `[features]`), "voice"
+# (voice channels; see `[features]`).
 
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "signal"] }
 anyhow = "1"

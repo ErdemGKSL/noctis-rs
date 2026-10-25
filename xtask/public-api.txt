@@ -156,6 +156,7 @@ pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort
 pub fn noctis::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self
 pub fn noctis::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::AppBuilder::shutdown_task<F, Fut>(&mut self, &'static str, F) -> &mut Self where F: core::ops::function::Fn(&noctis::App) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = ()> + core::marker::Send + 'static
 pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
 pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::AppBuilder
@@ -2985,10 +2986,12 @@ pub fn noctis::gateway::GatewayError::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl core::marker::StructuralPartialEq for noctis::gateway::GatewayError
 pub struct noctis::gateway::GatewayHandle
 impl noctis::gateway::GatewayHandle
+pub fn noctis::gateway::GatewayHandle::current_user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
 pub fn noctis::gateway::GatewayHandle::detached() -> Self
 pub fn noctis::gateway::GatewayHandle::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::gateway::GatewayHandle::request_guild_members(&self, noctis::gateway::MemberRequest) -> impl core::future::future::Future<Output = core::result::Result<noctis::gateway::GuildMembers, noctis::gateway::GatewayError>> + core::marker::Send + 'static
 pub fn noctis::gateway::GatewayHandle::shard_for_guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<u32, noctis::gateway::GatewayError>
+pub fn noctis::gateway::GatewayHandle::update_voice_state(&self, noctis::gateway::VoiceStateRequest) -> core::result::Result<(), noctis::gateway::GatewayError>
 impl core::clone::Clone for noctis::gateway::GatewayHandle
 pub fn noctis::gateway::GatewayHandle::clone(&self) -> Self
 impl core::default::Default for noctis::gateway::GatewayHandle
@@ -3095,6 +3098,23 @@ impl core::hash::Hash for noctis::gateway::Status
 pub fn noctis::gateway::Status::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::gateway::Status
 impl core::marker::StructuralPartialEq for noctis::gateway::Status
+pub struct noctis::gateway::VoiceStateRequest
+impl noctis::gateway::VoiceStateRequest
+pub const fn noctis::gateway::VoiceStateRequest::channel(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub const fn noctis::gateway::VoiceStateRequest::guild(&self) -> twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub const fn noctis::gateway::VoiceStateRequest::join(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+pub const fn noctis::gateway::VoiceStateRequest::leave(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> Self
+pub const fn noctis::gateway::VoiceStateRequest::self_deaf(self, bool) -> Self
+pub const fn noctis::gateway::VoiceStateRequest::self_mute(self, bool) -> Self
+impl core::clone::Clone for noctis::gateway::VoiceStateRequest
+pub fn noctis::gateway::VoiceStateRequest::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::VoiceStateRequest
+impl core::cmp::PartialEq for noctis::gateway::VoiceStateRequest
+pub fn noctis::gateway::VoiceStateRequest::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::gateway::VoiceStateRequest
+pub fn noctis::gateway::VoiceStateRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::gateway::VoiceStateRequest
+impl core::marker::StructuralPartialEq for noctis::gateway::VoiceStateRequest
 pub mod noctis::http
 pub use noctis::http::Method
 #[non_exhaustive] pub enum noctis::http::RateLimitScope
@@ -5097,11 +5117,13 @@ pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports:
 pub fn noctis::prelude::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::prelude::AppBuilder::shutdown_task<F, Fut>(&mut self, &'static str, F) -> &mut Self where F: core::ops::function::Fn(&noctis::App) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = ()> + core::marker::Send + 'static
 pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
 pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub use noctis::prelude::AppBuilderImageExt
+pub use noctis::prelude::AppBuilderVoiceExt
 pub struct noctis::prelude::AutocompleteCtx
 impl noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::cache(&self) -> noctis::DiscordCacheReader
@@ -5847,6 +5869,7 @@ pub fn noctis::prelude::UserSelectOverrides::default() -> Self
 impl core::fmt::Debug for noctis::prelude::UserSelectOverrides
 pub fn noctis::prelude::UserSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub type noctis::prelude::Visibility = noctis::Ephemerality
+pub use noctis::prelude::VoiceExt
 pub proc macro noctis::prelude::#[autocomplete]
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
@@ -6300,6 +6323,8 @@ pub const noctis::rules::RuleId::RL_03: noctis::rules::RuleId
 pub const noctis::rules::RuleId::RL_04: noctis::rules::RuleId
 pub const noctis::rules::RuleId::TW_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::TW_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::VC_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::VC_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_03: noctis::rules::RuleId
@@ -9603,6 +9628,79 @@ pub fn noctis::ui::escape_markdown(&str) -> alloc::string::String
 pub fn noctis::ui::escape_mentions(&str) -> alloc::string::String
 pub fn noctis::ui::unknown_components(&[serde_json::value::Value]) -> alloc::vec::Vec<serde_json::value::Value>
 pub fn noctis::ui::validate<M: noctis::ui::Validate>(&mut M, &noctis::rules::Limits) -> core::result::Result<noctis::ui::CostReport, noctis::ui::UiError>
+pub mod noctis::voice
+pub trait noctis::voice::AppBuilderVoiceExt: noctis::__private::voice::plugin::sealed::Sealed
+pub fn noctis::voice::AppBuilderVoiceExt::voice(&mut self, noctis::voice::VoiceConfig) -> &mut Self
+pub struct noctis::voice::CallHandle
+impl noctis::voice::CallHandle
+pub fn noctis::voice::CallHandle::channel(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::voice::CallHandle::guild(&self) -> twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub async fn noctis::voice::CallHandle::leave(&self) -> core::result::Result<(), noctis::voice::VoiceError>
+impl core::clone::Clone for noctis::voice::CallHandle
+pub fn noctis::voice::CallHandle::clone(&self) -> Self
+impl core::fmt::Debug for noctis::voice::CallHandle
+pub fn noctis::voice::CallHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::voice::Voice
+impl noctis::voice::Voice
+pub fn noctis::voice::Voice::active_calls(&self) -> usize
+pub fn noctis::voice::Voice::call(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::option::Option<noctis::voice::CallHandle>
+pub fn noctis::voice::Voice::join(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> impl core::future::future::Future<Output = core::result::Result<noctis::voice::CallHandle, noctis::voice::VoiceError>> + core::marker::Send + 'static
+pub async fn noctis::voice::Voice::leave(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<(), noctis::voice::VoiceError>
+impl core::clone::Clone for noctis::voice::Voice
+pub fn noctis::voice::Voice::clone(&self) -> Self
+impl core::fmt::Debug for noctis::voice::Voice
+pub fn noctis::voice::Voice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::voice::VoiceConfig
+impl noctis::voice::VoiceConfig
+pub const fn noctis::voice::VoiceConfig::get_join_timeout(&self) -> core::time::Duration
+pub const fn noctis::voice::VoiceConfig::is_self_deaf(&self) -> bool
+pub const fn noctis::voice::VoiceConfig::join_timeout(self, core::time::Duration) -> Self
+pub fn noctis::voice::VoiceConfig::new() -> Self
+pub const fn noctis::voice::VoiceConfig::self_deaf(self, bool) -> Self
+impl core::clone::Clone for noctis::voice::VoiceConfig
+pub fn noctis::voice::VoiceConfig::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::VoiceConfig
+impl core::cmp::PartialEq for noctis::voice::VoiceConfig
+pub fn noctis::voice::VoiceConfig::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::voice::VoiceConfig
+pub fn noctis::voice::VoiceConfig::default() -> Self
+impl core::fmt::Debug for noctis::voice::VoiceConfig
+pub fn noctis::voice::VoiceConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::VoiceConfig
+#[non_exhaustive] pub enum noctis::voice::VoiceError
+pub noctis::voice::VoiceError::Driver
+pub noctis::voice::VoiceError::Driver::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::VoiceError::Driver::reason: alloc::string::String
+pub noctis::voice::VoiceError::Gateway(noctis::gateway::GatewayError)
+pub noctis::voice::VoiceError::Interrupted
+pub noctis::voice::VoiceError::Interrupted::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::VoiceError::NotInstalled
+pub noctis::voice::VoiceError::NotReady
+pub noctis::voice::VoiceError::Timeout
+pub noctis::voice::VoiceError::Timeout::after: core::time::Duration
+pub noctis::voice::VoiceError::Timeout::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+impl core::clone::Clone for noctis::voice::VoiceError
+pub fn noctis::voice::VoiceError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::VoiceError
+impl core::cmp::PartialEq for noctis::voice::VoiceError
+pub fn noctis::voice::VoiceError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::voice::VoiceError
+impl core::fmt::Debug for noctis::voice::VoiceError
+pub fn noctis::voice::VoiceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::voice::VoiceError
+pub fn noctis::voice::VoiceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::VoiceError
+pub trait noctis::voice::VoiceExt: noctis::__private::voice::voice::sealed::Sealed
+pub fn noctis::voice::VoiceExt::voice(&self) -> noctis::voice::Voice
+pub struct noctis::voice::VoicePlugin
+impl noctis::voice::VoicePlugin
+pub fn noctis::voice::VoicePlugin::new(noctis::voice::VoiceConfig) -> Self
+impl core::clone::Clone for noctis::voice::VoicePlugin
+pub fn noctis::voice::VoicePlugin::clone(&self) -> Self
+impl core::fmt::Debug for noctis::voice::VoicePlugin
+pub fn noctis::voice::VoicePlugin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::Plugin for noctis::voice::VoicePlugin
+pub fn noctis::voice::VoicePlugin::install(&self, &mut noctis::AppBuilder)
 pub mod noctis::webhook
 pub struct noctis::webhook::DeleteWebhookMessage<'a, O: noctis::webhook::Ownership>
 impl<O: noctis::webhook::Ownership> noctis::webhook::DeleteWebhookMessage<'_, O>

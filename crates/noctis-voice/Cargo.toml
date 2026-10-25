@@ -1,0 +1,29 @@
+[package]
+name = "noctis-voice"
+description = "Voice for Noctis. Internal; use `noctis` (feature `voice`)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+futures-util.workspace = true
+metrics.workspace = true
+noctis-core.workspace = true
+noctis-gateway.workspace = true
+songbird.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+tracing.workspace = true
+twilight-model.workspace = true
+
+[dev-dependencies]
+metrics-util = { workspace = true, features = ["debugging"] }
+noctis = { workspace = true, features = ["testkit", "voice"] }
+noctis-testkit.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

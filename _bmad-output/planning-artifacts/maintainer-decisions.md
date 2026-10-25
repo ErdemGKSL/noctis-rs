@@ -423,6 +423,10 @@ support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
   the wire without decode or re-encode whenever only one track plays at unity volume,
   which is the common music-bot case. Decode plus mix plus encode is the fallback for
   other formats, several tracks or volume changes.
+- Amended (2026-10-25, Story 17.1): Songbird features are `driver`, `gateway` (only
+  for `Call`/`Shard::Generic`; its `Songbird` manager is never used), `rustls`, `tws`.
+  `gateway` adds no twilight or serenity and no send path, so both reasons above
+  still hold.
 - **Non-Discord HTTP.** Music inputs fetch arbitrary media URLs, an exception to
   AD-24's "non-Discord HTTP only in `AssetFetcher`": `noctis-voice` may fetch media
   through Songbird's input HTTP client with a connect timeout and redirect cap; it

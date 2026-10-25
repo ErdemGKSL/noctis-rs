@@ -15,6 +15,19 @@ targets = [
 ]
 
 [advisories]
+# Reached only through the `voice` feature (Story 17.1): songbird 0.6.1 and
+# its DAVE stack (davey 0.1.5 -> openmls / hpke-rs) pin these lines and no
+# fixed release fits their version requirements. Remove each entry once a
+# Songbird release moves past it.
+ignore = [
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via p256 in davey's MLS stack; the fix is 0.7.6, outside elliptic-curve 0.13's range" },
+    { id = "RUSTSEC-2026-0212", reason = "libcrux-secrets 0.0.5 via hpke-rs in davey's MLS stack; aarch64 only; 0.0.6 is outside libcrux-traits 0.0.6's range" },
+    { id = "RUSTSEC-2026-0207", reason = "libcrux-sha3 0.0.8 via hpke-rs in davey's MLS stack; the fix 0.0.10 is outside hpke-rs 0.6.1's range" },
+    { id = "RUSTSEC-2026-0208", reason = "libcrux-sha3 0.0.8 via hpke-rs in davey's MLS stack; the fix 0.0.10 is outside hpke-rs 0.6.1's range" },
+    { id = "RUSTSEC-2026-0293", reason = "ringbuf 0.4 in songbird 0.6.1's driver; needs an element Drop that panics, which Songbird's buffers never hold; the fix is 0.5.2, outside songbird's range" },
+    { id = "RUSTSEC-2024-0388", reason = "derivative (unmaintained) is a songbird 0.6.1 dependency" },
+    { id = "RUSTSEC-2024-0384", reason = "instant (unmaintained) via parking_lot 0.11 / fluvio-wasm-timer in openmls (davey)" },
+]
 
 [licenses]
 # A new license needs maintainer approval.
@@ -39,6 +52,10 @@ exceptions = [
     # the Twemoji Mozilla emoji font (`emoji`: OFL-1.1 font, CC-BY-4.0 Twemoji
     # graphics); see its NOTICE.
     { crate = "noctis-image", allow = ["OFL-1.1", "CC-BY-4.0"] },
+    # Reached only through the `voice` feature (Songbird's reqwest
+    # `rustls-tls`); CDLA-Permissive-2.0 is the license of the root
+    # certificate data.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
 ]
 # The allowlist and exceptions are policy for crates later stories add.
 unused-allowed-license = "allow"

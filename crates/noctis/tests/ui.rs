@@ -42,7 +42,8 @@
     feature = "default-font",
     feature = "i18n",
     feature = "prefix",
-    feature = "testkit"
+    feature = "testkit",
+    feature = "voice"
 )))]
 #[test]
 fn ui() {
@@ -65,7 +66,8 @@ fn ui() {
         feature = "image-emoji",
         feature = "default-font",
         feature = "prefix",
-        feature = "testkit"
+        feature = "testkit",
+        feature = "voice"
     ))
 ))]
 #[test]
@@ -93,7 +95,8 @@ fn ui_i18n() {
         feature = "default-font",
         feature = "i18n",
         feature = "prefix",
-        feature = "testkit"
+        feature = "testkit",
+        feature = "voice"
     ))
 ))]
 #[test]
@@ -117,7 +120,8 @@ fn ui_image() {
         feature = "default-font",
         feature = "i18n",
         feature = "prefix",
-        feature = "testkit"
+        feature = "testkit",
+        feature = "voice"
     )),
     all(
         feature = "i18n",
@@ -127,7 +131,8 @@ fn ui_image() {
             feature = "image-emoji",
             feature = "default-font",
             feature = "prefix",
-            feature = "testkit"
+            feature = "testkit",
+            feature = "voice"
         ))
     ),
     all(
@@ -138,7 +143,8 @@ fn ui_image() {
             feature = "default-font",
             feature = "i18n",
             feature = "prefix",
-            feature = "testkit"
+            feature = "testkit",
+            feature = "voice"
         ))
     )
 ))]

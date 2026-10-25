@@ -319,6 +319,8 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | GW-05 | privileged intents enabled in the portal and requested: an event handler's (`BuildViolation::MissingIntent`) and a Discord cache resource's (`MEMBER` → `GUILD_MEMBERS`, `BuildViolation::MissingCacheIntent`); non-privileged ones are added | B |
 | GW-06 | `large_threshold` 50–250 | C |
 | GW-07 | request members: one guild, ≤ 100 user ids | C / R |
+| VC-01 | Voice State Update (op 4) from the guild's owning shard, inside the GW-04 budget (`GatewayHandle::update_voice_state`; `VoiceError::Gateway`) | R |
+| VC-02 | one voice connection per guild: a join in another channel moves it; a replaced join is `VoiceError::Interrupted` | R |
 | RL-01 | per-route buckets, obey `Retry-After` (twilight's limiter, direct mode, `user` 429s) | R |
 | RL-02 | 50 req/s global per token across processes → shared proxy; a Cluster without one warns at `run` | startup / R |
 | RL-03 | 10,000 invalid requests / 10 min → Cloudflare ban; `noctis_http_invalid_requests_total` (shared 429s excluded) | R |

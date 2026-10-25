@@ -1031,6 +1031,12 @@ list in CI.
     runner gets until `max(ShutdownStarted + shutdown_grace, now + 1 s)`; then the
     running hook is cancelled and queued events are discarded with one warning.
     Dropping the `run_until` future aborts the runner.
+  - Amended (2026-10-25, Story 17.1): Order: fire `ShutdownStarted`; run Shutdown
+    Tasks (`AppBuilder::shutdown_task`, concurrent, at most `min(shutdown_grace, 5 s)`,
+    skipped at grace 0); `close_all`; drain the lanes; await `gateway.closed()`; drop
+    ports. A task still running at its budget is dropped and named in one warning.
+    Voice State Update (op 4, VC-01) is a gateway command in the same GW-04 window as
+    presence and Request Guild Members.
 
 ### AD-22 — Attachments are content-addressed; renders are awaited in handlers
 - **Binds:** `noctis-ui`, `noctis-image`, `noctis-core`, `noctis-ports`; FR-30,
@@ -1254,6 +1260,13 @@ list in CI.
     - `noctis-prefix` ships `PrefixPlugin`, whose `install` mounts a `MESSAGE_CREATE`
       Event Handler and requires the message-content intent. The handler parses the
       prefix, Command Path and arguments and calls the `Dispatcher`.
+    - Amended (2026-10-25, Story 17.1): `install` may also call
+      `shutdown_task(name, Fn(&App) -> Fut)` (AD-21) and `report(..)`; the gateway
+      handle exposes `GatewayHandle::current_user_id()` (READY `d.user.id`).
+      `noctis-voice` ships `VoicePlugin` and `AppBuilderVoiceExt::voice(VoiceConfig)`;
+      its `install` adds state, the `noctis-voice` Module (voice state, voice server
+      and `GUILD_DELETE` handlers plus an `AppStarted` hook) and the leave-all Shutdown
+      Task.
   - **`Dispatcher`** is core's public entry into the AD-23 pipeline:
     `EventCtx::dispatcher()` returns it, and `Dispatcher::run_command(invocation)`
     runs a resolved Command Path, with options decoded by the caller, through stages
@@ -1516,6 +1529,12 @@ list in CI.
   - Metrics (AD-29 naming): `noctis_voice_calls` (gauge), `noctis_voice_tracks_total`
     (result), `noctis_voice_passthrough_frames_total`, `noctis_voice_encoded_frames_total`;
     no guild or channel ids in labels.
+  - Amended (2026-10-25, Story 17.1): Songbird features are `driver`, `gateway` (only
+    for `Call`/`Shard::Generic`; its `Songbird` manager is never used), `rustls`, `tws`.
+    The invariants graph gains `noctis-voice -> noctis-core`, `noctis-voice ->
+    noctis-gateway`, the facade's `voice`-gated edge to `noctis-voice` and a
+    dev-only `noctis-voice -> noctis-testkit` edge; deps-check allows `songbird` only
+    as a normal dependency of `noctis-voice` (rule `songbird-gated`).
 
 ## Consistency Conventions
 

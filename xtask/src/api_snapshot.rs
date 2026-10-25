@@ -63,7 +63,8 @@ const TARGET_DIR: &str = "target/public-api";
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
 /// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, `HookEvent`, the static
-/// placement traits, `Ownership`, `IntoNodes` and `AppBuilderImageExt`, and
+/// placement traits, `Ownership`, `IntoNodes`, `AppBuilderImageExt`,
+/// `AppBuilderVoiceExt` and `VoiceExt`, and
 /// the const-generic bounds of `LargeThreshold::new` and `MemberRequest::users`,
 /// and the `__SlashCommand` bound of `PrefixPlugin::command`.
 const HIDDEN: &[(&str, &str)] = &[
@@ -117,6 +118,23 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_image::plugin::sealed",
         "noctis::__private::image::plugin::sealed",
+    ),
+    // `VoiceError::Gateway` names the gateway's error by its own crate path;
+    // the facade re-exports it as `noctis::gateway::GatewayError` through
+    // core, a mapping only core's expansion knows (Story 17.1).
+    (
+        "noctis_gateway::GatewayError",
+        "noctis::gateway::GatewayError",
+    ),
+    // The sealed supertraits of `AppBuilderVoiceExt` and `VoiceExt` (Story
+    // 17.1: only the `AppBuilder`, the App and the contexts).
+    (
+        "noctis_voice::plugin::sealed",
+        "noctis::__private::voice::plugin::sealed",
+    ),
+    (
+        "noctis_voice::voice::sealed",
+        "noctis::__private::voice::voice::sealed",
     ),
     // The sealed supertrait of `HookEvent` (Story 13.5: the ten lifecycle
     // payloads).

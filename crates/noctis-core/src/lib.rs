@@ -216,7 +216,7 @@ pub mod gateway {
 
     pub use noctis_gateway::{
         Activity, GatewayError, GatewayHandle, GuildMembers, LargeThreshold, MemberRequest,
-        Presence, PresenceHandle, Status,
+        Presence, PresenceHandle, Status, VoiceStateRequest,
     };
 
     /// The compile-time bounds of [`LargeThreshold::new`] and

@@ -1,6 +1,7 @@
 //! Gateway commands sent to the owning shard (FR-53, AD-21): presence
-//! updates (op 3) and Request Guild Members (op 8), behind a per-shard send
-//! budget (GW-04) and correlated by a Noctis nonce (GW-07).
+//! updates (op 3), Voice State Updates (op 4, VC-01) and Request Guild
+//! Members (op 8), behind a per-shard send budget (GW-04); member requests
+//! are correlated by a Noctis nonce (GW-07).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
@@ -17,11 +18,13 @@ use twilight_gateway::{Event, Intents};
 use twilight_model::gateway::OpCode;
 use twilight_model::gateway::payload::incoming::MemberChunk;
 use twilight_model::gateway::payload::incoming::rate_limited::RateLimitMetadata;
-use twilight_model::gateway::payload::outgoing::{RequestGuildMembers, UpdatePresence};
+use twilight_model::gateway::payload::outgoing::{
+    RequestGuildMembers, UpdatePresence, UpdateVoiceState,
+};
 use twilight_model::gateway::presence::Presence as MemberPresence;
 use twilight_model::guild::Member;
 use twilight_model::id::Id;
-use twilight_model::id::marker::{GuildMarker, UserMarker};
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::Presence;
 use crate::gateway::CloseMode;
@@ -305,6 +308,81 @@ impl MemberRequest {
     }
 }
 
+/// A Voice State Update (op 4): join, move to or leave a voice channel of
+/// one guild. [`GatewayHandle::update_voice_state`] sends it from the
+/// guild's owning shard (VC-01).
+///
+/// ```
+/// use noctis_gateway::VoiceStateRequest;
+/// use twilight_model::id::Id;
+///
+/// let join = VoiceStateRequest::join(Id::new(1), Id::new(2)).self_deaf(true);
+/// assert_eq!(join.channel(), Some(Id::new(2)));
+/// assert_eq!(VoiceStateRequest::leave(Id::new(1)).channel(), None);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoiceStateRequest {
+    guild: Id<GuildMarker>,
+    channel: Option<Id<ChannelMarker>>,
+    self_mute: bool,
+    self_deaf: bool,
+}
+
+impl VoiceStateRequest {
+    /// Joins (or moves to) `channel` of `guild`, neither muted nor deafened.
+    pub const fn join(guild: Id<GuildMarker>, channel: Id<ChannelMarker>) -> Self {
+        Self {
+            guild,
+            channel: Some(channel),
+            self_mute: false,
+            self_deaf: false,
+        }
+    }
+
+    /// Leaves the voice channel of `guild` (`channel_id: null`).
+    pub const fn leave(guild: Id<GuildMarker>) -> Self {
+        Self {
+            guild,
+            channel: None,
+            self_mute: false,
+            self_deaf: false,
+        }
+    }
+
+    /// Sets `self_mute`.
+    #[must_use]
+    pub const fn self_mute(mut self, mute: bool) -> Self {
+        self.self_mute = mute;
+        self
+    }
+
+    /// Sets `self_deaf`.
+    #[must_use]
+    pub const fn self_deaf(mut self, deaf: bool) -> Self {
+        self.self_deaf = deaf;
+        self
+    }
+
+    /// The guild.
+    pub const fn guild(&self) -> Id<GuildMarker> {
+        self.guild
+    }
+
+    /// The channel to join; `None` leaves.
+    pub const fn channel(&self) -> Option<Id<ChannelMarker>> {
+        self.channel
+    }
+
+    fn to_json(self) -> String {
+        encode(&UpdateVoiceState::new(
+            self.guild,
+            self.channel,
+            self.self_deaf,
+            self.self_mute,
+        ))
+    }
+}
+
 /// Serializes a twilight gateway command.
 #[expect(
     clippy::expect_used,
@@ -558,6 +636,9 @@ pub(crate) struct ShardInbox {
     pub(crate) commands: mpsc::UnboundedReceiver<String>,
     /// The latest runtime presence.
     pub(crate) presence: PresenceSlot,
+    /// The bot user id of the last READY (0 = none yet), shared by every
+    /// shard of the Gateway.
+    pub(crate) user: Arc<AtomicU64>,
 }
 
 /// Everything the command handles need of a running [`Gateway`](crate::Gateway).
@@ -574,6 +655,8 @@ pub(crate) struct Commands {
     /// The Gateway's close request: once set, every command is
     /// [`GatewayError::NotRunning`].
     close: watch::Receiver<Option<CloseMode>>,
+    /// The bot user id of the last READY (0 = none yet).
+    user: Arc<AtomicU64>,
 }
 
 impl Commands {
@@ -585,6 +668,7 @@ impl Commands {
         intents: Intents,
         close: watch::Receiver<Option<CloseMode>>,
     ) -> (Self, Vec<ShardInbox>) {
+        let user = Arc::new(AtomicU64::new(0));
         let (lines, inboxes) = shards
             .clone()
             .map(|_| {
@@ -596,7 +680,11 @@ impl Commands {
                         window: Mutex::default(),
                         presence: Arc::clone(&presence),
                     },
-                    ShardInbox { commands, presence },
+                    ShardInbox {
+                        commands,
+                        presence,
+                        user: Arc::clone(&user),
+                    },
                 )
             })
             .unzip();
@@ -614,6 +702,7 @@ impl Commands {
             seed,
             counter: AtomicU64::new(0),
             close,
+            user,
         };
         (commands, inboxes)
     }
@@ -725,11 +814,37 @@ impl Commands {
             .map_err(|_| GatewayError::ShardClosed { shard })?;
         Ok((registration, answers))
     }
+
+    /// Sends `request` (op 4) to its guild's owning shard (VC-01, GW-04).
+    fn update_voice_state(&self, request: VoiceStateRequest) -> Result<(), GatewayError> {
+        self.running()?;
+        let shard = self.shard_for_guild(request.guild)?;
+        let line = self.line(shard)?;
+        let json = request.to_json();
+        let now = Instant::now();
+        let mut window = line.window.lock().unwrap_or_else(PoisonError::into_inner);
+        if line.tx.is_closed() {
+            return Err(GatewayError::ShardClosed { shard });
+        }
+        window
+            .admit(now)
+            .map_err(|retry_after| GatewayError::SendLimit { shard, retry_after })?;
+        window.record(now);
+        line.tx
+            .send(json)
+            .map_err(|_| GatewayError::ShardClosed { shard })
+    }
+
+    /// The bot user id of the last READY, if any arrived.
+    fn current_user_id(&self) -> Option<Id<UserMarker>> {
+        Id::new_checked(self.user.load(Ordering::Acquire))
+    }
 }
 
 /// Sends gateway commands to the shard that owns them: presence updates
-/// ([`presence`](Self::presence)) and Request Guild Members
-/// ([`request_guild_members`](Self::request_guild_members)).
+/// (op 3, [`presence`](Self::presence)), Voice State Updates (op 4,
+/// [`update_voice_state`](Self::update_voice_state)) and Request Guild
+/// Members (op 8, [`request_guild_members`](Self::request_guild_members)).
 ///
 /// Cheap to clone; every clone follows the same running gateway. Core's
 /// handle (`App::gateway`, `ctx.gateway()`) is live while the App runs;
@@ -846,6 +961,42 @@ impl GatewayHandle {
             drop(registration);
             result
         }
+    }
+
+    /// Sends `request` (op 4 Voice State Update) to its guild's owning shard
+    /// (VC-01). It counts against that shard's GW-04 budget, the same window
+    /// as presence updates and member requests. Never blocks; nothing is
+    /// queued after an error.
+    ///
+    /// ```
+    /// use noctis_gateway::{GatewayError, GatewayHandle, VoiceStateRequest};
+    /// use twilight_model::id::Id;
+    ///
+    /// let leave = VoiceStateRequest::leave(Id::new(1));
+    /// assert_eq!(
+    ///     GatewayHandle::detached().update_voice_state(leave),
+    ///     Err(GatewayError::NotRunning)
+    /// );
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Checked in order before anything is sent:
+    /// [`GatewayError::NotRunning`], [`GatewayError::GuildNotInRange`],
+    /// [`GatewayError::ShardClosed`], [`GatewayError::SendLimit`] (GW-04).
+    pub fn update_voice_state(&self, request: VoiceStateRequest) -> Result<(), GatewayError> {
+        self.running()?.update_voice_state(request)
+    }
+
+    /// The bot's user id, read from the `READY` of the running gateway's
+    /// shards; `None` before the first `READY` or when the handle is not
+    /// attached to a running gateway.
+    ///
+    /// ```
+    /// assert_eq!(noctis_gateway::GatewayHandle::detached().current_user_id(), None);
+    /// ```
+    pub fn current_user_id(&self) -> Option<Id<UserMarker>> {
+        self.commands()?.current_user_id()
     }
 }
 
@@ -1373,6 +1524,160 @@ mod tests {
             Err(GatewayError::ShardClosed { shard: 0 })
         );
         assert_eq!(f.commands.pending.len(), 0);
+    }
+
+    /// VC-01: op 4 goes to the owning shard only and counts against its
+    /// window.
+    #[tokio::test(start_paused = true)]
+    async fn vc_01_join_frame_on_owning_shard() {
+        let mut f = fixture(0..2, 2, Intents::GUILDS);
+        let guild = guild_on(1, 2);
+        f.handle
+            .update_voice_state(VoiceStateRequest::join(guild, Id::new(5)))
+            .unwrap();
+        assert!(sent(&mut f.inboxes[0]).is_empty());
+        assert_eq!(
+            sent(&mut f.inboxes[1]),
+            vec![json!({
+                "op": 4,
+                "d": {
+                    "guild_id": guild.to_string(),
+                    "channel_id": "5",
+                    "self_mute": false,
+                    "self_deaf": false
+                }
+            })]
+        );
+        // The window holds the op 4: 109 more pass, the 111th is refused.
+        let presence = f.handle.presence();
+        for _ in 1..SEND_BUDGET {
+            presence.set_shard(1, Presence::online()).unwrap();
+        }
+        assert!(matches!(
+            presence.set_shard(1, Presence::online()),
+            Err(GatewayError::SendLimit { shard: 1, .. })
+        ));
+    }
+
+    /// VC-01: the leave form and the flags.
+    #[test]
+    fn vc_01_leave_and_flags() {
+        let mut f = fixture(0..1, 1, Intents::GUILDS);
+        let guild = Id::new(9);
+        f.handle
+            .update_voice_state(VoiceStateRequest::leave(guild))
+            .unwrap();
+        f.handle
+            .update_voice_state(
+                VoiceStateRequest::join(guild, Id::new(3))
+                    .self_mute(true)
+                    .self_deaf(true),
+            )
+            .unwrap();
+        let frames = sent(&mut f.inboxes[0]);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0]["op"], json!(4));
+        assert_eq!(frames[0]["d"]["channel_id"], Value::Null);
+        assert_eq!(frames[1]["d"]["self_mute"], json!(true));
+        assert_eq!(frames[1]["d"]["self_deaf"], json!(true));
+        let request = VoiceStateRequest::join(guild, Id::new(3));
+        assert_eq!(request.guild(), guild);
+        assert_eq!(request.channel(), Some(Id::new(3)));
+        assert_eq!(VoiceStateRequest::leave(guild).channel(), None);
+    }
+
+    /// VC-01, GW-04: the 110th send is admitted, the 111th refused.
+    #[tokio::test(start_paused = true)]
+    async fn vc_01_budget_edge() {
+        let mut f = fixture(0..1, 1, Intents::GUILDS);
+        let presence = f.handle.presence();
+        for _ in 1..SEND_BUDGET {
+            presence.set(Presence::online()).unwrap();
+        }
+        let leave = VoiceStateRequest::leave(Id::new(1));
+        assert_eq!(f.handle.update_voice_state(leave), Ok(()));
+        assert_eq!(sent(&mut f.inboxes[0]).len(), SEND_BUDGET);
+        let Err(GatewayError::SendLimit { shard, retry_after }) =
+            f.handle.update_voice_state(leave)
+        else {
+            panic!("the 111th send passed");
+        };
+        assert_eq!(shard, 0);
+        assert!(retry_after > Duration::ZERO);
+        assert!(sent(&mut f.inboxes[0]).is_empty());
+    }
+
+    /// VC-01, GW-04: one window per shard, shared by op 3, op 4 and op 8.
+    #[tokio::test(start_paused = true)]
+    async fn vc_01_mixed_budget() {
+        let mut f = fixture(0..1, 1, Intents::GUILDS);
+        let presence = f.handle.presence();
+        let guild = Id::new(1);
+        for _ in 0..60 {
+            presence.set(Presence::online()).unwrap();
+        }
+        for _ in 0..50 {
+            f.handle
+                .update_voice_state(VoiceStateRequest::join(guild, Id::new(2)))
+                .unwrap();
+        }
+        assert!(matches!(
+            f.handle.update_voice_state(VoiceStateRequest::leave(guild)),
+            Err(GatewayError::SendLimit { shard: 0, .. })
+        ));
+        assert!(matches!(
+            presence.set(Presence::online()),
+            Err(GatewayError::SendLimit { shard: 0, .. })
+        ));
+        assert!(matches!(
+            f.handle
+                .request_guild_members(MemberRequest::users(guild, [Id::new(2)]))
+                .await,
+            Err(GatewayError::SendLimit { shard: 0, .. })
+        ));
+        assert_eq!(sent(&mut f.inboxes[0]).len(), SEND_BUDGET);
+    }
+
+    /// VC-01: not running, out of range, closed shard; nothing is sent.
+    #[test]
+    fn vc_01_errors() {
+        let leave = |guild| VoiceStateRequest::leave(guild);
+        assert_eq!(
+            GatewayHandle::detached().update_voice_state(leave(Id::new(1))),
+            Err(GatewayError::NotRunning)
+        );
+
+        let mut f = fixture(0..2, 4, Intents::GUILDS);
+        let outside = guild_on(3, 4);
+        assert_eq!(
+            f.handle.update_voice_state(leave(outside)),
+            Err(GatewayError::GuildNotInRange {
+                guild: outside,
+                shard: 3,
+                range: 0..2
+            })
+        );
+        drop(f.inboxes.remove(0));
+        assert_eq!(
+            f.handle.update_voice_state(leave(guild_on(0, 4))),
+            Err(GatewayError::ShardClosed { shard: 0 })
+        );
+        f.close.send_replace(Some(CloseMode::Resumable));
+        assert_eq!(
+            f.handle.update_voice_state(leave(guild_on(1, 4))),
+            Err(GatewayError::NotRunning)
+        );
+        assert!(sent(&mut f.inboxes[0]).is_empty());
+    }
+
+    /// VC-01: the bot user id of READY.
+    #[test]
+    fn vc_01_current_user() {
+        let f = fixture(0..2, 2, Intents::GUILDS);
+        assert_eq!(f.handle.current_user_id(), None);
+        f.inboxes[1].user.store(1, Ordering::Release);
+        assert_eq!(f.handle.current_user_id(), Some(Id::new(1)));
+        assert_eq!(GatewayHandle::detached().current_user_id(), None);
     }
 
     #[test]

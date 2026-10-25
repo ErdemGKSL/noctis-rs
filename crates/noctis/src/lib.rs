@@ -607,6 +607,10 @@
 //! - `prefix`: opt-in prefix commands: the [`prefix`] module's
 //!   `PrefixPlugin` runs opted-in slash Commands from messages such as
 //!   `!warn <@5> 3`; it needs the privileged `MESSAGE_CONTENT` intent.
+//! - `voice`: voice channels through Noctis's gateway: the [`voice`]
+//!   module's `.voice(VoiceConfig)` on the `AppBuilder` and `ctx.voice()`
+//!   (`join`, `leave`) with Songbird 0.6 as the voice driver. Needs a C
+//!   compiler and cmake (libopus is built from source).
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
 //!   simulated interactions, message and Template pixel snapshots and the
 //!   memory check;
@@ -1880,6 +1884,11 @@ pub mod gateway {
     //!   and [`prefix`](MemberRequest::prefix) check at run time,
     //!   [`all`](MemberRequest::all) needs `GUILD_MEMBERS`) to the guild's
     //!   owning shard and returns the collected [`GuildMembers`].
+    //!   [`update_voice_state`](GatewayHandle::update_voice_state) sends a
+    //!   [`VoiceStateRequest`] (op 4, VC-01) to the guild's owning shard in
+    //!   the same budget; the `voice` feature's `ctx.voice()` uses it, and
+    //!   [`current_user_id`](GatewayHandle::current_user_id) is the bot's
+    //!   user id from READY.
     //!
     //! Every refusal is a [`GatewayError`], never a silent drop: the App is
     //! not running, a shard or guild outside this process's Shard Range, a
@@ -1911,7 +1920,7 @@ pub mod gateway {
 
     pub use noctis_core::gateway::{
         Activity, GatewayError, GatewayHandle, GuildMembers, LargeThreshold, MemberRequest,
-        Presence, PresenceHandle, Status,
+        Presence, PresenceHandle, Status, VoiceStateRequest,
     };
 }
 
@@ -2574,10 +2583,17 @@ pub mod prelude {
     //! - With the `image` feature, `AppBuilderImageExt`: `.theme(..)` and
     //!   `.image(..)` on the [`AppBuilder`], which install the Renderer
     //!   behind `ctx.render`.
+    //! - With the `voice` feature, `AppBuilderVoiceExt` (`.voice(..)` on the
+    //!   [`AppBuilder`]) and `VoiceExt` (`.voice()` on the App and every
+    //!   context).
 
     /// `.theme(..)` and `.image(..)` on the [`AppBuilder`] (feature `image`).
     #[cfg(feature = "image")]
     pub use crate::image::AppBuilderImageExt;
+    /// `.voice(..)` on the [`AppBuilder`] and `.voice()` on the App and the
+    /// contexts (feature `voice`).
+    #[cfg(feature = "voice")]
+    pub use crate::voice::{AppBuilderVoiceExt, VoiceExt};
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::HookCtx;
     pub use noctis_core::events::EventCtx;
@@ -2773,6 +2789,82 @@ pub mod prefix {
     pub use noctis_prefix::PrefixPlugin;
 }
 
+#[cfg(feature = "voice")]
+pub mod voice {
+    //! Voice channels (feature `voice`, FR-80): join and leave them from any
+    //! handler through Noctis's own gateway, with Songbird 0.6 as the voice
+    //! driver. Needs a C compiler and cmake (libopus is built from source).
+    //!
+    //! - **Install.** `.voice(VoiceConfig::default())` on the [`AppBuilder`]
+    //!   ([`AppBuilderVoiceExt`]) adds the `GUILD_VOICE_STATES` intent and the
+    //!   Module `noctis-voice`. [`VoiceConfig`]: `join_timeout` 1 s..=60 s
+    //!   (default 10 s; another value fails the build), `self_deaf` (default
+    //!   `true`). The last `.voice(..)` wins.
+    //! - **Use.** `ctx.voice()` on every context and `app.voice()`
+    //!   ([`VoiceExt`]) return the App's [`Voice`]:
+    //!   [`join(guild, channel)`](Voice::join) resolves to a [`CallHandle`]
+    //!   once Discord answered and the driver connected;
+    //!   [`leave(guild)`](Voice::leave) sends op 4 with no channel;
+    //!   [`call(guild)`](Voice::call) and
+    //!   [`active_calls()`](Voice::active_calls) read the calls.
+    //! - **VC-01.** Every Voice State Update (op 4) goes through
+    //!   `GatewayHandle::update_voice_state`: the guild's owning shard, the
+    //!   Shard Range and the GW-04 budget of 110 commands per shard per 60 s.
+    //!   A refusal is [`VoiceError::Gateway`] (`[VC-01]`).
+    //! - **VC-02.** One call per guild: joining another channel of the guild
+    //!   moves the call; a join replaced by a newer one, a leave, a
+    //!   disconnect or a `GUILD_DELETE` is [`VoiceError::Interrupted`]
+    //!   (`[VC-02]`), and a [`CallHandle`] of a removed call is stale.
+    //! - **Failures.** No answer within `join_timeout` is
+    //!   [`VoiceError::Timeout`], a driver failure [`VoiceError::Driver`];
+    //!   both leave and remove the call. Before the first READY a join is
+    //!   [`VoiceError::NotReady`].
+    //! - **Shutdown.** Before the shards close, every call sends op 4 leave
+    //!   (for at most `min(shutdown_grace, 5 s)`).
+    //! - **Metrics.** `noctis_voice_calls{app}`: the live and pending calls.
+    //!
+    //! ```no_run
+    //! use noctis::prelude::*;
+    //! use noctis::twilight::model::id::Id;
+    //! use noctis::twilight::model::id::marker::ChannelMarker;
+    //! use noctis::voice::{VoiceConfig, VoiceError};
+    //!
+    //! #[derive(SlashCommand)]
+    //! #[command("join", description = "Join a voice channel")]
+    //! struct Join {
+    //!     #[option(description = "The channel")]
+    //!     channel: Id<ChannelMarker>,
+    //! }
+    //!
+    //! impl Join {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+    //!         let Some(guild) = ctx.guild_id() else {
+    //!             return ctx.reply_text("Use this in a server.").await;
+    //!         };
+    //!         match ctx.voice().join(guild, self.channel).await {
+    //!             Ok(_call) => ctx.reply_text("Joined.").await,
+    //!             Err(error) => ctx.reply_text(format!("Could not join: {error}")).await,
+    //!         }
+    //!     }
+    //! }
+    //!
+    //! # fn main() -> Result<(), noctis::BuildError> {
+    //! let mut builder = App::builder();
+    //! builder
+    //!     .voice(VoiceConfig::default())
+    //!     .module(Module::new("voice").add::<Join>());
+    //! let app = builder.build()?;
+    //! # let _ = (app, VoiceError::NotInstalled);
+    //! # Ok(())
+    //! # }
+    //! ```
+
+    pub use noctis_voice::{
+        AppBuilderVoiceExt, CallHandle, Voice, VoiceConfig, VoiceError, VoiceExt, VoicePlugin,
+    };
+}
+
 /// Paths the derive macros expand to; not public API.
 #[doc(hidden)]
 pub mod __private {
@@ -2784,6 +2876,8 @@ pub mod __private {
     pub use noctis_ports as ports;
     pub use noctis_rules as rules;
     pub use noctis_ui as ui;
+    #[cfg(feature = "voice")]
+    pub use noctis_voice as voice;
     pub use twilight_model as model;
 }
 

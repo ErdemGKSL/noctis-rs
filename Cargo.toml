@@ -13,6 +13,7 @@ members = [
     "crates/noctis-image",
     "crates/noctis-prefix",
     "crates/noctis-testkit",
+    "crates/noctis-voice",
     "examples/ui-recipes",
     "xtask",
 ]
@@ -40,6 +41,7 @@ noctis-i18n = { path = "crates/noctis-i18n", version = "0.1.0" }
 noctis-image = { path = "crates/noctis-image", version = "0.1.0" }
 noctis-prefix = { path = "crates/noctis-prefix", version = "0.1.0" }
 noctis-testkit = { path = "crates/noctis-testkit", version = "0.1.0" }
+noctis-voice = { path = "crates/noctis-voice", version = "0.1.0" }
 
 # Stack (architecture spine, §Stack). Several entries turn default features
 # off here: AD-21's TLS crates (twilight, rustls), takumi, postcard, moka and
@@ -103,6 +105,10 @@ png = "0.18"
 toml = "1.1"
 pulldown-cmark = "0.13"
 cargo_metadata = "0.23"
+# Voice driver of noctis-voice only (AD-30; deps-check `songbird-gated`).
+# `gateway` only compiles `Call` and `Shard::Generic`; its `Songbird` manager
+# is never used. `tws` + `rustls` keep the graph ring-only (no aws-lc-rs).
+songbird = { version = "0.6.1", default-features = false, features = ["driver", "gateway", "rustls", "tws"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
