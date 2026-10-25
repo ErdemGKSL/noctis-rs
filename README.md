@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 99 of 107" src="https://img.shields.io/badge/stories-99%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 100 of 107" src="https://img.shields.io/badge/stories-100%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -31,7 +31,7 @@
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
 > module operations, opt-in extras, event pipeline throughput, voice and music bots).
-> Epic 14 (launch readiness) is in progress (1 of 9 stories done).
+> Epic 14 (launch readiness) is in progress (4 of 9 stories done).
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -78,7 +78,7 @@ Noctis provides all of that as one layer with sensible defaults:
 | **Localization** | Locale files compiled into typed accessors, word-by-word command name translation, User and Guild Locale on every context |
 | **Modules** | Composable feature modules, enabled or disabled at runtime (globally or per guild), plus rate limits and lifecycle hooks |
 | **Voice and music bots** | Opt-in voice (feature `voice`): join/leave through Noctis's gateway, a bounded per-guild queue, typed track events, Opus passthrough, and a recording driver for tests; see `examples/music-bot` |
-| **Developer experience** | One crate (`noctis`) with features, a testing kit that simulates interactions without Discord, and a project template whose AI-agent skill documents the whole API |
+| **Developer experience** | One crate (`noctis`) with features, a testing kit that simulates interactions without Discord, and a project template whose AI-agent skill documents the whole API, and an audited rules catalog (every v1 Discord limit is enforced by construction or checked at runtime, with a test per rule) |
 
 ## A taste of the API
 
@@ -253,7 +253,7 @@ done. Live per-story status is in
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | ✅ Done |
-| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (1 / 9) |
+| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (4 / 9) |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 | 16 | Event pipeline throughput | P1 | ✅ Done |
 | 17 | Voice and music bots | P1 | ✅ Done |
