@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 98 of 107" src="https://img.shields.io/badge/stories-98%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 99 of 107" src="https://img.shields.io/badge/stories-99%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,14 +25,13 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–13, 15 and 16 are done
+> **Noctis is under active development and not yet published.** Epics 1–13 and 15–17 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
-> module operations, opt-in extras, event pipeline throughput). Epic 17 (voice and music
-> bots) is in progress (3 of 4 stories done), and Epic 14 (launch readiness) is in
-> progress (1 of 9 stories done).
+> module operations, opt-in extras, event pipeline throughput, voice and music bots).
+> Epic 14 (launch readiness) is in progress (1 of 9 stories done).
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -257,7 +256,7 @@ done. Live per-story status is in
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (1 / 9) |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 | 16 | Event pipeline throughput | P1 | ✅ Done |
-| 17 | Voice and music bots | P1 | 🔨 In progress (3 / 4) |
+| 17 | Voice and music bots | P1 | ✅ Done |
 
 **What already works**
 
@@ -378,7 +377,7 @@ done. Live per-story status is in
     partition with batched pops, and per-guild ordering.
   - Lower per-event and per-handler overhead: handlers that reject an event get no
     clone, metric handles are cached, and a single concurrent handler runs inline.
-- **Voice and music bots (in progress).** The `noctis-voice` crate (feature `voice`,
+- **Voice and music bots.** The `noctis-voice` crate (feature `voice`,
   on Songbird):
   - Join, leave and move voice calls through Noctis's own gateway with a `Voice`
     handle, a `noctis_voice_calls` gauge, and every call left on shutdown.
