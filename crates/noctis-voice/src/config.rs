@@ -55,6 +55,9 @@ pub struct VoiceConfig {
     media_connect_timeout: Duration,
     media_max_redirects: u8,
     max_bitrate: Option<u32>,
+    /// The recording driver (feature `testkit`).
+    #[cfg(feature = "testkit")]
+    recorder: Option<crate::recording::VoiceRecorder>,
 }
 
 impl Default for VoiceConfig {
@@ -71,6 +74,8 @@ impl Default for VoiceConfig {
             media_connect_timeout: Duration::from_secs(10),
             media_max_redirects: 5,
             max_bitrate: None,
+            #[cfg(feature = "testkit")]
+            recorder: None,
         }
     }
 }
@@ -177,6 +182,59 @@ impl VoiceConfig {
     /// Whether the bot joins self-deafened.
     pub const fn is_self_deaf(&self) -> bool {
         self.self_deaf
+    }
+
+    /// The default config with the recording driver (feature `testkit`,
+    /// which only `noctis`'s `testkit` feature turns on; tests only).
+    ///
+    /// A join sends op 4 through the gateway as usual but resolves once
+    /// Discord's `VOICE_STATE_UPDATE` and `VOICE_SERVER_UPDATE` arrived,
+    /// without connecting the voice driver (no UDP, no voice WebSocket). Every
+    /// queue plays on the [`VoiceRecorder`](crate::VoiceRecorder) that
+    /// [`recorder`](Self::recorder) returns: it records the queue's commands
+    /// and track events and never opens a file, fetches a URL or spawns a
+    /// process; the test reports a track started, finished or failed. The
+    /// builder setters keep the recorder.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use noctis_voice::VoiceConfig;
+    ///
+    /// let config = VoiceConfig::recording().join_timeout(Duration::from_secs(2));
+    /// assert!(config.recorder().is_some());
+    /// assert_eq!(config, config.clone());
+    /// assert_ne!(config, VoiceConfig::recording());
+    /// assert_ne!(config, VoiceConfig::default());
+    /// ```
+    #[cfg(feature = "testkit")]
+    pub fn recording() -> Self {
+        Self {
+            recorder: Some(crate::recording::VoiceRecorder::new()),
+            ..Self::default()
+        }
+    }
+
+    /// The recorder of a [`recording`](Self::recording) config; `None`
+    /// for any other config. Clones share one record.
+    #[cfg(feature = "testkit")]
+    pub fn recorder(&self) -> Option<crate::recording::VoiceRecorder> {
+        self.recorder.clone()
+    }
+
+    /// Whether joins skip the voice driver (the recording driver).
+    #[cfg_attr(
+        not(feature = "testkit"),
+        expect(
+            clippy::unused_self,
+            reason = "only the recording driver reads the config"
+        )
+    )]
+    pub(crate) fn gateway_only(&self) -> bool {
+        #[cfg(feature = "testkit")]
+        return self.recorder.is_some();
+        #[cfg(not(feature = "testkit"))]
+        false
     }
 
     /// One message per out-of-range setting.
@@ -316,5 +374,33 @@ mod tests {
                 assert!(violations[0].contains("8000..=384000"), "{violations:?}");
             }
         }
+    }
+
+    /// The config rows of the recording driver: identity equality, the
+    /// setters keep the recorder, the default has none.
+    #[cfg(feature = "testkit")]
+    #[test]
+    fn recording_config() {
+        assert!(VoiceConfig::default().recorder().is_none());
+        assert!(!VoiceConfig::default().gateway_only());
+        let config = VoiceConfig::recording();
+        let recorder = config.recorder().unwrap_or_else(|| panic!("a recorder"));
+        assert!(config.gateway_only());
+        assert_eq!(config, config.clone());
+        assert_ne!(config, VoiceConfig::recording());
+        assert_ne!(config, VoiceConfig::default());
+        let tuned = config
+            .clone()
+            .join_timeout(Duration::from_secs(2))
+            .self_deaf(false)
+            .max_queue(5)
+            .idle_leave(Some(Duration::from_secs(3)))
+            .media_connect_timeout(Duration::from_secs(4))
+            .media_max_redirects(1)
+            .max_bitrate(Some(96_000));
+        assert_eq!(tuned.recorder(), Some(recorder.clone()));
+        assert!(tuned.violations().is_empty());
+        assert_ne!(Some(recorder), VoiceConfig::recording().recorder());
+        assert!(format!("{config:?}").contains("VoiceRecorder { guilds: 0 }"));
     }
 }

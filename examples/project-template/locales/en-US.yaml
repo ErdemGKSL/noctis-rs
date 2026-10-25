@@ -41,7 +41,7 @@ cmd:
   leave:
     description: Leave the voice channel
   play:
-    description: Queue a media URL in this server's voice channel
+    description: Queue a media URL; joins your voice channel first if needed
     opt:
       url:
         name: url
@@ -128,6 +128,7 @@ voice:
   left: Left the voice channel.
   failed: "Voice failed: {error}"
   not_in_call: Use /join first.
+  join_a_channel: Join a voice channel first.
   queued: "Queued {title} (#{position} in the queue)."
   skipped: "Skipped {title}."
   nothing_playing: Nothing is playing.

@@ -25,9 +25,10 @@ const TRACKS_COUNTER: &str = "noctis_voice_tracks_total";
 /// The volume range.
 const VOLUME: std::ops::RangeInclusive<f32> = 0.0..=2.0;
 
-/// What plays a queue's current track: the Songbird driver, or a test fake.
-/// Every method is synchronous and quick (it may spawn); it is called with
-/// the queue's lock held.
+/// What plays a queue's current track: the Songbird driver, the recording
+/// driver (feature `testkit`) or a test fake. Every method is synchronous and
+/// quick (it may spawn); it runs under the queue's lock, so it must never
+/// call back into the queue.
 pub(crate) trait Player: Send + Sync {
     /// Makes `track` (token `token`) the driver's only track, at `volume`,
     /// playing.
@@ -278,11 +279,14 @@ impl Queue {
 }
 
 /// What a queue reports through: the App's `app` label and [`Emitter`],
-/// bound when the App starts (or `app.voice()` is called).
+/// bound when the App starts (or `app.voice()` is called), and the recorder
+/// of a recording config (feature `testkit`), set when the App is built.
 #[derive(Debug, Default)]
 pub(crate) struct Binding {
     pub(crate) app: OnceLock<Arc<str>>,
     pub(crate) emitter: OnceLock<Emitter>,
+    #[cfg(feature = "testkit")]
+    pub(crate) recorder: Option<crate::recording::VoiceRecorder>,
 }
 
 /// The idle leave of a guild's call.
@@ -370,6 +374,12 @@ impl QueueCell {
                 Cmd::Stop(token) => self.player.stop(token),
                 Cmd::SetVolume(token, volume) => self.player.set_volume(token, volume),
             }
+        }
+        // Recorded before the emitter check: a test sees every event, with
+        // or without a hook.
+        #[cfg(feature = "testkit")]
+        if let Some(recorder) = &self.binding.recorder {
+            recorder.record_notes(self.guild, &out.notes);
         }
         if let Some(app) = self.binding.app.get() {
             for result in out.counted {

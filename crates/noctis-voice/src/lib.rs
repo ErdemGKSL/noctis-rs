@@ -36,6 +36,10 @@
 //!   track at volume 1.0; anything else is decoded, mixed and encoded.
 //! - The encoder bitrate follows the joined channel's bitrate (64 kbps when
 //!   unknown), capped by `VoiceConfig::max_bitrate`.
+//! - Feature `testkit` (only `noctis`'s `testkit` turns it on):
+//!   `VoiceConfig::recording()` joins through the gateway without the voice
+//!   driver and plays every queue on a [`VoiceRecorder`] a test reads
+//!   ([`RecordedCommand`], [`RecordedEvent`]) and drives.
 //! - The gauge `noctis_voice_calls{app}` counts the live and pending calls;
 //!   the counter `noctis_voice_tracks_total{app, result}` counts the tracks
 //!   that became current by outcome (`finished`, `skipped`, `stopped`,
@@ -52,6 +56,8 @@ mod media;
 mod player;
 mod plugin;
 mod queue;
+#[cfg(feature = "testkit")]
+mod recording;
 mod shard;
 mod track;
 mod voice;
@@ -60,6 +66,8 @@ pub use config::VoiceConfig;
 pub use error::VoiceError;
 pub use events::{EndReason, QueueEmpty, TrackEnd, TrackError, TrackStart};
 pub use plugin::{AppBuilderVoiceExt, VoicePlugin};
+#[cfg(feature = "testkit")]
+pub use recording::{RecordedCommand, RecordedEvent, VoiceRecorder};
 pub use track::{Track, TrackId, TrackInfo, TrackSource};
 pub use voice::{CallHandle, Voice, VoiceExt};
 

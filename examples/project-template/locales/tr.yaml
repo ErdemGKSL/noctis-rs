@@ -47,7 +47,7 @@ cmd:
   leave:
     description: Ses kanalından ayrıl
   play:
-    description: Bu sunucunun ses kanalında bir medya bağlantısını sıraya ekle
+    description: Bir medya bağlantısını sıraya ekle; gerekirse önce ses kanalına katılır
     opt:
       url:
         name: bağlantı
@@ -133,6 +133,7 @@ voice:
   left: Ses kanalından ayrıldım.
   failed: "Ses hatası: {error}"
   not_in_call: Önce /katıl komutunu kullan.
+  join_a_channel: Önce bir ses kanalına katıl.
   queued: "{title} sıraya eklendi (sırada #{position})."
   skipped: "{title} geçildi."
   nothing_playing: Şu an bir şey çalmıyor.

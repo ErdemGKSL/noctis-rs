@@ -78,6 +78,7 @@ Noctis provides all of that as one layer with sensible defaults:
 | **Adapters** | RefStore, SessionStore, RateLimitStore, RenderCache, AssetStore, LocaleSource, CacheStore, ModuleStateStore, IdentifyQueue. In-memory defaults ship, and a conformance test suite checks your own implementations |
 | **Localization** | Locale files compiled into typed accessors, word-by-word command name translation, User and Guild Locale on every context |
 | **Modules** | Composable feature modules, enabled or disabled at runtime (globally or per guild), plus rate limits and lifecycle hooks |
+| **Voice and music bots** | Opt-in voice (feature `voice`): join/leave through Noctis's gateway, a bounded per-guild queue, typed track events, Opus passthrough, and a recording driver for tests; see `examples/music-bot` |
 | **Developer experience** | One crate (`noctis`) with features, a testing kit that simulates interactions without Discord, and a project template whose AI-agent skill documents the whole API |
 
 ## A taste of the API
@@ -386,6 +387,12 @@ done. Live per-story status is in
   - Typed `TrackStart`, `TrackEnd` and `TrackError` events delivered to Modules.
   - An optimized Opus path with passthrough and encoded frame counters, encoder bitrate
     that follows the channel bitrate, an allocation test and a voice bench.
+  - A recording driver for tests (`VoiceConfig::recording()`, with the `testkit`
+    feature): joins resolve on the gateway fake's answers without UDP, and a
+    `VoiceRecorder` shows every queue command and track event.
+  - `examples/music-bot`: `/play` joins the author's channel and queues a `yt-dlp`
+    track, with a Components V2 now-playing View, a paginated queue and tests through
+    `TestApp`.
 - **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
   test runs without Discord, plus `TestApp` for simulated interactions and message
   snapshots (re-exported as `noctis::testkit`). Conformance suites

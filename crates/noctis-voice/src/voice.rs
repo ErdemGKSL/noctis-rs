@@ -4,6 +4,8 @@
 use std::fmt;
 use std::future::Future;
 
+use futures_util::FutureExt as _;
+use futures_util::future::Either;
 use noctis_core::{App, CommandCtx, ComponentCtx, EventCtx, HookCtx, ModalSubmitCtx, State};
 use noctis_gateway::{GatewayHandle, VoiceStateRequest};
 use songbird::error::JoinError;
@@ -113,7 +115,16 @@ impl Voice {
                 // without Songbird's op 4 leave in between (VC-02).
                 call.update_state(String::new(), None::<ChannelId>);
             }
-            match call.join(target).await {
+            // The recording driver joins through the gateway only: it
+            // resolves on Discord's answers, without the voice driver.
+            let started = if shared.config.gateway_only() {
+                call.join_gateway(target)
+                    .await
+                    .map(|join| Either::Right(join.map(|info| info.map(drop))))
+            } else {
+                call.join(target).await.map(Either::Left)
+            };
+            match started {
                 Ok(join) => join,
                 Err(error) => {
                     let error = map_send_error(guild, error, &joining.shard);

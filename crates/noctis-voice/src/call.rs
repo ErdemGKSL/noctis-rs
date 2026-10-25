@@ -91,6 +91,11 @@ pub(crate) struct VoiceInner {
     binding: Arc<Binding>,
     /// The App's media HTTP client (URL tracks).
     media: reqwest::Client,
+    /// The recording driver's own Songbird scheduler, started on the App's
+    /// runtime: Songbird's process-wide default lives on the first runtime
+    /// that used it, which a test binary drops when that test ends.
+    #[cfg(feature = "testkit")]
+    scheduler: std::sync::OnceLock<songbird::driver::Scheduler>,
     /// Tests: new queues play on a `FakePlayer` recording here.
     #[cfg(test)]
     pub(crate) fake_player: Mutex<Option<crate::queue::fake::Played>>,
@@ -98,14 +103,21 @@ pub(crate) struct VoiceInner {
 
 impl VoiceShared {
     pub(crate) fn new(config: VoiceConfig, media: reqwest::Client) -> Self {
+        let binding = Arc::new(Binding {
+            #[cfg(feature = "testkit")]
+            recorder: config.recorder(),
+            ..Binding::default()
+        });
         Self(Arc::new(VoiceInner {
             config,
             calls: Mutex::new(HashMap::new()),
             counter: AtomicU64::new(1),
             track_ids: AtomicU64::new(1),
             leaving: Mutex::new(HashMap::new()),
-            binding: Arc::default(),
+            binding,
             media,
+            #[cfg(feature = "testkit")]
+            scheduler: std::sync::OnceLock::new(),
             #[cfg(test)]
             fake_player: Mutex::new(None),
         }))
@@ -139,7 +151,7 @@ impl VoiceShared {
             GuildId::from(guild.into_nonzero()),
             Shard::Generic(Arc::clone(&shard) as _),
             UserId::from(user.into_nonzero()),
-            driver_config(),
+            self.driver_config(),
         );
         // The channel's bitrate is applied once the bot's own voice state
         // names the channel.
@@ -171,6 +183,27 @@ impl VoiceShared {
             call,
             shard,
         }
+    }
+
+    /// The driver config of a new call; the recording driver's uses the
+    /// App's own scheduler.
+    #[cfg_attr(
+        not(feature = "testkit"),
+        expect(
+            clippy::unused_self,
+            reason = "only the recording driver reads the config"
+        )
+    )]
+    fn driver_config(&self) -> songbird::Config {
+        let config = driver_config();
+        #[cfg(feature = "testkit")]
+        if self.config.gateway_only() {
+            let scheduler = self
+                .scheduler
+                .get_or_init(songbird::driver::Scheduler::default);
+            return config.scheduler(scheduler.clone());
+        }
+        config
     }
 
     /// A new queue for `guild`'s entry of `generation`, playing on `call`.
@@ -205,6 +238,20 @@ impl VoiceShared {
                     guild,
                     self.config.get_max_queue(),
                     Box::new(crate::queue::fake::FakePlayer(played)),
+                    Arc::clone(&self.binding),
+                    idle,
+                );
+            }
+            #[cfg(feature = "testkit")]
+            if let Some(recorder) = self.config.recorder() {
+                return QueueCell::new(
+                    guild,
+                    self.config.get_max_queue(),
+                    Box::new(crate::recording::RecordingPlayer {
+                        recorder,
+                        guild,
+                        queue: Weak::clone(queue),
+                    }),
                     Arc::clone(&self.binding),
                     idle,
                 );

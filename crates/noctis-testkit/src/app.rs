@@ -27,7 +27,10 @@ pub use runs::{AutocompleteRun, ClickRun, CommandRun, MenuRun, SelectRun, Submit
 use wire::Wire;
 
 use crate::TestError;
-use crate::fake::{FakeDiscordHttp, FakeGateway, GatewayBot};
+use crate::fake::{
+    FakeDiscordHttp, FakeGateway, FakeGatewayConfig, GatewayBot, RecordedFrame, voice_server_json,
+    voice_state_json,
+};
 use crate::response::{ModalForm, Response, RunCtx, Source, TestComponent};
 use crate::seed::{Seeds, TestGuild, TestUser};
 
@@ -96,6 +99,9 @@ pub struct TestApp {
     renderer: Option<Arc<dyn Renderer>>,
     /// The lane sender of the App's current run (`lane_sender`).
     lanes: Arc<Mutex<Option<LaneSender>>>,
+    /// The `d` of every op 4 frame taken out of the gateway fake's log at
+    /// the end of a run (`voice_state_updates`).
+    voice_updates: Mutex<Vec<Value>>,
 }
 
 impl fmt::Debug for TestApp {
@@ -221,6 +227,7 @@ impl TestApp {
             timeout: DEFAULT_TIMEOUT,
             renderer,
             lanes,
+            voice_updates: Mutex::new(Vec::new()),
         };
         test_app.wait_ready().await?;
         Ok(test_app)
@@ -378,6 +385,78 @@ impl TestApp {
         lock(&self.lanes).clone()
     }
 
+    /// Sets whether the gateway fake answers the App's Voice State Updates
+    /// (op 4) like Discord (default `false`): the bot's own
+    /// `VOICE_STATE_UPDATE`, then the `VOICE_SERVER_UPDATE` when it names a
+    /// channel, the same JSON as [`dispatch_bot_voice_state`] and
+    /// [`dispatch_voice_server`]. Pair it with a voice driver that does not
+    /// connect to the endpoint, such as `VoiceConfig::recording()`; nothing
+    /// listens there.
+    ///
+    /// [`dispatch_bot_voice_state`]: Self::dispatch_bot_voice_state
+    /// [`dispatch_voice_server`]: Self::dispatch_voice_server
+    #[must_use]
+    pub fn answer_voice(self, on: bool) -> Self {
+        self.gateway.set_config(FakeGatewayConfig {
+            answer_voice: on,
+            ..self.gateway.config()
+        });
+        self
+    }
+
+    /// The `d` of every Voice State Update (op 4) the App sent so far,
+    /// oldest first: `guild_id`, `channel_id` (`null` for a leave),
+    /// `self_mute`, `self_deaf`. Empty before any.
+    ///
+    /// ```no_run
+    /// # async fn check(app: &noctis_testkit::TestApp) {
+    /// let channels: Vec<_> = app
+    ///     .voice_state_updates()
+    ///     .iter()
+    ///     .map(|d| d["channel_id"].clone())
+    ///     .collect();
+    /// assert_eq!(channels, [serde_json::json!("50")]);
+    /// # }
+    /// ```
+    pub fn voice_state_updates(&self) -> Vec<Value> {
+        let saved = lock(&self.voice_updates);
+        let mut updates = saved.clone();
+        updates.extend(voice_updates_of(&self.gateway.frames()));
+        updates
+    }
+
+    /// Sends the bot's own `VOICE_STATE_UPDATE` in `guild`, in `channel`
+    /// (`None`: it left), as Discord does after an op 4 (session
+    /// [`FAKE_VOICE_SESSION`](crate::fake::FAKE_VOICE_SESSION),
+    /// self-deafened). With [`dispatch_voice_server`](Self::dispatch_voice_server)
+    /// it completes a pending join by hand.
+    pub fn dispatch_bot_voice_state(
+        &self,
+        guild: Id<GuildMarker>,
+        channel: Option<Id<ChannelMarker>>,
+    ) {
+        let user = self.gateway.config().ready.user_id;
+        let channel = channel.map(|c| c.to_string());
+        let data = voice_state_json(user, &guild.to_string(), channel.as_deref(), true, false);
+        self.gateway.dispatch("VOICE_STATE_UPDATE", data);
+    }
+
+    /// Sends the `VOICE_SERVER_UPDATE` of `guild` (token
+    /// [`FAKE_VOICE_TOKEN`](crate::fake::FAKE_VOICE_TOKEN), endpoint
+    /// [`FAKE_VOICE_ENDPOINT`](crate::fake::FAKE_VOICE_ENDPOINT)), as Discord
+    /// does after an op 4 that names a channel.
+    pub fn dispatch_voice_server(&self, guild: Id<GuildMarker>) {
+        self.gateway
+            .dispatch("VOICE_SERVER_UPDATE", voice_server_json(&guild.to_string()));
+    }
+
+    /// Empties the gateway fake's frame log, keeping the op 4 frames'
+    /// `d` for [`voice_state_updates`](Self::voice_state_updates).
+    fn forget_frames(&self) {
+        let mut saved = lock(&self.voice_updates);
+        saved.extend(voice_updates_of(&self.gateway.take_frames()));
+    }
+
     /// The gateway fake the App's shard is connected to.
     #[doc(hidden)]
     pub fn gateway_fake(&self) -> &FakeGateway {
@@ -466,7 +545,7 @@ impl TestApp {
         lock(&self.waiters).remove(&id);
         let requests = self.http.take_requests();
         let events = self.wire.end();
-        self.gateway.clear_frames();
+        self.forget_frames();
         match waited {
             Ok(Ok(())) => {}
             Ok(Err(_)) => return Err(TestError::Stopped),
@@ -512,6 +591,15 @@ impl TestApp {
         }
         Ok(())
     }
+}
+
+/// The `d` of each op 4 frame in `frames`.
+fn voice_updates_of(frames: &[RecordedFrame]) -> Vec<Value> {
+    frames
+        .iter()
+        .filter(|frame| frame.op() == Some(4))
+        .filter_map(|frame| frame.json()?.get("d").cloned())
+        .collect()
 }
 
 impl Drop for TestApp {

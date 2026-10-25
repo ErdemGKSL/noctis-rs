@@ -16,8 +16,9 @@ use futures_util::{SinkExt, StreamExt};
 use noctis_core::{App, Runtime, Token};
 use noctis_gateway::shard_config;
 use noctis_testkit::fake::{
-    CloseError, FakeDiscordHttp, FakeGateway, FakeGatewayConfig, FrameKind, GatewayBot,
-    HeartbeatSeen, IdentifyReply, Method, ReadyData, RecordedFrame, ResumeReply,
+    CloseError, FAKE_VOICE_ENDPOINT, FAKE_VOICE_SESSION, FAKE_VOICE_TOKEN, FakeDiscordHttp,
+    FakeGateway, FakeGatewayConfig, FrameKind, GatewayBot, HeartbeatSeen, IdentifyReply, Method,
+    ReadyData, RecordedFrame, ResumeReply,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -854,4 +855,147 @@ async fn dropped_fake() {
             None => panic!("shard ended"),
         }
     }
+}
+
+// ---- Story 17.4: `answer_voice` ----
+
+/// A raw client past READY on a fake with `answer_voice` set to `on`.
+async fn voice_client(on: bool) -> (FakeGateway, Raw) {
+    let gw = FakeGateway::start_with(config(|c| {
+        c.answer_voice = on;
+        c.ready.user_id = 77;
+    }))
+    .await
+    .unwrap();
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &identify(None)).await;
+    assert_eq!(recv(&mut ws).await["t"], "READY");
+    (gw, ws)
+}
+
+/// The dispatches the fake answered to the frames sent so far: sends a
+/// heartbeat, reads until its ACK and `expected` dispatches arrived (the
+/// connection task may send either first), then checks that nothing more
+/// arrives within 200 ms.
+async fn answered(ws: &mut Raw, expected: usize) -> Vec<Value> {
+    send(ws, &json!({ "op": 1, "d": null })).await;
+    let mut out = Vec::new();
+    let mut acked = false;
+    while !acked || out.len() < expected {
+        let frame = recv(ws).await;
+        if frame["op"] == 11 {
+            acked = true;
+        } else {
+            out.push(frame);
+        }
+    }
+    let extra = tokio::time::timeout(Duration::from_millis(200), ws.next()).await;
+    assert!(extra.is_err(), "unexpected frame {extra:?}");
+    out
+}
+
+/// A join is answered with the bot's own voice state, then the voice
+/// server, in order, with the next sequence numbers; both deserialize into
+/// twilight's models.
+#[tokio::test(flavor = "multi_thread")]
+async fn answer_voice_join() {
+    use twilight_model::gateway::payload::incoming::{VoiceServerUpdate, VoiceStateUpdate};
+    use twilight_model::id::Id;
+
+    let (_gw, mut ws) = voice_client(true).await;
+    let op4 = json!({ "op": 4, "d": {
+        "guild_id": "5", "channel_id": "6", "self_deaf": true, "self_mute": false
+    }});
+    send(&mut ws, &op4).await;
+    let frames = answered(&mut ws, 2).await;
+    let types: Vec<&Value> = frames.iter().map(|f| &f["t"]).collect();
+    assert_eq!(types, ["VOICE_STATE_UPDATE", "VOICE_SERVER_UPDATE"]);
+    assert_eq!(frames[0]["s"], 2);
+    assert_eq!(frames[1]["s"], 3);
+    let state: VoiceStateUpdate = serde_json::from_value(frames[0]["d"].clone()).unwrap();
+    assert_eq!(state.0.guild_id.map(Id::get), Some(5));
+    assert_eq!(state.0.channel_id.map(Id::get), Some(6));
+    assert_eq!(state.0.user_id.get(), 77);
+    assert_eq!(state.0.session_id, FAKE_VOICE_SESSION);
+    assert!(state.0.self_deaf && !state.0.self_mute);
+    assert!(!state.0.deaf && !state.0.mute && !state.0.self_video && !state.0.suppress);
+    assert!(state.0.request_to_speak_timestamp.is_none());
+    let server: VoiceServerUpdate = serde_json::from_value(frames[1]["d"].clone()).unwrap();
+    assert_eq!(server.guild_id.get(), 5);
+    assert_eq!(server.token, FAKE_VOICE_TOKEN);
+    assert_eq!(server.endpoint.as_deref(), Some(FAKE_VOICE_ENDPOINT));
+
+    // The flags are echoed.
+    send(
+        &mut ws,
+        &json!({ "op": 4, "d": {
+            "guild_id": "5", "channel_id": "6", "self_deaf": false, "self_mute": true
+        }}),
+    )
+    .await;
+    let frames = answered(&mut ws, 2).await;
+    assert_eq!(frames[0]["d"]["self_deaf"], false);
+    assert_eq!(frames[0]["d"]["self_mute"], true);
+}
+
+/// A leave gets only the voice state with no channel.
+#[tokio::test(flavor = "multi_thread")]
+async fn answer_voice_leave() {
+    let (_gw, mut ws) = voice_client(true).await;
+    send(
+        &mut ws,
+        &json!({ "op": 4, "d": {
+            "guild_id": "5", "channel_id": null, "self_deaf": true, "self_mute": false
+        }}),
+    )
+    .await;
+    let frames = answered(&mut ws, 1).await;
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["t"], "VOICE_STATE_UPDATE");
+    assert_eq!(frames[0]["d"]["channel_id"], Value::Null);
+}
+
+/// A malformed op 4 is recorded, not answered, and the connection stays.
+#[tokio::test(flavor = "multi_thread")]
+async fn answer_voice_ignores_malformed_op4() {
+    let (gw, mut ws) = voice_client(true).await;
+    let bad = [
+        json!({ "op": 4 }),
+        json!({ "op": 4, "d": 5 }),
+        json!({ "op": 4, "d": { "channel_id": "6" } }),
+        json!({ "op": 4, "d": { "guild_id": 5, "channel_id": "6" } }),
+        json!({ "op": 4, "d": { "guild_id": "x", "channel_id": "6" } }),
+    ];
+    for frame in &bad {
+        send(&mut ws, frame).await;
+    }
+    assert!(answered(&mut ws, 0).await.is_empty());
+    let op4 = gw.frames().iter().filter(|f| f.op() == Some(4)).count();
+    assert_eq!(op4, bad.len());
+    assert_eq!(gw.live_sessions(), 1);
+}
+
+/// `answer_voice` off (the default) answers nothing; op 4 before IDENTIFY
+/// still closes with 4003.
+#[tokio::test(flavor = "multi_thread")]
+async fn answer_voice_off_and_unauthenticated() {
+    assert!(!FakeGatewayConfig::default().answer_voice);
+    let (_gw, mut ws) = voice_client(false).await;
+    send(
+        &mut ws,
+        &json!({ "op": 4, "d": { "guild_id": "5", "channel_id": "6" } }),
+    )
+    .await;
+    assert!(answered(&mut ws, 0).await.is_empty());
+
+    let gw = FakeGateway::start_with(config(|c| c.answer_voice = true))
+        .await
+        .unwrap();
+    let (mut ws, _) = raw(&gw).await;
+    send(
+        &mut ws,
+        &json!({ "op": 4, "d": { "guild_id": "5", "channel_id": "6" } }),
+    )
+    .await;
+    assert_eq!(recv_close(&mut ws).await, 4003);
 }

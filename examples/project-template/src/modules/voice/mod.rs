@@ -1,5 +1,7 @@
 //! Voice (template feature `voice`, off by default): `/join channel`, `/leave`,
-//! `/play url`, `/skip` and `/stop`, plus a hook that logs failed tracks.
+//! `/play url` (joins the author's voice channel when the bot is in none), `/skip` and
+//! `/stop`, plus a hook that logs failed tracks. `tests/voice.rs` tests them without UDP:
+//! `VoiceConfig::recording()` plus `TestApp::answer_voice(true)`.
 //!
 //! `.voice(VoiceConfig::default())` in `configure` installs voice (it adds the
 //! `GUILD_VOICE_STATES` intent); `ctx.voice()` is the App's `Voice`. Every op 4 goes
@@ -19,8 +21,9 @@
 
 use noctis::lifecycle::HookCtx;
 use noctis::prelude::*;
+use noctis::twilight::http::error::ErrorType;
 use noctis::twilight::model::id::Id;
-use noctis::twilight::model::id::marker::ChannelMarker;
+use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker};
 use noctis::voice::{Track, TrackError};
 
 use crate::strings::{Strings, keys};
@@ -46,7 +49,8 @@ impl Join {
         match ctx.voice().join(guild, self.channel).await {
             Ok(call) => {
                 let channel = call.channel().unwrap_or(self.channel);
-                ctx.reply_text(s.voice.joined(format!("<#{channel}>"))).await
+                ctx.reply_text(s.voice.joined(format!("<#{channel}>")))
+                    .await
             }
             // A typed `VoiceError`: Gateway ([VC-01]), Timeout, Driver, Interrupted ([VC-02]).
             Err(error) => ctx.reply_text(s.voice.failed(error)).await,
@@ -73,7 +77,9 @@ impl Leave {
     }
 }
 
-/// `/play url`: queues a media URL in this server's call (join it first with `/join`).
+/// `/play url`: queues a media URL in this server's call. Without a call it first joins
+/// the author's voice channel, read with Discord's "Get User Voice State"
+/// (`ctx.http().user_voice_state`, one request; a 404 means they are in none).
 /// `Track::url` refuses non-http(s) URLs, credentials and Discord's API; the queue
 /// refuses more than `max_queue` tracks (`VoiceError::QueueFull`).
 /// Warning: the media client fetches any public or private host (loopback,
@@ -91,21 +97,51 @@ pub struct Play {
 impl Play {
     #[handler]
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let Some(guild) = ctx.guild_id() else {
+            return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;
+        };
         let s = Strings::of(ctx.response_locale());
-        let Some(call) = ctx.guild_id().and_then(|guild| ctx.voice().call(guild)) else {
-            return ctx.reply_text(s.voice.not_in_call()).await;
+        let call = if let Some(call) = ctx.voice().call(guild) {
+            call
+        } else {
+            let Some(channel) = author_channel(&ctx, guild).await? else {
+                return ctx.reply_text(s.voice.join_a_channel()).await;
+            };
+            match ctx.voice().join(guild, channel).await {
+                Ok(call) => call,
+                Err(error) => return ctx.reply_text(s.voice.failed(error)).await,
+            }
         };
         let queued = async {
-            let track = Track::url(&self.url)?.title(&self.url).requested_by(ctx.user_id());
+            let track = Track::url(&self.url)?
+                .title(&self.url)
+                .requested_by(ctx.user_id());
             call.enqueue(track).await
         };
         match queued.await {
             Ok(info) => {
                 let title = info.title().unwrap_or_default().to_owned();
-                ctx.reply_text(s.voice.queued(title, call.queue_len())).await
+                ctx.reply_text(s.voice.queued(title, call.queue_len()))
+                    .await
             }
             Err(error) => ctx.reply_text(s.voice.failed(error)).await,
         }
+    }
+}
+
+/// The voice channel the command's author is in, from Discord's "Get User Voice State"
+/// (`GET /guilds/{guild}/voice-states/{user}`); `None` when Discord answers 404 (they
+/// are in none). Noctis keeps no voice-state cache, so this is one request per call.
+async fn author_channel(
+    ctx: &CommandCtx,
+    guild: Id<GuildMarker>,
+) -> HandlerResult<Option<Id<ChannelMarker>>> {
+    match ctx.http().user_voice_state(guild, ctx.user_id()).await {
+        Ok(response) => Ok(response.model().await?.channel_id),
+        Err(error) if matches!(error.kind(), ErrorType::Response { status, .. } if status.get() == 404) => {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
     }
 }
 

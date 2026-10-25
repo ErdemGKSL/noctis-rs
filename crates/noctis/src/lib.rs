@@ -2891,6 +2891,15 @@ pub mod voice {
     //!   bitrate (from the Discord cache and `CHANNEL_UPDATE`; 64 kbps when
     //!   unknown), capped by `VoiceConfig::max_bitrate(Some(bps))`
     //!   (8000..=384000, default `None`; another value fails the build).
+    //! - **Testing.** With the `testkit` feature too,
+    //!   `VoiceConfig::recording()` joins through the gateway without the
+    //!   voice driver (no UDP) and plays every queue on a
+    //!   [`testkit::voice::VoiceRecorder`](crate::testkit::voice::VoiceRecorder)
+    //!   the test reads (`commands`, `events`) and drives (`start`,
+    //!   `finish`, `fail`); `TestApp::answer_voice(true)` makes the fake
+    //!   gateway answer op 4, and `TestApp::voice_state_updates()` reads the
+    //!   op 4 frames. See [`crate::testkit::voice`]. It is compiled only with
+    //!   `testkit` (a `[dev-dependencies]` feature).
     //! - **Metrics.** `noctis_voice_calls{app}`: the live and pending calls;
     //!   `noctis_voice_tracks_total{app, result}`: the tracks that became
     //!   current, by `finished`, `skipped`, `stopped` or `error`;
@@ -3864,6 +3873,14 @@ pub mod testkit {
     //!   `app.http_fake().route(Method::POST, "/channels/5/webhooks",
     //!   FakeResponse::json(StatusCode::OK, &body))` or `route_with`; a
     //!   registered route wins, an unknown path is Discord's `404`.
+    //! - Voice (with `voice`): [`TestApp::answer_voice`]`(true)` makes the
+    //!   gateway fake answer each Voice State Update (op 4) like Discord (the
+    //!   bot's own `VOICE_STATE_UPDATE`, then `VOICE_SERVER_UPDATE`);
+    //!   [`TestApp::voice_state_updates`] returns the `d` of every op 4 the
+    //!   App sent; [`TestApp::dispatch_bot_voice_state`]`(guild,
+    //!   Some(channel))` and [`TestApp::dispatch_voice_server`]`(guild)` send
+    //!   those answers by hand. `VoiceConfig::recording()` joins on them
+    //!   without UDP and records every queue ([`voice`]).
     //! - [`assert_memory_flat`]: live heap stays within
     //!   [`MEMORY_FLAT_SLACK_BYTES`] over N runs (NFR-2). It needs the
     //!   [`dhat`] allocator in its own test binary with one `#[test]`.
@@ -3944,6 +3961,69 @@ pub mod testkit {
         };
     }
 
+    #[cfg(feature = "voice")]
+    pub mod voice {
+        //! Voice tests without UDP (features `testkit` and `voice`).
+        //!
+        //! Build the bot with `.voice(VoiceConfig::recording())` (after its
+        //! own `configure`, so the last `.voice(..)` wins) and turn on
+        //! [`TestApp::answer_voice`](super::TestApp::answer_voice):
+        //!
+        //! - a join sends op 4 through the gateway as usual (VC-01) and
+        //!   resolves on the fake's `VOICE_STATE_UPDATE` and
+        //!   `VOICE_SERVER_UPDATE`, without the voice driver;
+        //! - every queue plays on the config's [`VoiceRecorder`]
+        //!   (`config.recorder()`): [`VoiceRecorder::commands`] lists the
+        //!   [`RecordedCommand`]s (`Play { track, volume }`, `Pause`,
+        //!   `Resume`, `Stop`, `SetVolume`) and [`VoiceRecorder::events`] the
+        //!   [`RecordedEvent`]s (`Start`, `End`, `Error`, `Empty`) per guild;
+        //! - nothing plays by itself: [`VoiceRecorder::start`] reports the
+        //!   current track playable (`TrackStart`),
+        //!   [`VoiceRecorder::finish`] ends it (`TrackEnd` `Finished`, then the
+        //!   next track or `QueueEmpty`), [`VoiceRecorder::fail`] fails it
+        //!   (`TrackError`). Each returns the track, or `None` when nothing is
+        //!   current;
+        //! - no file is opened, no URL fetched and no process spawned.
+        //!
+        //! Use one recorder per App: two Apps built from one recording
+        //! config record into the same guild entries.
+        //!
+        //! ```no_run
+        //! use noctis::prelude::*;
+        //! use noctis::testkit::voice::{RecordedCommand, RecordedEvent};
+        //! use noctis::testkit::{TestApp, TestError, TestGuild, TestUser};
+        //! use noctis::twilight::model::channel::ChannelType;
+        //! use noctis::twilight::model::id::Id;
+        //! use noctis::voice::VoiceConfig;
+        //!
+        //! fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
+        //!     builder // .voice(..) and the Module whose `/play` joins and enqueues
+        //! }
+        //!
+        //! # async fn flow() -> Result<(), TestError> {
+        //! let (guild, voice_channel, user) = (Id::new(10), Id::new(50), Id::new(40));
+        //! let config = VoiceConfig::recording();
+        //! let recorder = config.recorder().expect("a recording config");
+        //! let mut builder = App::builder();
+        //! configure(&mut builder).voice(config); // the last `.voice(..)` wins
+        //! let app = TestApp::build(&mut builder)
+        //!     .await?
+        //!     .answer_voice(true)
+        //!     .guild(TestGuild::new(guild, "G").channel(voice_channel, "Lounge", ChannelType::GuildVoice))
+        //!     .user(TestUser::new(user));
+        //! app.command("play").option("query", "lofi").by(user).in_guild(guild).run().await?;
+        //! assert_eq!(app.voice_state_updates()[0]["channel_id"], "50");
+        //! assert!(matches!(recorder.commands(guild)[..], [RecordedCommand::Play { .. }]));
+        //! recorder.start(guild); // TrackStart
+        //! recorder.finish(guild); // TrackEnd (Finished), then QueueEmpty
+        //! assert!(matches!(recorder.events(guild).last(), Some(RecordedEvent::Empty(_))));
+        //! app.stop().await
+        //! # }
+        //! ```
+
+        pub use noctis_voice::{RecordedCommand, RecordedEvent, VoiceRecorder};
+    }
+
     pub mod fake {
         //! The HTTP fake behind a [`TestApp`](super::TestApp)
         //! ([`TestApp::http_fake`](super::TestApp::http_fake)): register
@@ -3952,9 +4032,9 @@ pub mod testkit {
         //! and read what the App sent as [`RecordedRequest`]s.
 
         pub use noctis_testkit::fake::{
-            FakeDiscordHttp, FakeResponse, GatewayBot, HeaderMap, HeaderName, HeaderValue,
-            HttpProtocol, Method, RecordedHttpConnection, RecordedRequest, SessionStartLimit,
-            StatusCode,
+            FAKE_VOICE_ENDPOINT, FAKE_VOICE_SESSION, FAKE_VOICE_TOKEN, FakeDiscordHttp,
+            FakeResponse, GatewayBot, HeaderMap, HeaderName, HeaderValue, HttpProtocol, Method,
+            RecordedHttpConnection, RecordedRequest, SessionStartLimit, StatusCode,
         };
     }
     pub use noctis_testkit::{

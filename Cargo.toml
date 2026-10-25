@@ -14,6 +14,7 @@ members = [
     "crates/noctis-prefix",
     "crates/noctis-testkit",
     "crates/noctis-voice",
+    "examples/music-bot",
     "examples/ui-recipes",
     "xtask",
 ]

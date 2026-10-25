@@ -38,8 +38,11 @@ prefix = ["dep:noctis-prefix"]
 # Off by default. Needs a C compiler and cmake: libopus is built from source
 # (through `opus2`).
 voice = ["dep:noctis-voice"]
-# Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.
-testkit = ["dep:noctis-testkit"]
+# Test kit (noctis-testkit); enable it in `[dev-dependencies]` only. With
+# `voice` it also turns on noctis-voice's recording driver
+# (`VoiceConfig::recording`, `noctis::testkit::voice`); the weak `?/` enables
+# no dependency on its own.
+testkit = ["dep:noctis-testkit", "noctis-voice?/testkit"]
 
 [dependencies]
 bytes.workspace = true

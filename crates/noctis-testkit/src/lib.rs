@@ -12,6 +12,12 @@
 //!   shard and pipeline; each run returns a [`Response`] (kind with the
 //!   defer equivalences, ephemerality, the final message, follow-ups,
 //!   built-in notices, the HTTP calls).
+//! - Voice without UDP: [`TestApp::answer_voice`] makes the gateway fake
+//!   answer op 4 like Discord; [`TestApp::voice_state_updates`] reads the
+//!   op 4 frames the App sent; [`TestApp::dispatch_bot_voice_state`] and
+//!   [`TestApp::dispatch_voice_server`] send the answers by hand. They speak
+//!   gateway JSON only; `noctis`'s `testkit` + `voice` add the recording
+//!   driver (`VoiceConfig::recording()`) that joins on these answers.
 //! - [`render_json`] and [`Response::message_json`]: snapshot JSON with
 //!   only per-send `custom_id` parts masked.
 //! - [`assert_memory_flat`]: NFR-2 with dhat.

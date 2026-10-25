@@ -449,6 +449,14 @@ support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
   Discord does not enforce, so it is a config range, not a rule id. Songbird's
   `internals` feature is a `noctis-voice` dev-dependency only (tests, the dhat test
   and the bench), and deps-check `songbird-gated` allows that dev edge.
+- Amended (2026-10-25, Story 17.4): tests run voice on a recording driver
+  (`VoiceConfig::recording()`, behind `noctis-voice/testkit`, enabled only by the
+  facade's `testkit` feature) that joins through Songbird's gateway-only
+  `join_gateway` and records the queue's driver commands and track events; the
+  `TestApp` voice helpers are voice-agnostic (the testkit never depends on
+  `noctis-voice`); a bot finds the author's channel via REST (`user_voice_state`,
+  404 = not in voice), never a voice-state cache. `examples/music-bot` is the
+  reference music bot.
 - **Order.** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
   with Epic 16; merges serialize through the merge lock. Epic 14's template, skill
   and docs stories cover the `voice` feature once Epic 17 is merged.

@@ -37,9 +37,11 @@ use std::time::Duration;
 
 use bytes::Bytes;
 pub use gateway::{
-    CloseError, FakeGateway, FakeGatewayConfig, FrameKind, HeartbeatSeen, IdentifyReply, ReadyData,
-    RecordedConnection, RecordedFrame, ResumeReply,
+    CloseError, FAKE_VOICE_ENDPOINT, FAKE_VOICE_SESSION, FAKE_VOICE_TOKEN, FakeGateway,
+    FakeGatewayConfig, FrameKind, HeartbeatSeen, IdentifyReply, ReadyData, RecordedConnection,
+    RecordedFrame, ResumeReply,
 };
+pub(crate) use gateway::{voice_server_json, voice_state_json};
 pub use hyper::header::{HeaderName, HeaderValue};
 pub use hyper::{HeaderMap, Method, StatusCode};
 use tokio::net::TcpListener;

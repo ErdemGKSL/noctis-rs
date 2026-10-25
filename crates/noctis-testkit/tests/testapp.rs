@@ -2082,3 +2082,89 @@ async fn memory_check_needs_the_dhat_allocator() {
     assert!(matches!(err, TestError::AllocatorMissing), "{err}");
     assert!(err.to_string().contains("dhat::Alloc"), "{err}");
 }
+
+// ---- Story 17.4: the voice helpers (no voice installed) ----
+
+/// What the voice event handlers saw.
+#[derive(Default)]
+struct VoiceSeen(Mutex<Vec<String>>);
+
+#[derive(EventHandler)]
+struct OnVoiceState;
+
+impl OnVoiceState {
+    #[handler]
+    async fn handle(
+        self,
+        ctx: EventCtx,
+        ev: noctis::events::VoiceStateUpdate,
+    ) -> HandlerResult<()> {
+        if let Some(seen) = ctx.state::<Arc<VoiceSeen>>() {
+            let state = ev.0;
+            seen.0.lock().unwrap().push(format!(
+                "state {} {:?} {} {}",
+                state.guild_id.map_or(0, Id::get),
+                state.channel_id.map(Id::get),
+                state.user_id,
+                state.session_id
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(EventHandler)]
+struct OnVoiceServer;
+
+impl OnVoiceServer {
+    #[handler]
+    async fn handle(
+        self,
+        ctx: EventCtx,
+        ev: noctis::events::VoiceServerUpdate,
+    ) -> HandlerResult<()> {
+        if let Some(seen) = ctx.state::<Arc<VoiceSeen>>() {
+            seen.0.lock().unwrap().push(format!(
+                "server {} {} {:?}",
+                ev.guild_id, ev.token, ev.endpoint
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// `voice_state_updates()` is empty without voice; the dispatch helpers
+/// reach the App's event handlers as the bot's own voice state and the
+/// voice server.
+#[tokio::test(flavor = "multi_thread")]
+async fn voice_helpers_without_voice() -> Result<(), TestError> {
+    let seen = Arc::new(VoiceSeen::default());
+    let mut builder = App::builder();
+    builder.state(Arc::clone(&seen)).module(
+        Module::new("voice-probe")
+            .add::<OnVoiceState>()
+            .add::<OnVoiceServer>(),
+    );
+    let app = TestApp::build(&mut builder).await?.answer_voice(true);
+    assert!(app.voice_state_updates().is_empty());
+    app.dispatch_bot_voice_state(G, Some(C));
+    app.dispatch_voice_server(G);
+    app.dispatch_bot_voice_state(G, None);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while seen.0.lock().unwrap().len() < 3 {
+        assert!(std::time::Instant::now() < deadline, "the voice events");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let mut lines = seen.0.lock().unwrap().clone();
+    lines.sort();
+    assert_eq!(
+        lines,
+        [
+            "server 10 fake-voice-token Some(\"voice.fake.invalid:443\")".to_owned(),
+            "state 10 None 1 fake-voice-session".to_owned(),
+            "state 10 Some(20) 1 fake-voice-session".to_owned(),
+        ]
+    );
+    assert!(app.voice_state_updates().is_empty(), "no op 4 was sent");
+    app.stop().await
+}

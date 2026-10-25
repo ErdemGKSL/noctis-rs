@@ -279,6 +279,17 @@ Publish hooks: `let app = configure(&mut App::builder()).build()?;` then
 panic goes to the `ErrorOrigin::Hook` sink: register a recording `ErrorSink` with
 `.error_sink(ErrorOrigin::Hook, Arc::clone(&sink))` to assert on it.
 
+### Voice
+
+With the `voice` feature, `.voice(VoiceConfig::recording())` after your `configure`
+puts the queue on a `VoiceRecorder` in place of the audio driver: no UDP and no
+audio. `TestApp::answer_voice(true)` makes the gateway fake answer op 4 (joins resolve;
+`FAKE_VOICE_SESSION`, `FAKE_VOICE_TOKEN`, `FAKE_VOICE_ENDPOINT`). `voice_state_updates()`
+lists the op 4 payloads the App sent, and `dispatch_bot_voice_state` /
+`dispatch_voice_server` answer by hand. Assert driver work with `recorder.commands(guild)`
+and `recorder.events(guild)`, and drive the queue with `recorder.start` / `finish` / `fail`.
+The table and a complete test are in `voice.md` §12 ("Testing voice").
+
 ## 5. Unit-testing a render function without an App
 
 A View is a plain function, so call it:

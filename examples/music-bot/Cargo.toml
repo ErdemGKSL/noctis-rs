@@ -1,0 +1,21 @@
+[package]
+name = "music-bot"
+description = "A complete Noctis music bot: /play joins the author's voice channel, a Components V2 now-playing View, a paginated queue, tested with the recording driver."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+noctis = { workspace = true, features = ["voice"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing.workspace = true
+
+[dev-dependencies]
+noctis = { workspace = true, features = ["testkit", "voice"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

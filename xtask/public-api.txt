@@ -7447,10 +7447,13 @@ pub fn noctis::testkit::SubmitRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>)
 pub struct noctis::testkit::TestApp
 impl noctis::testkit::TestApp
 pub const noctis::testkit::TestApp::DEFAULT_USER: twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::testkit::TestApp::answer_voice(self, bool) -> Self
 pub fn noctis::testkit::TestApp::autocomplete(&self, &str, &str, &str) -> noctis::testkit::AutocompleteRun<'_>
 pub async fn noctis::testkit::TestApp::build(&mut noctis::AppBuilder) -> core::result::Result<Self, noctis::testkit::TestError>
 pub fn noctis::testkit::TestApp::click(&self, noctis::testkit::TestComponent) -> noctis::testkit::ClickRun<'_>
 pub fn noctis::testkit::TestApp::command(&self, &str) -> noctis::testkit::CommandRun<'_>
+pub fn noctis::testkit::TestApp::dispatch_bot_voice_state(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>)
+pub fn noctis::testkit::TestApp::dispatch_voice_server(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>)
 pub fn noctis::testkit::TestApp::guild(self, noctis::testkit::TestGuild) -> Self
 pub fn noctis::testkit::TestApp::http_fake(&self) -> &noctis::testkit::fake::FakeDiscordHttp
 pub fn noctis::testkit::TestApp::message_command(&self, &str) -> noctis::testkit::MenuRun<'_>
@@ -7461,6 +7464,7 @@ pub fn noctis::testkit::TestApp::submit(&self, noctis::testkit::ModalForm) -> no
 pub fn noctis::testkit::TestApp::timeout(self, core::time::Duration) -> Self
 pub fn noctis::testkit::TestApp::user(self, noctis::testkit::TestUser) -> Self
 pub fn noctis::testkit::TestApp::user_command(&self, &str) -> noctis::testkit::MenuRun<'_>
+pub fn noctis::testkit::TestApp::voice_state_updates(&self) -> alloc::vec::Vec<serde_json::value::Value>
 impl core::fmt::Debug for noctis::testkit::TestApp
 pub fn noctis::testkit::TestApp::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::drop::Drop for noctis::testkit::TestApp
@@ -7676,6 +7680,9 @@ pub async fn noctis::testkit::conformance::ref_store<P: noctis::ports::RefStore,
 pub async fn noctis::testkit::conformance::render_cache<P: noctis::ports::RenderCache, F: core::ops::function::Fn() -> P>(F)
 pub async fn noctis::testkit::conformance::session_store<P: noctis::ports::SessionStore, F: core::ops::function::Fn() -> P>(F)
 pub mod noctis::testkit::fake
+pub const noctis::testkit::fake::FAKE_VOICE_ENDPOINT: &str
+pub const noctis::testkit::fake::FAKE_VOICE_SESSION: &str
+pub const noctis::testkit::fake::FAKE_VOICE_TOKEN: &str
 pub struct noctis::testkit::fake::FakeDiscordHttp
 impl noctis::testkit::fake::FakeDiscordHttp
 pub fn noctis::testkit::fake::FakeDiscordHttp::addr(&self) -> core::net::socket_addr::SocketAddr
@@ -7790,6 +7797,50 @@ impl core::fmt::Debug for noctis::testkit::fake::SessionStartLimit
 pub fn noctis::testkit::fake::SessionStartLimit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::testkit::fake::SessionStartLimit
 pub use noctis::testkit::fake::StatusCode
+pub mod noctis::testkit::voice
+#[non_exhaustive] pub enum noctis::testkit::voice::RecordedCommand
+pub noctis::testkit::voice::RecordedCommand::Pause
+pub noctis::testkit::voice::RecordedCommand::Play
+pub noctis::testkit::voice::RecordedCommand::Play::track: noctis::voice::TrackInfo
+pub noctis::testkit::voice::RecordedCommand::Play::volume: f32
+pub noctis::testkit::voice::RecordedCommand::Resume
+pub noctis::testkit::voice::RecordedCommand::SetVolume(f32)
+pub noctis::testkit::voice::RecordedCommand::Stop
+impl core::clone::Clone for noctis::testkit::voice::RecordedCommand
+pub fn noctis::testkit::voice::RecordedCommand::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::testkit::voice::RecordedCommand
+pub fn noctis::testkit::voice::RecordedCommand::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::voice::RecordedCommand
+pub fn noctis::testkit::voice::RecordedCommand::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::voice::RecordedCommand
+#[non_exhaustive] pub enum noctis::testkit::voice::RecordedEvent
+pub noctis::testkit::voice::RecordedEvent::Empty(noctis::voice::QueueEmpty)
+pub noctis::testkit::voice::RecordedEvent::End(noctis::voice::TrackEnd)
+pub noctis::testkit::voice::RecordedEvent::Error(noctis::voice::TrackError)
+pub noctis::testkit::voice::RecordedEvent::Start(noctis::voice::TrackStart)
+impl core::clone::Clone for noctis::testkit::voice::RecordedEvent
+pub fn noctis::testkit::voice::RecordedEvent::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::testkit::voice::RecordedEvent
+pub fn noctis::testkit::voice::RecordedEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::voice::RecordedEvent
+pub fn noctis::testkit::voice::RecordedEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::voice::RecordedEvent
+pub struct noctis::testkit::voice::VoiceRecorder(_)
+impl noctis::testkit::voice::VoiceRecorder
+pub fn noctis::testkit::voice::VoiceRecorder::commands(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> alloc::vec::Vec<noctis::testkit::voice::RecordedCommand>
+pub fn noctis::testkit::voice::VoiceRecorder::events(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> alloc::vec::Vec<noctis::testkit::voice::RecordedEvent>
+pub fn noctis::testkit::voice::VoiceRecorder::fail(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, impl core::convert::Into<alloc::string::String>) -> core::option::Option<noctis::voice::TrackInfo>
+pub fn noctis::testkit::voice::VoiceRecorder::finish(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::option::Option<noctis::voice::TrackInfo>
+pub fn noctis::testkit::voice::VoiceRecorder::start(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::option::Option<noctis::voice::TrackInfo>
+impl core::clone::Clone for noctis::testkit::voice::VoiceRecorder
+pub fn noctis::testkit::voice::VoiceRecorder::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::voice::VoiceRecorder
+impl core::cmp::PartialEq for noctis::testkit::voice::VoiceRecorder
+pub fn noctis::testkit::voice::VoiceRecorder::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::testkit::voice::VoiceRecorder
+pub fn noctis::testkit::voice::VoiceRecorder::default() -> Self
+impl core::fmt::Debug for noctis::testkit::voice::VoiceRecorder
+pub fn noctis::testkit::voice::VoiceRecorder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub mod noctis::twilight
 pub use noctis::twilight::http
 pub use noctis::twilight::model
@@ -9830,6 +9881,8 @@ pub const fn noctis::voice::VoiceConfig::max_queue(self, usize) -> Self
 pub const fn noctis::voice::VoiceConfig::media_connect_timeout(self, core::time::Duration) -> Self
 pub const fn noctis::voice::VoiceConfig::media_max_redirects(self, u8) -> Self
 pub fn noctis::voice::VoiceConfig::new() -> Self
+pub fn noctis::voice::VoiceConfig::recorder(&self) -> core::option::Option<noctis::testkit::voice::VoiceRecorder>
+pub fn noctis::voice::VoiceConfig::recording() -> Self
 pub const fn noctis::voice::VoiceConfig::self_deaf(self, bool) -> Self
 impl core::clone::Clone for noctis::voice::VoiceConfig
 pub fn noctis::voice::VoiceConfig::clone(&self) -> Self

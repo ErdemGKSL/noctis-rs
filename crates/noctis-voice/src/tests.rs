@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use noctis_core::lifecycle::HookEvent;
 use noctis_core::{App, HandlerResult, HookCtx, LifecycleHook, Module, Runtime, Token};
-use noctis_testkit::fake::{FakeDiscordHttp, FakeGateway, GatewayBot, SessionStartLimit};
+use noctis_testkit::fake::{
+    FakeDiscordHttp, FakeGateway, FakeGatewayConfig, GatewayBot, SessionStartLimit,
+};
 use serde_json::json;
 use tokio::sync::oneshot;
 use twilight_model::id::Id;
@@ -23,7 +25,7 @@ use crate::{
 };
 
 /// The bound on every single wait.
-const WAIT: Duration = Duration::from_secs(15);
+pub(crate) const WAIT: Duration = Duration::from_secs(15);
 
 /// The process-wide metrics recorder of this test binary.
 fn snapshotter() -> &'static Snapshotter {
@@ -74,7 +76,7 @@ fn tracks(app: &str, result: &str) -> u64 {
 
 /// What the Module's hooks saw, in order.
 #[derive(Default)]
-struct Seen(Mutex<Vec<String>>);
+pub(crate) struct Seen(Mutex<Vec<String>>);
 
 impl Seen {
     fn push(&self, line: String) {
@@ -84,7 +86,7 @@ impl Seen {
             .push(line);
     }
 
-    fn get(&self) -> Vec<String> {
+    pub(crate) fn get(&self) -> Vec<String> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -130,11 +132,11 @@ fn music(seen: &Arc<Seen>) -> Module {
 }
 
 /// A guild owned by shard 1 of 2.
-fn guild() -> Id<GuildMarker> {
+pub(crate) fn guild() -> Id<GuildMarker> {
     Id::new((1 << 22) | 7)
 }
 
-async fn until(what: &str, done: impl Fn() -> bool) {
+pub(crate) async fn until(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + WAIT;
     while !done() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
@@ -143,24 +145,24 @@ async fn until(what: &str, done: impl Fn() -> bool) {
 }
 
 /// A running App with voice on the fakes, its queues on `FakePlayer`s.
-struct Running {
-    gw: Arc<FakeGateway>,
+pub(crate) struct Running {
+    pub(crate) gw: Arc<FakeGateway>,
     _http: FakeDiscordHttp,
-    voice: Voice,
+    pub(crate) voice: Voice,
     shared: noctis_core::State<VoiceShared>,
     played: Played,
-    seen: Arc<Seen>,
+    pub(crate) seen: Arc<Seen>,
     stop: Option<oneshot::Sender<()>>,
     run: tokio::task::JoinHandle<Result<(), noctis_core::Error>>,
 }
 
 impl Running {
-    async fn start(app: &str, config: VoiceConfig) -> Self {
+    pub(crate) async fn start(app: &str, config: VoiceConfig) -> Self {
         Self::start_with(app, config, |_| {}).await
     }
 
     /// As [`start`](Self::start), with `customize` applied to the builder.
-    async fn start_with(
+    pub(crate) async fn start_with(
         app: &str,
         config: VoiceConfig,
         customize: impl FnOnce(&mut noctis_core::AppBuilder),
@@ -176,7 +178,17 @@ impl Running {
         })
         .await
         .unwrap_or_else(|e| panic!("{e}"));
-        let gw = Arc::new(FakeGateway::start().await.unwrap_or_else(|e| panic!("{e}")));
+        // A recording config joins on the fake's own answers; the
+        // Songbird driver never meets the auto-answered endpoint.
+        let recording = config.gateway_only();
+        let gw = Arc::new(
+            FakeGateway::start_with(FakeGatewayConfig {
+                answer_voice: recording,
+                ..FakeGatewayConfig::default()
+            })
+            .await
+            .unwrap_or_else(|e| panic!("{e}")),
+        );
         let seen = Arc::new(Seen::default());
         let mut builder = App::builder();
         builder
@@ -194,10 +206,12 @@ impl Running {
             .state::<VoiceShared>()
             .unwrap_or_else(|| panic!("voice installed"));
         let played = Played::default();
-        *shared
-            .fake_player
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(played.clone());
+        if !recording {
+            *shared
+                .fake_player
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(played.clone());
+        }
         let voice = built.voice();
         let gateway = built.gateway();
         let (stop, stopped) = oneshot::channel();
@@ -245,13 +259,13 @@ impl Running {
         self.played.last_token().unwrap_or_default()
     }
 
-    async fn seen(&self, n: usize) -> Vec<String> {
+    pub(crate) async fn seen(&self, n: usize) -> Vec<String> {
         until(&format!("{n} track events"), || self.seen.get().len() >= n).await;
         self.seen.get()
     }
 
     /// The op 4 frames' `d.channel_id`.
-    fn op4_channels(&self) -> Vec<serde_json::Value> {
+    pub(crate) fn op4_channels(&self) -> Vec<serde_json::Value> {
         self.gw
             .frames()
             .into_iter()
@@ -260,7 +274,7 @@ impl Running {
             .collect()
     }
 
-    async fn stop(mut self) {
+    pub(crate) async fn stop(mut self) {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
@@ -268,7 +282,7 @@ impl Running {
     }
 }
 
-fn track(name: &str) -> Track {
+pub(crate) fn track(name: &str) -> Track {
     Track::file(format!("{name}.wav"))
         .unwrap_or_else(|e| panic!("{e}"))
         .title(name)

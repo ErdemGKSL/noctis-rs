@@ -382,11 +382,133 @@ let track = Track::command(
 )?;
 ```
 
-## 11. Testing
+## 11. Music-bot patterns
 
-`TestApp` runs on a fake gateway that has no voice server, so a `/join` there waits
-for `join_timeout` and ends in `VoiceError::Timeout`: test the replies, not the
-connection. A `/leave` sends op 4 with no channel and succeeds, and the intent check
-is `app.intents().contains(Intents::GUILD_VOICE_STATES)` (the template's
-`tests/voice.rs` does both). Without a call, `/play`, `/skip` and `/stop` answer "join
-first"; the queue and its events are covered by Noctis's own tests.
+The workspace example `examples/music-bot` (noctis-rs repo) is a complete music bot
+built with these patterns; `docs/guides/voice.md` walks through it.
+
+**The author's channel.** Noctis keeps no voice-state cache. Ask Discord once per
+`/play` ("Get User Voice State"); a 404 means the user is in no voice channel:
+
+```rust
+use noctis::twilight::http::error::ErrorType;
+
+async fn author_channel(ctx: &CommandCtx, guild: Id<GuildMarker>, user: Id<UserMarker>)
+    -> HandlerResult<Option<Id<ChannelMarker>>> {
+    match ctx.http().user_voice_state(guild, user).await {
+        Ok(response) => Ok(response.model().await?.channel_id),
+        Err(e) if matches!(e.kind(), ErrorType::Response { status, .. } if status.get() == 404) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+```
+
+`/play` then reuses the guild's call (`ctx.voice().call(guild)`). It refuses to move a
+call that plays in another channel and otherwise joins with `ctx.voice().join(guild, channel)`.
+
+**The input.** Treat a query as a link only when `Track::url(query)` accepts it
+(http/https, no credentials, not Discord's API). Anything else is the search
+`ytsearch1:<query>`. The target always follows `--`, so a query like `--exec rm` is
+never parsed as an option:
+
+```rust
+let target = if Track::url(q).is_ok() { q.to_owned() } else { format!("ytsearch1:{q}") };
+let track = Track::command("yt-dlp", ["-f", "bestaudio[acodec=opus]/bestaudio", "--no-playlist",
+    "--playlist-items", "1", "--quiet", "-o", "-", "--", target.as_str()])?
+    .title(q)                 // cut to 256 chars
+    .requested_by(ctx.user_id());
+```
+
+**The player View.** `render_player(&PlayerState, page, &Limits) -> V2Message` is pure.
+`PlayerState::of(Option<&CallHandle>)` copies `now_playing`, `is_paused`, `volume`
+and `list` into plain fields, so a unit test builds a state without a call. The View
+holds the title, the requester, `Playing`/`Paused · Volume N%`, a controls row and one
+page of the queue. Page size comes from `Budget`, and the empty state reads "Nothing
+is playing". It has four Routes. Each is `#[derive(Button)]`, keeps its page in the
+Payload and answers by rendering again in place:
+
+```rust
+#[derive(Button, Debug, Clone, Copy)]
+#[button("music.toggle", defaults(style = Secondary, label = "Pause"))]
+pub struct TogglePause { pub page: u16 }        // also SkipTrack { page }, StopPlayback, QueuePage { page }
+
+impl TogglePause {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        if let Some(call) = ctx.guild_id().and_then(|g| ctx.voice().call(g)) {
+            let _ = if call.is_paused() { call.resume() } else { call.pause() };
+        }
+        let call = ctx.guild_id().and_then(|g| ctx.voice().call(g));
+        ctx.update(render_player(&PlayerState::of(call.as_ref()), self.page, ctx.limits())).await
+    }
+}
+```
+
+A stale player (the bot left) re-renders the empty state; never collect or listen for
+clicks.
+
+**The control commands.** `/pause`, `/resume`, `/skip`, `/stop`, `/volume percent`
+(`min_value = 0, max_value = 200`, divided by 100 for `set_volume`) and `/leave`
+declare `response = ephemeral` and answer with one `ctx.reply_text` line. They use
+"I'm not in a voice channel." when the guild has no call. `/play` and `/queue` answer
+with the public player.
+
+**Idle leave.** `.voice(VoiceConfig::default().idle_leave(Some(Duration::from_mins(5))))`
+leaves a call that stays alone or silent; log failed tracks with a `#[derive(Hook)]`
+on `TrackError` (the queue has already moved on).
+
+## 12. Testing voice
+
+`VoiceConfig::recording()` (Noctis feature `testkit` together with `voice`) swaps the
+Songbird driver for a recorder. No UDP, no audio, no child process. A join still sends
+op 4 through the gateway and resolves on Discord's answers (`join_gateway`). The queue
+runs for real, and every driver command is recorded per guild.
+
+| Item | What it does |
+| --- | --- |
+| `VoiceConfig::recording()` / `.recorder()` | the recording config; `recorder()` is its `VoiceRecorder` (`None` for a normal config); every other builder method still applies |
+| `VoiceRecorder::commands(guild)` | `Vec<RecordedCommand>` in order: `Play { track: TrackInfo, volume: f32 }`, `Pause`, `Resume`, `Stop`, `SetVolume(f32)` |
+| `VoiceRecorder::events(guild)` | `Vec<RecordedEvent>` in order: `Start(TrackStart)`, `End(TrackEnd)`, `Error(TrackError)`, `Empty(QueueEmpty)` (recorded with or without a hook) |
+| `VoiceRecorder::start(guild)` | reports the current track playable: `TrackStart` fires; returns the track |
+| `VoiceRecorder::finish(guild)` | reports it played to the end: `TrackEnd` (`Finished`), then the next track's `Play` or `QueueEmpty` |
+| `VoiceRecorder::fail(guild, error)` | reports it failed: `TrackError`, then the next track or `QueueEmpty` |
+| `TestApp::answer_voice(true)` | the gateway fake answers each op 4 with the bot's `VOICE_STATE_UPDATE` and, for a join, a `VOICE_SERVER_UPDATE` (session `FAKE_VOICE_SESSION`, token `FAKE_VOICE_TOKEN`, endpoint `FAKE_VOICE_ENDPOINT`, in `noctis::testkit::fake`) |
+| `TestApp::voice_state_updates()` | the `d` of every op 4 the App sent (`channel_id` is `null` for a leave) |
+| `TestApp::dispatch_bot_voice_state(guild, Some(channel) / None)` / `dispatch_voice_server(guild)` | answers op 4 by hand (with `answer_voice(false)`), e.g. concurrently with the command |
+
+The recorder types live in `noctis::testkit::voice`. Without any answer, a join ends in
+`VoiceError::Timeout` after `join_timeout`. The helpers work without the `voice`
+feature too: they only touch the gateway.
+
+```rust
+use noctis::testkit::fake::{FakeResponse, Method, StatusCode};
+use noctis::testkit::voice::RecordedCommand;
+use noctis::voice::{AppBuilderVoiceExt as _, VoiceConfig};
+
+#[tokio::test(flavor = "multi_thread")]
+async fn play_joins_and_plays() -> Result<(), TestError> {
+    let config = VoiceConfig::recording();
+    let recorder = config.recorder().expect("a recording config");
+    let mut builder = App::builder();
+    configure(&mut builder).voice(config);                 // the last `.voice(..)` wins
+    let app = TestApp::build(&mut builder).await?
+        .answer_voice(true)
+        .guild(TestGuild::new(G, "Guild").channel(V, "Lounge", ChannelType::GuildVoice))
+        .user(TestUser::new(A));
+    let state = serde_json::json!({ "guild_id": G.to_string(), "channel_id": V.to_string(),
+        "user_id": A.to_string(), "session_id": "s", "deaf": false, "mute": false,
+        "self_deaf": false, "self_mute": false, "self_video": false, "suppress": false,
+        "request_to_speak_timestamp": null });
+    app.http_fake().route(Method::GET, format!("/guilds/{G}/voice-states/{A}"),
+        FakeResponse::json(StatusCode::OK, &state));       // A is in V
+
+    app.command("play").option("query", "lofi").by(A).in_guild(G).run().await?;
+
+    let joined: Vec<_> = app.voice_state_updates().iter().map(|d| d["channel_id"].clone()).collect();
+    assert_eq!(joined, [serde_json::json!(V.to_string())]);
+    assert!(matches!(recorder.commands(G).as_slice(), [RecordedCommand::Play { .. }]));
+    recorder.start(G);
+    assert!(recorder.finish(G).is_some());                 // TrackEnd, then QueueEmpty
+    app.stop().await
+}
+```

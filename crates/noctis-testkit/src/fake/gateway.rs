@@ -67,6 +67,111 @@ pub struct FakeGatewayConfig {
     pub resume: ResumeReply,
     /// The ids READY carries.
     pub ready: ReadyData,
+    /// Whether an authenticated Voice State Update (op 4) is answered like
+    /// Discord answers it (default `false`): the bot's own
+    /// `VOICE_STATE_UPDATE` (user `ready.user_id`, session
+    /// [`FAKE_VOICE_SESSION`]), then, when it names a channel, the
+    /// `VOICE_SERVER_UPDATE` (token [`FAKE_VOICE_TOKEN`], endpoint
+    /// [`FAKE_VOICE_ENDPOINT`]), on that connection. An op 4 without a
+    /// snowflake `d.guild_id` is recorded and not answered. Nothing listens
+    /// at the endpoint: a voice driver that connects there fails, so pair it
+    /// with a driver that does not (`VoiceConfig::recording()`).
+    pub answer_voice: bool,
+}
+
+/// The `session_id` of the `VOICE_STATE_UPDATE` that
+/// [`FakeGatewayConfig::answer_voice`] (and `TestApp::dispatch_bot_voice_state`)
+/// sends.
+///
+/// ```
+/// assert_eq!(noctis_testkit::fake::FAKE_VOICE_SESSION, "fake-voice-session");
+/// ```
+pub const FAKE_VOICE_SESSION: &str = "fake-voice-session";
+
+/// The `token` of the `VOICE_SERVER_UPDATE` that
+/// [`FakeGatewayConfig::answer_voice`] (and `TestApp::dispatch_voice_server`)
+/// sends.
+///
+/// ```
+/// assert_eq!(noctis_testkit::fake::FAKE_VOICE_TOKEN, "fake-voice-token");
+/// ```
+pub const FAKE_VOICE_TOKEN: &str = "fake-voice-token";
+
+/// The `endpoint` of the `VOICE_SERVER_UPDATE` that
+/// [`FakeGatewayConfig::answer_voice`] (and `TestApp::dispatch_voice_server`)
+/// sends: a reserved `.invalid` host, so nothing is ever reached there.
+///
+/// ```
+/// assert_eq!(noctis_testkit::fake::FAKE_VOICE_ENDPOINT, "voice.fake.invalid:443");
+/// ```
+pub const FAKE_VOICE_ENDPOINT: &str = "voice.fake.invalid:443";
+
+/// The `d` of the bot's own `VOICE_STATE_UPDATE` in `guild`, in `channel` or
+/// none (the session [`FAKE_VOICE_SESSION`]).
+pub(crate) fn voice_state_json(
+    user: u64,
+    guild: &str,
+    channel: Option<&str>,
+    self_deaf: bool,
+    self_mute: bool,
+) -> Value {
+    json!({
+        "guild_id": guild,
+        "channel_id": channel,
+        "user_id": user.to_string(),
+        "session_id": FAKE_VOICE_SESSION,
+        "deaf": false,
+        "mute": false,
+        "self_deaf": self_deaf,
+        "self_mute": self_mute,
+        "self_video": false,
+        "suppress": false,
+        "request_to_speak_timestamp": null,
+    })
+}
+
+/// The `d` of a `VOICE_SERVER_UPDATE` for `guild` ([`FAKE_VOICE_TOKEN`],
+/// [`FAKE_VOICE_ENDPOINT`]).
+pub(crate) fn voice_server_json(guild: &str) -> Value {
+    json!({
+        "guild_id": guild,
+        "token": FAKE_VOICE_TOKEN,
+        "endpoint": FAKE_VOICE_ENDPOINT,
+    })
+}
+
+/// Whether `value` is a snowflake string: decimal digits naming a non-zero
+/// `u64`.
+fn is_snowflake(value: &str) -> bool {
+    value.bytes().all(|b| b.is_ascii_digit()) && value.parse::<u64>().is_ok_and(|id| id != 0)
+}
+
+/// The dispatches answering the op 4 `payload`, per
+/// [`FakeGatewayConfig::answer_voice`]: `(event type, d)` in order; empty
+/// for a malformed op 4.
+fn voice_answers(user: u64, payload: &Value) -> Vec<(&'static str, Value)> {
+    let Some(d) = payload.get("d").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let Some(guild) = d
+        .get("guild_id")
+        .and_then(Value::as_str)
+        .filter(|g| is_snowflake(g))
+    else {
+        return Vec::new();
+    };
+    let channel = match d.get("channel_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(channel)) if is_snowflake(channel) => Some(channel.as_str()),
+        Some(_) => return Vec::new(),
+    };
+    let flag = |name: &str| d.get(name).and_then(Value::as_bool).unwrap_or(false);
+    let state = voice_state_json(user, guild, channel, flag("self_deaf"), flag("self_mute"));
+    let mut answers = vec![("VOICE_STATE_UPDATE", state)];
+    if channel.is_some() {
+        answers.push(("VOICE_SERVER_UPDATE", voice_server_json(guild)));
+    }
+    answers
 }
 
 impl Default for FakeGatewayConfig {
@@ -77,6 +182,7 @@ impl Default for FakeGatewayConfig {
             identify: IdentifyReply::Ready,
             resume: ResumeReply::Auto,
             ready: ReadyData::default(),
+            answer_voice: false,
         }
     }
 }
@@ -666,6 +772,11 @@ impl FakeGateway {
         self.shared.lock().frames.clone()
     }
 
+    /// Takes the frame log, leaving it empty (connections are kept).
+    pub(crate) fn take_frames(&self) -> Vec<RecordedFrame> {
+        std::mem::take(&mut self.shared.lock().frames)
+    }
+
     /// Empties the frame log (connections are kept).
     ///
     /// ```no_run
@@ -911,6 +1022,10 @@ impl Connection {
             1 => self.heartbeat(&payload, received_at),
             2 => self.identify(&payload),
             6 => self.resume(&payload),
+            4 if self.authenticated() => {
+                self.answer_voice(&payload);
+                Reply::Nothing
+            }
             3 | 4 | 8 | 31 => {
                 if self.authenticated() {
                     Reply::Nothing
@@ -919,6 +1034,34 @@ impl Connection {
                 }
             }
             _ => Reply::Close(code::UNKNOWN_OPCODE),
+        }
+    }
+
+    /// Answers an authenticated op 4 when `answer_voice` is on: each
+    /// dispatch goes to this connection with its session's next sequence
+    /// number, queued in order behind anything already queued.
+    fn answer_voice(&self, payload: &Value) {
+        let mut guard = self.shared.lock();
+        let state = &mut *guard;
+        if !state.config.answer_voice {
+            return;
+        }
+        let Some(live) = state.live.get(&self.id) else {
+            return;
+        };
+        let Some(seq) = live
+            .session
+            .as_ref()
+            .and_then(|session| state.sessions.get_mut(session))
+        else {
+            return;
+        };
+        for (event_type, data) in voice_answers(state.config.ready.user_id, payload) {
+            *seq += 1;
+            let frame = json!({ "op": 0, "s": *seq, "t": event_type, "d": data });
+            if live.tx.send(Outgoing::Text(frame.to_string())).is_err() {
+                return;
+            }
         }
     }
 

@@ -1606,6 +1606,15 @@ list in CI.
     `noctis-voice` dev-dependency (mock mixer for the frame tests, the dhat test and
     the bench); deps-check `songbird-gated` allows `songbird` as a normal or dev
     dependency of `noctis-voice` (a build dependency, or any other crate, fails).
+  - Amended (2026-10-25, Story 17.4): a recording driver (`VoiceConfig::recording()`,
+    `VoiceRecorder`) behind `noctis-voice/testkit`, enabled only by the facade's
+    `testkit` feature: the call joins with Songbird's gateway-only `join_gateway`
+    (op 4 still through Noctis's gateway, no UDP), the queue's `Player` records its
+    commands and events, and recording Apps use a per-App Songbird `Scheduler`. The
+    `TestApp` voice helpers (`answer_voice`, `voice_state_updates`,
+    `dispatch_bot_voice_state`, `dispatch_voice_server`) are voice-agnostic: no
+    `noctis-testkit` → `noctis-voice` edge. Bots find the author's channel via REST
+    (`user_voice_state`, 404 = not in voice); Noctis keeps no voice-state cache.
 
 ## Consistency Conventions
 
