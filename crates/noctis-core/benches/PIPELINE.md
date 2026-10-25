@@ -152,7 +152,7 @@ Same bench, unchanged measurement code, same command and columns as above.
 
 ### Commit
 
-`571314f6697d7bda149761cbdbd387fdd3cae7d3` (lanes partitioned by shard, one
+`38930c5` (lanes partitioned by shard, one
 drain per partition with batched pops, on-demand per-guild ordered FIFOs).
 Later review patches touched the drain and the lanes (interactions served
 between batched events, overflow refilled into freed capacity); the numbers

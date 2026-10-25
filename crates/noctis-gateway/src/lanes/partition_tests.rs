@@ -502,6 +502,48 @@ fn overflow_drains_into_freed_capacity() {
     assert_eq!(shared.depths(), LaneDepths::default());
 }
 
+/// A push into a partition whose overflow is non-empty first moves that
+/// overflow into capacity another partition freed, so the new event lands
+/// in the lane instead of the overflow (non-droppable) or the floor
+/// (droppable, with no droppable event queued).
+#[test]
+fn enqueue_refills_freed_capacity() {
+    let (sender, receiver) = lanes_with(config(3, 2), n(2));
+    let shared = Arc::clone(&receiver.shared);
+    let mut partitions = receiver.into_partitions();
+    sender.push(m(1, 1));
+    sender.push(m(1, 2));
+    sender.push(m(0, 3));
+    sender.push(m(0, 4));
+    assert_eq!(overflow_tags(&shared, 0), ["M4"]);
+    assert_eq!(take_all(&mut partitions[1]), ["M1", "M2"]);
+    // No pop of partition 0 in between: the push itself refills.
+    sender.push(m(0, 5));
+    assert_eq!(event_tags(&shared, 0), ["M3", "M4", "M5"]);
+    assert_eq!(overflow_tags(&shared, 0), Vec::<String>::new());
+    assert_eq!(
+        shared.depths(),
+        LaneDepths {
+            interaction: 0,
+            event: 3,
+            overflow: 0
+        }
+    );
+    assert_eq!(take_all(&mut partitions[0]), ["M3", "M4", "M5"]);
+
+    // A droppable push is not dropped while freed capacity exists.
+    sender.push(m(1, 6));
+    sender.push(m(1, 7));
+    sender.push(m(0, 8));
+    sender.push(m(0, 9));
+    assert_eq!(overflow_tags(&shared, 0), ["M9"]);
+    assert_eq!(take_all(&mut partitions[1]), ["M6", "M7"]);
+    sender.push(t(0, 10));
+    assert_eq!(event_tags(&shared, 0), ["M8", "M9", "T10"]);
+    assert_eq!(take_all(&mut partitions[0]), ["M8", "M9", "T10"]);
+    assert_eq!(shared.depths(), LaneDepths::default());
+}
+
 /// Counts the gauge `set` calls.
 #[derive(Default)]
 struct GaugeSets(AtomicUsize);

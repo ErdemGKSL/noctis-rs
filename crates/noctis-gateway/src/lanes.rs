@@ -366,17 +366,24 @@ impl Queues {
             taken.overflow += 1;
             inbound
         };
-        // Event capacity other partitions freed takes this partition's
-        // overflow, oldest first.
+        taken.overflow += self.refill_freed(shared);
+        Some(inbound)
+    }
+
+    /// Moves this partition's overflow, oldest first, into event capacity
+    /// other partitions freed; how many items moved. Each move reserves one
+    /// event slot; the caller takes them off the overflow total.
+    fn refill_freed(&mut self, shared: &Shared) -> usize {
+        let mut moved = 0;
         while !self.overflow.is_empty()
             && reserve(&shared.totals.event, shared.config.event_capacity.get())
         {
             if let Some(refill) = self.overflow.pop_front() {
                 self.refill_one(refill, shared);
-                taken.overflow += 1;
+                moved += 1;
             }
         }
-        Some(inbound)
+        moved
     }
 
     /// Moves `refill`, taken off the overflow, to the back of the event lane.
@@ -569,15 +576,17 @@ impl Shared {
     }
 
     /// Enqueues `inbound` into its partition under that partition's lock
-    /// and reports what happened.
-    fn enqueue(&self, inbound: Inbound) -> Pushed {
+    /// and reports what happened, and whether overflow items moved into the
+    /// event lane first.
+    fn enqueue(&self, inbound: Inbound) -> (Pushed, bool) {
         let partition = &self.partitions[self.partition_of(inbound.shard.number())];
         let config = &self.config;
         let mut queues = partition.lock();
         if !queues.receiver_alive {
-            return Pushed::Closed;
+            return (Pushed::Closed, false);
         }
-        match &inbound.kind {
+        let mut refilled = false;
+        let pushed = match &inbound.kind {
             InboundKind::Interaction(..) => {
                 queues.interaction.push_back(inbound);
                 self.totals.interaction.fetch_add(1, Ordering::Relaxed);
@@ -586,6 +595,13 @@ impl Shared {
             InboundKind::Event(event) => {
                 let kind = event.kind();
                 let droppable = self.is_droppable(kind);
+                // Event capacity other partitions freed since this
+                // partition's last pop takes its overflow first.
+                let moved = queues.refill_freed(self);
+                if moved > 0 {
+                    self.totals.overflow.fetch_sub(moved, Ordering::Relaxed);
+                    refilled = true;
+                }
                 // A partition with overflow keeps its FIFO: new events queue
                 // behind the overflow until it has refilled the lane.
                 if queues.overflow.is_empty()
@@ -608,7 +624,8 @@ impl Shared {
                     Pushed::OverflowFull(kind, inbound)
                 }
             }
-        }
+        };
+        (pushed, refilled)
     }
 
     /// Takes up to `max` items of partition `index` into `batch` under one
@@ -733,7 +750,11 @@ impl InboundSink for LaneSender {
     fn push(&self, inbound: Inbound) {
         let shared = &*self.shared;
         let index = shared.partition_of(inbound.shard.number());
-        let lane = match shared.enqueue(inbound) {
+        let (pushed, refilled) = shared.enqueue(inbound);
+        if refilled {
+            shared.set_gauges();
+        }
+        let lane = match pushed {
             Pushed::Closed => return,
             Pushed::Queued(lane) => lane,
             Pushed::Evicted(evicted) => {
