@@ -1,8 +1,10 @@
 # Limits and rule ids cheatsheet
 
 Every numeric limit Noctis enforces, with its rule id (the id appears in compile
-errors, `BuildError`s and runtime errors). Source of truth: the Discord Rules Catalog
-(`docs/discord-rules.md` in the noctis-rs repository). **Where:** C = compile time,
+errors, `BuildError`s and runtime errors). Source of truth: the
+[Discord Rules Catalog](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md)
+(`docs/discord-rules.md` in the noctis-rs repository); `troubleshooting.md`'s
+`## Rule id index` gives every id's meaning and fix. **Where:** C = compile time,
 B = App build, R = runtime. [U] = counting unit/value unconfirmed by Discord; Noctis
 counts the larger of Unicode scalars and UTF-16 units and keeps the value in `Limits`.
 
@@ -14,7 +16,7 @@ use noctis::rules::{LimitMode, Limits};
 let mut limits = Limits::default();     // Discord's defaults, LimitMode::Strict
 limits.mode = LimitMode::Lenient;       // truncate text instead of failing
 limits.components = 30;                 // lower a limit (stricter than Discord)
-builder.limits(limits);                 // [planned] App builder hook, in `configure`
+builder.limits(limits);                 // `AppBuilder::limits`, in `configure`
 ```
 
 `Limits` is `#[non_exhaustive]`: always start from `Limits::default()` and assign
@@ -169,13 +171,19 @@ locale returns `None`.
 | REG-06 | ≤ 100 permission overwrites per command per guild; needs a Bearer token (out of scope in v1) | — |
 | CTX-01 | context-menu name 1–32, mixed case/spaces ok | C / B |
 | CTX-02 | context menus: no description, no options | C |
-| META-01..05 | permissions, contexts, integration types per base; guild commands can't set contexts/integration types | C / B / R |
+| CTX-03 | command types: chat input 1, user 2, message 3, entry point 4 (picked by the derive) | C |
+| META-01 | `permissions = ..` are twilight `Permissions` names (default member permissions) | C / B |
+| META-02 | `permissions`, `contexts`, `integration_types`, `nsfw` belong to the base command; leaves under one base agree or the base declares them | C / B |
+| META-03 | `contexts` / `integration_types` only on global commands (not with `guilds = [..]`) | C / B |
+| META-04 | `integration_types` must be enabled for the app in the Developer Portal | R (Publish) |
+| META-05 | no `dm_permission` (deprecated): use `contexts` | C |
 
 ## Options
 
 | Id | Limit | Where |
 | --- | --- | --- |
 | OPT-01 | required before optional | C |
+| OPT-02 | option types: STRING 3, INTEGER 4, BOOLEAN 5, USER 6, CHANNEL 7, ROLE 8, MENTIONABLE 9, NUMBER 10, ATTACHMENT 11 (from the field type) | C |
 | OPT-03 | INTEGER ±(2^53 − 1) | C / R |
 | OPT-04 | NUMBER ±2^53 | C |
 | OPT-05 | `min ≤ max`, numbers only | C |
@@ -187,6 +195,7 @@ locale returns `None`.
 | OPT-11 | autocomplete on string/integer/number only | C |
 | OPT-12 | autocomplete input is unvalidated (`Partial<O>`: every field `Option`, lenient decode) | C / R |
 | OPT-13 | `file_types` ≤ 10, attachment only; each `image`/`video`/`audio` or `.ext` | C |
+| OPT-14 | `required` never on subcommands or groups (by construction) | C |
 | INT-07 | ≤ 25 autocomplete choices (always truncated with a warning; invalid kept choices dropped) | R |
 
 ## Localization
@@ -216,6 +225,7 @@ locale returns `None`.
 | INT-11 | ≤ 5 follow-ups for user-installed apps outside the guild | R |
 | INT-12 | Noctis always edits the original explicitly after a defer | R |
 | INT-13 | interaction endpoints exempt from the global HTTP limit; every request, callbacks included, goes through the proxy when set | R |
+| INT-14 | `rate_limit(scope, n, per = "dur"[, manual])`: n ≥ 1, window 1 s..=1 d, one per scope, `message` only where a message exists | C / R |
 
 ## `custom_id` and Routes
 

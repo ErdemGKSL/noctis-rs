@@ -470,7 +470,7 @@ handle.delete().await?                  -> ()
 ```
 
 `msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
-([planned] `StaticMessage`); on a component or modal responder, `update`,
+(a `StaticMessage` is for webhooks; send its `as_v2().clone()` here); on a component or modal responder, `update`,
 `update_with_response` and `edit_reply` take only `V2Message`/`Components` (the sealed
 `IntoEdit<K>`; a command's `edit_reply` also takes a `LegacyMessage`, CV2-01). Calling a method that doesn't exist for the kind or
 state is a compile error: a second `reply` (E0599), `update` on a `CommandResponder`
@@ -744,8 +744,8 @@ notice (`noctis.error.generic`, type 4 with flags 32832) after its `warn` (CID-0
 A Route Guard denial (`routes-payloads-refs.md` §1a) uses the same routing: one
 ephemeral type-4 notice while pending; after an auto-defer an ephemeral follow-up, with
 a type-5 deferred original deleted first.
-[planned, Epic 13] Notices from the "disabled here" and rate-limit stages use the same
-routing.
+Notices from the "disabled here" (`noctis.module.disabled`) and rate-limit
+(`noctis.rate_limited`) stages use the same routing.
 
 ## 6. `LegacyMessage`
 

@@ -8,7 +8,7 @@ data that must outlive one call goes through a port, never a `static` map.
 
 ## 1. The ports (`noctis::ports`)
 
-| Port | Stores | Ops it uses | Default | Swap with [planned] |
+| Port | Stores | Ops it uses | Default | Swap with |
 | --- | --- | --- | --- | --- |
 | `RefStore` | Payloads behind Refs (by_ref/spill Routes) | `put_if_absent`, `get`, `take`, `delete`, `touch` | bounded memory, TTL | `.ref_store(..)` |
 | `SessionStore` | shard `(session_id, seq, resume_url)` for resume, under `shard:<id>:<total>`; only the gateway calls it (read at shard start, written after an acknowledged resumable close, deleted on rejection or a fresh close); values are opaque bytes, return them verbatim | `get`, `put`, `delete` | memory (resumes only when the same instance reaches the next App) | `.session_store(..)` |
@@ -127,8 +127,8 @@ let lease = queue.acquire(bucket).await?;       // waits for its bucket's turn
 - **In-process only:** it does not cover several processes. A Cluster implementation
   must serialize per bucket across processes (§7).
 
-Wiring a default or your own Adapter into the App (`.cache_store(..)` etc. in the table
-above) is [planned].
+Wire a default or your own Adapter into the App with the `AppBuilder` setter in the
+table above (`.cache_store(..)`, `.ref_store(..)`, …), in `configure`.
 
 ### 1.2 The Discord resource cache (`ctx.cache()`)
 
@@ -312,7 +312,7 @@ pub trait DiscordCache: Send + Sync + 'static {
 - A `Lease` grants one identify in its bucket (`shard_id % max_concurrency`). A Cluster
   implementation of `IdentifyQueue` must serialize per bucket across processes: at most
   one Lease per bucket per 5 s across the whole Cluster, different buckets in parallel.
-  See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md) (written with Story 14.6).
+  See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md).
 - `GuildAccessList::allows` is **synchronous**: it runs on pipeline stage 3, which does
   no port I/O. Never block in it; a remote-backed implementation keeps a local snapshot
   and refreshes it in the background. It is asked only for interactions, events and
@@ -566,10 +566,16 @@ let v2 = ctx.kv().schema(2);                                     // schema byte 
 | `get::<T>(key)` | `Result<Option<T>, PortError>` | missing key or another schema byte = `Ok(None)`; empty, malformed or trailing bytes = `Err(PortError::Value(..))` |
 | `put(key, &value, ttl)` | `Result<(), PortError>` | overwrites and resets the TTL; a value that does not serialize is `PortError::Value(ValueError::Serialize)` and makes no store call |
 | `put_if_absent(key, &value, ttl)` | `Result<bool, PortError>` | `true` only for the one caller that inserted |
-| `incr(key, by, ttl)` | `Result<u64, PortError>` | atomic, saturates at `u64::MAX`; the TTL applies only on create |
+| `incr(key, by: u64, ttl: Option<Duration>)` | `Result<u64, PortError>` | atomic, saturates at `u64::MAX`; the TTL applies only on create |
 | `counter(key)` | `Result<u64, PortError>` | 0 when missing; a value that is not exactly 8 bytes is `PortError::InvalidValue` |
 | `delete(key)` | `Result<(), PortError>` | |
 | `schema(n)` | `Kv` | the schema byte (default 0); bump it when a stored type changes incompatibly, and old entries read as misses |
+
+`Kv` cannot list or scan keys, and it has no sorted sets: to rank or list entries
+(a leaderboard, every member with points), keep an index value of your own (a
+`Vec<u64>` of ids under one key, capped) next to the per-entry counters, or keep the data
+in your own database behind a custom Adapter. The index update is a read-then-write;
+counters stay atomic (`references/patterns.md` §11).
 
 Values are postcard with a leading schema byte (`encode_value`/`decode_value`);
 counters are 8-byte big-endian `u64`s. Keep counters and typed values under different
@@ -593,6 +599,19 @@ ctx.kv().put(&key, &StoredWebhook { id: hook.id().get(), token, channel: ch.get(
 if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await?
     && let Some(id) = Id::<WebhookMarker>::new_checked(stored.id)
 { /* use id */ }
+```
+
+Migrating data stored with an `Id<_>` field: the old value can never be read back, so
+treat `Err(PortError::Value(ValueError::Malformed))` on that key as "no value" and
+overwrite it with the `u64` shape on the next write, or read and write that type through
+`ctx.kv().schema(n)` with a new `n`, under which the old entries read as misses (Noctis
+0.1 has no guard that rejects `Id<_>` at `put`):
+
+```rust
+let stored = match ctx.kv().get::<StoredWebhook>(&key).await {
+    Err(PortError::Value(ValueError::Malformed)) => None,   // the old Id<_> shape
+    other => other?,
+};
 ```
 
 Discord resources come from `ctx.cache()` (§1.2):
@@ -812,9 +831,9 @@ one left by an unacknowledged close, stays, and the next start resumes from its 
 sequence (Discord replays events already handled, or rejects it and the shard
 identifies). The stored bytes are opaque: return them verbatim (no TTL is set). After
 the shard total changes, old `<app>:session:shard:<id>:<old total>` entries are never
-read again; the operator may delete them. Official Redis/SQL adapters are planned for v1.x; until then write them as
-above and run the conformance suites.
+read again; the operator may delete them. Noctis 0.1 ships no Redis or SQL Adapters; write them as above and run the conformance
+suites.
 
 `MemoryIdentifyQueue` does not cover several processes. A Cluster `IdentifyQueue` must
 serialize per bucket across processes: at most one Lease per bucket per 5 s across the
-whole Cluster, different buckets in parallel. See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md) (written with Story 14.6).
+whole Cluster, different buckets in parallel. See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md).

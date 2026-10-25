@@ -1,7 +1,9 @@
 # Troubleshooting
 
-Find the symptom, apply the fix. Errors name a rule id (`[CID-01]`); look it up in
-`limits-cheatsheet.md`. Never work around a check by reading or patching Noctis source;
+Find the symptom, apply the fix. Errors name a rule id (`[CID-01]`); look it up in the
+`## Rule id index` at the end of this file (meaning and fix) and in `limits-cheatsheet.md`
+(numbers). For mistakes that compile but misbehave, see `patterns.md` (`## Common
+mistakes`). Never work around a check by reading or patching Noctis source;
 if the skill doesn't explain an error, say so.
 
 Build, test and run with `--release` only (`cargo build --release`, `cargo test
@@ -257,3 +259,148 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 3. The topic reference (`commands.md`, `components-v2.md`, …).
 4. If still unclear: report that the Noctis skill doesn't cover it. Do not read the
    framework source.
+
+## Rule id index
+
+Every rule id of the Discord Rules Catalog, in catalog order. Find the id an error names,
+read what the rule means and apply the fix in the reference it names. Numeric limits are in
+`limits-cheatsheet.md`; the full rule text is in the
+[catalog](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md).
+
+| Rule | Meaning | Fix / where |
+| --- | --- | --- |
+| CMD-01 | command name word: letters, digits, `-`, `_`, `ʼ` only, 1-32 | rename the word in `#[command("..")]` or `cmd.<path>.name`; `commands.md` §1 |
+| CMD-02 | 1-32 characters per command name word | shorten the word; `commands.md` §1 |
+| CMD-03 | command names are lowercase | lowercase the pattern word or the localized `cmd.<path>.name`; `commands.md` §1, `i18n.md` §4 |
+| CMD-04 | description 1-100 characters, read from `cmd.<path>.description` | add or shorten the key in `locales/en-US.yaml`; never a `description = "…"` literal; `commands.md` §1, `i18n.md` §4 |
+| CMD-05 | ≤ 8000 characters per command (options, choices, longest localizations) | shorten descriptions or choices, or split the command; `commands.md` §6 |
+| CMD-06 | option names unique per level | rename the field or `cmd.<path>.opt.<name>.name`; `commands.md` §3 |
+| CMD-07 | `nsfw` consistent under one base | set `nsfw = true` on every leaf or on the base (`Module::base`); `commands.md` §6 |
+| CMD-10 | at most command → group → subcommand (3 words) | shorten the Command Pattern; `commands.md` §2 |
+| CMD-11 | a name is either a subcommand or a group | rename one of the paths (`config set` vs `config set prefix`); `commands.md` §2 |
+| CMD-12 | a base with subcommands takes no options and is not invokable | move the base's options to a subcommand; `commands.md` §2 |
+| CMD-13 | ≤ 25 options / subcommands / groups per level | split the command or use a select View; `commands.md` §3 |
+| CMD-14 | groups and subcommands may coexist | nothing to fix (documentation only); `commands.md` §2 |
+| CMD-15 | ≤ 25 expansions per Command Pattern | fewer alternatives, or `max_expansions = n`; `commands.md` §2 |
+| CMD-16 | Command Pattern syntax: whole-word groups, `?` only after a group | rewrite the pattern as `a (b\|c) d?`-style words; `commands.md` §2 |
+| OPT-01 | required options before optional ones | put `Option<T>` fields after the required ones; `commands.md` §3 |
+| OPT-02 | option types come from the field type | use a supported field type (`String`, `i64`, `f64`, `bool`, `ResolvedUser`, …); `commands.md` §3 |
+| OPT-03 | INTEGER options within ±(2^53 − 1) | tighten `min_value`/`max_value`; `commands.md` §3 |
+| OPT-04 | NUMBER options within ±2^53 | tighten `min_value`/`max_value`; `commands.md` §3 |
+| OPT-05 | `min_value`/`max_value` only on numbers, `min ≤ max` | fix the bounds in `#[option(..)]`; `commands.md` §3 |
+| OPT-06 | `min_length` 0-6000, `max_length` 1-6000, strings only | fix the bounds in `#[option(..)]`; `commands.md` §3 |
+| OPT-07 | `channel_types` only on channel options | remove it or change the field type; `commands.md` §3 |
+| OPT-08 | ≤ 25 choices per option | fewer `Choices` variants, or autocomplete; `commands.md` §3 |
+| OPT-09 | choice name 1-100, string value ≤ 100 | shorten the label or value (`cmd.<path>.opt.<name>.choice.<value>`); `commands.md` §3 |
+| OPT-10 | choices and autocomplete are exclusive | drop one of them; `commands.md` §4 |
+| OPT-11 | autocomplete only on string / integer / number options | change the field type or drop `autocomplete`; `commands.md` §4 |
+| OPT-12 | autocomplete input is unvalidated (`Partial<Self>`) | re-validate the value in `handle`; `commands.md` §4 |
+| OPT-13 | `file_types` ≤ 10, attachment options only | fix the `file_types` list; `commands.md` §3 |
+| OPT-14 | `required` never on subcommands or groups | nothing to fix (by construction); `commands.md` §3 |
+| LOC-01 | locale file names are Discord locale codes | rename `locales/<code>.yaml` (`en-US`, `tr`, …); `i18n.md` §1 |
+| LOC-02 | localized names and descriptions follow CMD/OPT/CTX rules | fix the reported `cmd.*`/`cmdword.*`/`ctxcmd.*` value; `i18n.md` §4 |
+| LOC-03 | localized option names unique per command per locale | rename the localized option name; `i18n.md` §4 |
+| LOC-04 | partial localization falls back to `en-US` (build warning) | add the key to the locale file; `i18n.md` §2 |
+| LOC-05 | alias of CMD-05: the longest localization counts toward 8000 | shorten the longest translation; `i18n.md` §4 |
+| LOC-06 | dispatch uses the default (English) names | nothing to fix; match on English names only; `i18n.md` §4 |
+| CTX-01 | context-menu name 1-32 characters | shorten the name or `ctxcmd.<key>.name`; `commands.md` §5 |
+| CTX-02 | context menus take no description and no options | remove them (a unit struct); `commands.md` §5 |
+| CTX-03 | command types (chat input, user, message, entry point) | nothing to fix (picked by the derive); `commands.md` §5 |
+| META-01 | `permissions = ..` default member permissions | use twilight `Permissions` names (`MANAGE_GUILD \| BAN_MEMBERS`); `commands.md` §1 |
+| META-02 | metadata belongs to the base command | make the leaves agree or declare it once with `Module::base(..)`; `commands.md` §6 |
+| META-03 | `contexts`/`integration_types` only on global commands | drop them from a `guilds = [..]` command; `commands.md` §1 |
+| META-04 | `integration_types` must be enabled for the app | enable the install type in the Developer Portal, then Publish again; `commands.md` §7 |
+| META-05 | `dm_permission` is deprecated | use `contexts = [..]`; `commands.md` §1 |
+| REG-01 | 100 chat-input, 15 user, 15 message global commands | merge commands with Command Patterns; `commands.md` §6-7 |
+| REG-02 | the same counts per guild | fewer guild commands, or disable Modules per guild; `commands.md` §6-7 |
+| REG-03 | unique names per type per scope | rename one command; `commands.md` §6 |
+| REG-04 | merged Module trees must not conflict | fix the conflict the `BuildError` notes name; `commands.md` §6 |
+| REG-05 | 200 command creates per day per guild | publish less often (Publish is diff-based); `commands.md` §7 |
+| REG-06 | ≤ 100 permission overwrites per command (Bearer token) | nothing to fix in a bot (documentation only); `commands.md` §6 |
+| INT-01 | answer within 3 s | keep the auto-defer, defer before slow work; `responder.md` §2 |
+| INT-02 | interaction token valid 15 min (`TokenExpired`) | edit or follow up sooner, or send a new message; `responder.md` §4 |
+| INT-03 | exactly one initial response | answer once (`ctx.respond`/`ctx.update`); `responder.md` §4 |
+| INT-04 | response types per interaction kind (no `update` on a Command) | `ctx.respond` in a Command, `ctx.update` in a component/modal handler; `responder.md` §1b |
+| INT-05 | a modal is the first response; no modal after a modal | `auto_defer = false` + the `Manual` responder + `show_modal`; `responder.md` §2b, `modals.md` §3 |
+| INT-06 | autocomplete cannot be deferred (2.5 s) | return `Suggestions<T>` fast; `commands.md` §4 |
+| INT-07 | ≤ 25 autocomplete choices (truncated) | cap the query at 25; `commands.md` §4 |
+| INT-08 | a deferred reply carries only `EPHEMERAL` | nothing to fix (by construction); `responder.md` §2 |
+| INT-09 | allowed callback message flags | nothing to fix (by construction); `responder.md` §1 |
+| INT-10 | ephemerality is fixed at creation | declare `response = ephemeral` on the attribute; `responder.md` §3 |
+| INT-11 | ≤ 5 follow-ups for a user-installed app (`FollowupCap`) | send fewer follow-ups, edit instead; `responder.md` §4 |
+| INT-12 | the first follow-up after a defer edits the original | nothing to fix (Noctis edits explicitly); `responder.md` §4 |
+| INT-13 | interaction callbacks skip the global HTTP limit | nothing to fix; `app-and-sharding.md` §5 |
+| INT-14 | `rate_limit(scope, n, per = "..")` arguments | fix the attribute (scope, count 1..=4294967295, window 1 s..=1 d); `modules-middleware-ratelimits.md` §7 |
+| CID-01 | `custom_id` ≤ 100 characters (proven at compile time) | `by_ref`/`overflow = spill`, smaller fields, or a shorter Route id; `routes-payloads-refs.md` §5 |
+| CID-02 | `custom_id`s unique per message | give the Route a Payload field that differs; `routes-payloads-refs.md` §1 |
+| CID-03 | Route id `[a-z0-9._-]{1,24}`, not starting with `_` | rename the Route id; `routes-payloads-refs.md` §1 |
+| CID-04 | one handler per Route id per App | `.add::<X>()` in exactly one mounted Module, `uses::<X>()` elsewhere; `routes-payloads-refs.md` §1 |
+| CID-05 | Refs are random and bound to the Route | nothing to fix (by construction); `routes-payloads-refs.md` §7 |
+| CID-06 | `custom_id` is untrusted client input | authorize in Route Guards and the handler; `routes-payloads-refs.md` §8 |
+| CID-07 | encoded Routes are ASCII only | nothing to fix (by construction); `routes-payloads-refs.md` §4 |
+| CV2-01 | the Components V2 flag on every V2 send | nothing to fix (by construction); `components-v2.md` §12 |
+| CV2-02 | no `content`/`embeds` with Components V2 | build a View (UD-1); `components-v2.md` §12 |
+| CV2-03 | ≤ 40 components per message, every depth | size pages with `noctis::ui::Budget`; `components-v2.md` §16, `views-and-recipes.md` §4 |
+| CV2-04 | ≤ 4000 Text Display characters per message | shorten text or paginate; `components-v2.md` §2 |
+| CV2-05 | component placement (what may hold what) | move the component per the placement matrix; `components-v2.md` §13 |
+| CV2-06 | an Action Row: 1-5 buttons or exactly 1 select | split into rows; `components-v2.md` §8 |
+| CV2-07 | a Section: 1-3 Text Displays + one accessory | fix the Section's children; `components-v2.md` §3 |
+| CV2-08 | button rules (label ≤ 80, Link url ≤ 512, …) | fix the button fields; `components-v2.md` §9 |
+| CV2-09 | select rules (placeholder ≤ 150, ≤ 25 options, values) | fix the select fields or page the options; `components-v2.md` §10 |
+| CV2-10 | a Media Gallery holds 1-10 items | fewer items; `components-v2.md` §5 |
+| CV2-11 | Thumbnail description ≤ 1024, images only | fix the Thumbnail; `components-v2.md` §4 |
+| CV2-12 | a File component references `attachment://` only | upload the file with the message; `components-v2.md` §6 |
+| CV2-13 | Separator spacing 1-2, accent colour 24-bit | fix the value (`rgb!`); `components-v2.md` §7 |
+| CV2-14 | numeric component ids unique per message | nothing to fix (by construction); `components-v2.md` §12 |
+| CV2-15 | legacy messages: ≤ 5 Action Rows | use a V2 View; `components-v2.md` §12 |
+| CV2-16 | unknown component types round-trip as raw JSON | use `RawComponent`; `components-v2.md` §11 |
+| CV2-17 | media URL ≤ 2048 characters | shorten the URL or upload the file; `components-v2.md` §4 |
+| MOD-01 | modal title ≤ 45 characters | shorten `defaults(title = ..)`; `modals.md` §1 |
+| MOD-02 | 1-5 top-level modal components | fewer inputs, or a second step; `modals.md` §1 |
+| MOD-03 | modals hold no buttons, Sections or `disabled` | only Labels with inputs and Text Displays; `modals.md` §4 |
+| MOD-04 | Label `label` ≤ 45, `description` ≤ 100 | shorten the Label texts; `modals.md` §4 |
+| MOD-05 | Text Input lengths ≤ 4000, placeholder ≤ 100 | fix the bounds or the pre-fill; `modals.md` §4 |
+| MOD-06 | File Upload `min_values` 0-10, `max_values` 1-10 | fix the counts; `modals.md` §4 |
+| MOD-07 | Radio 2-10 / Checkbox Group 1-10 options | fix the options; `modals.md` §4 |
+| MOD-08 | alias of CID-01 for the modal `custom_id` | see CID-01; `modals.md` §1 |
+| MOD-09 | submitted values and uploads are untrusted | validate in the handler, download promptly; `modals.md` §3.1 |
+| MSG-01 | legacy `content` ≤ 2000 characters | shorter text, or a V2 View; `responder.md` §6 |
+| MSG-02 | embed limits | nothing to fix (documentation only; embeds are not used, UD-1); `responder.md` §6 |
+| MSG-03 | allowed-mentions `parse` excludes explicit ids | nothing to fix (by construction); `views-and-recipes.md` §5 |
+| MSG-04 | ≤ 100 user and 100 role mention ids | fewer ids in `Mentions`; `views-and-recipes.md` §5 |
+| MSG-05 | mention defaults: Text Display mentions ping | set `Mentions` explicitly; `views-and-recipes.md` §5 |
+| MSG-06 | `nonce` ≤ 25, ≤ 3 stickers | shorten the nonce / fewer stickers; `responder.md` §6 |
+| MSG-07 | message flags per endpoint | nothing to fix (by construction); `responder.md` §1 |
+| MSG-08 | an edit replaces components and attachments | re-send the whole View, keep attachments by id; `components-v2.md` §12 |
+| MSG-09 | a message needs content (a V2 one ≥ 1 component) | add a component; `components-v2.md` §12 |
+| ATT-01 | file size within `attachment_bytes` (default 20 MiB) | shrink the file; `components-v2.md` §12 |
+| ATT-02 | ≤ 25 MiB per request | fewer or smaller files; `components-v2.md` §12 |
+| ATT-03 | ≤ 10 attachments per message | fewer files; `components-v2.md` §12 |
+| ATT-04 | `files[n]` naming | nothing to fix (Noctis names parts); `components-v2.md` §12 |
+| ATT-05 | `attachment://` must name a file in the request | attach the file or keep it by id; `components-v2.md` §12 |
+| ATT-06 | alt text ≤ 1024; rendered images need alt text | add `alt!(..)`; `components-v2.md` §12, `images.md` |
+| ATT-07 | `attachment://` image formats | use png, jpg, webp or gif; `components-v2.md` §12 |
+| WH-01 | webhook components need `with_components` | nothing to fix (by construction); `responder.md` §7 |
+| WH-02 | a webhook you don't own sends only non-interactive components | send a `StaticMessage`; `responder.md` §7 |
+| WH-03 | V2 webhook bodies: no content or embeds | nothing to fix (by construction); `responder.md` §7 |
+| WH-04 | webhook name 1-80, no `clyde`/`discord` | rename (`webhook_name!`); `responder.md` §7 |
+| WH-05 | forum and media channels need a thread | `.thread(..)` on the webhook send; `responder.md` §7 |
+| RL-01 | per-route HTTP buckets | wait the `retry_after` of `RateLimited`; `app-and-sharding.md` §5 |
+| RL-02 | 50 requests/s per bot token, shared | point every process at one proxy (`NOCTIS_HTTP_PROXY`); `app-and-sharding.md` §4 |
+| RL-03 | 10,000 invalid requests per 10 min per IP | never retry 401/403/429 in a loop; `app-and-sharding.md` §5 |
+| RL-04 | undocumented per-resource limits | throttle channel edits; `app-and-sharding.md` §5 |
+| GW-01 | identify concurrency buckets | share one `IdentifyQueue` across a Cluster; `app-and-sharding.md` §4, `adapters.md` §7 |
+| GW-02 | 1000 identifies per day | keep sessions resumable (`SessionStore`); `app-and-sharding.md` §4 |
+| GW-03 | ≤ 2500 guilds per shard | more shards (`NOCTIS_SHARD_TOTAL`); `app-and-sharding.md` §4 |
+| GW-04 | 120 gateway sends per 60 s | fewer gateway commands; handle `GatewayError`; `app-and-sharding.md` §6 |
+| GW-05 | privileged intents must be requested and enabled | `.intents(..)` and the Developer Portal toggle; `app-and-sharding.md` §1, `modules-middleware-ratelimits.md` §4 |
+| GW-06 | `large_threshold` 50-250 | `LargeThreshold::new::<N>()` in range; `app-and-sharding.md` §6 |
+| GW-07 | Request Guild Members limits | one guild, ≤ 100 user ids, wait on `RATE_LIMITED`; `app-and-sharding.md` §6 |
+| TW-01 | Template classes must be known Tailwind v4 classes | fix the class or add the token to `noctis-theme.css`; `images.md` §4 |
+| TW-02 | `noctis-theme.css` grammar | only `@theme { --x: v; }` and `@keyframes`; `images.md` §5 |
+| IMG-01 | text needs a registered font | enable `default-font` or `ImageConfig::font`; `images.md` §6 |
+| IMG-02 | static image id and format | rename the id or convert to PNG/JPEG/WebP, register it; `images.md` §6 |
+| IMG-03 | remote images only from declared `#[asset]` fields | declare the field, allow the origin; `images.md` §7 |
+| IMG-04 | Discord emoji tokens only in data fields | move the `<:name:id>` token into a data field; `images.md` §6 |
+| VC-01 | voice op 4 goes through the owning shard and GW-04 | use `ctx.voice()`; handle `VoiceError`; `voice.md` |
+| VC-02 | one voice connection per guild | one call per guild; a newer join replaces it; `voice.md` |

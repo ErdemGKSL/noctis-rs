@@ -1,5 +1,6 @@
 //! CLI tests for `xtask skill-check` over generated roots (Story 1.8's M, H,
-//! D and X rows, Story 4.1's C rows) and `api-snapshot`'s argument errors (S7). Line grammar,
+//! D and X rows, Story 4.1's C rows, Story 14.5's Q rows) and `api-snapshot`'s
+//! argument errors (S7). Line grammar,
 //! assembly, matching and lint details have unit tests in the crate.
 
 #![allow(
@@ -42,7 +43,7 @@ async fn xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
 }
 ";
 
-const OK: &str = "skill-check: ok (8 public items mentioned, 0 component entries checked, 3 example files linted, 4 recipes in sync)";
+const OK: &str = "skill-check: ok (8 public items mentioned, 0 component entries checked, 3 example files linted, 4 recipes in sync, 2 rule ids indexed)";
 
 const RECIPES_MD: &str =
     "examples/project-template/.claude/skills/noctis/references/views-and-recipes.md";
@@ -73,10 +74,44 @@ fn hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
 
+/// The reference index every `SKILL.md` of a generated root carries.
+const REFERENCE_INDEX: &str = "\
+| File | Read when |
+| --- | --- |
+| `references/components-v2.md` | components |
+| `references/concept-map.md` | other frameworks |
+| `references/limits-cheatsheet.md` | limits |
+| `references/modals.md` | modals |
+| `references/patterns.md` | patterns |
+| `references/troubleshooting.md` | errors |
+| `references/views-and-recipes.md` | recipes |
+";
+
 fn skill_md(snapshot: &str) -> String {
     format!(
-        "# Noctis\n\n> **API hash:** `{}` (blake3)\n\nUse `noctis::rules::Limits`, `truncates`, `button_label_len`, `RuleId` and `discord_len`.\n",
+        "# Noctis\n\n> **API hash:** `{}` (blake3)\n\nUse `noctis::rules::Limits`, `truncates`, `button_label_len`, `RuleId` and `discord_len`.\n\n{REFERENCE_INDEX}",
         hash(snapshot.as_bytes())
+    )
+}
+
+const CATALOG: &str = "docs/discord-rules.md";
+const CHEATSHEET: &str =
+    "examples/project-template/.claude/skills/noctis/references/limits-cheatsheet.md";
+const TROUBLESHOOTING: &str =
+    "examples/project-template/.claude/skills/noctis/references/troubleshooting.md";
+const PATTERNS: &str = "examples/project-template/.claude/skills/noctis/references/patterns.md";
+const CONCEPT_MAP: &str =
+    "examples/project-template/.claude/skills/noctis/references/concept-map.md";
+
+/// The rule id index of the base root's two catalog rules.
+const INDEX_ROWS: &str = "\
+| CMD-01 | name charset | `references/commands.md` |
+| **REG-06** | permission overwrites | `commands.md` §6 |
+";
+
+fn troubleshooting(rows: &str) -> String {
+    format!(
+        "# Troubleshooting\n\n## Rule id index\n\n| Rule | Meaning | Fix |\n| --- | --- | --- |\n{rows}"
     )
 }
 
@@ -95,9 +130,21 @@ fn root(test: &'static str) -> Root {
     .with("xtask/public-api.txt", SNAPSHOT)
     .with(&format!("{SKILL_DIR}/SKILL.md"), &skill_md(SNAPSHOT))
     .with(
-        &format!("{SKILL_DIR}/references/limits.md"),
-        "| REG-06 | permission overwrites |\n",
+        CATALOG,
+        "# Rules\n\n| Rule | Text |\n| --- | --- |\n| **CMD-01** Name charset | x |\n| **REG-06** Overwrites | y |\n",
     )
+    .with(
+        CHEATSHEET,
+        "| CMD-01 | name charset |\n| REG-06 | permission overwrites |\n",
+    )
+    .with(TROUBLESHOOTING, &troubleshooting(INDEX_ROWS))
+    .with(
+        PATTERNS,
+        "# Patterns\n\n## Patterns\n\n## Anti-patterns\n\n## Common mistakes\n",
+    )
+    .with(CONCEPT_MAP, "# Map\n\n## tescord / dbi → Noctis\n")
+    .with(COMPONENTS_MD, "# Components\n")
+    .with(MODALS_MD, "# Modals\n")
     .with("examples/project-template/src/lib.rs", HANDLERS)
     .with(
         "examples/project-template/tests/flows.rs",
@@ -126,6 +173,13 @@ impl Root {
 
     fn without(mut self, path: &str) -> Self {
         assert!(self.files.remove(path).is_some(), "no {path}");
+        self
+    }
+
+    /// Removes every file below `dir`.
+    fn without_dir(mut self, dir: &str) -> Self {
+        let prefix = format!("{dir}/");
+        self.files.retain(|path, _| !path.starts_with(&prefix));
         self
     }
 
@@ -198,7 +252,11 @@ fn real_repo_passes() {
         stderr(&out)
     );
     assert!(stderr(&out).contains(" component entries checked, "));
-    assert!(stderr(&out).ends_with(" example files linted, 6 recipes in sync)\n"));
+    assert!(
+        stderr(&out).ends_with(" example files linted, 6 recipes in sync, 135 rule ids indexed)\n"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]
@@ -220,25 +278,21 @@ fn m2_unmentioned_item() {
 
 #[test]
 fn m3_rule_id_needs_catalog_id_or_ident() {
+    let snapshot =
+        format!("{SNAPSHOT}pub const noctis::rules::RuleId::CV2_01: noctis::rules::RuleId\n");
     let out = root("m3")
-        .with(
-            &format!("{SKILL_DIR}/references/limits.md"),
-            "| REG-061 | XREG-06 |\n",
-        )
+        .snapshot(&snapshot)
+        .with(CHEATSHEET, "| CMD-01 | REG-06 |\n| CV2-011 | XCV2-01 |\n")
         .run();
     assert_problems(
         &out,
-        &["noctis::rules::RuleId::REG_06: public item not mentioned in the Usage Skill"],
+        &["noctis::rules::RuleId::CV2_01: public item not mentioned in the Usage Skill"],
     );
 }
 
 #[test]
 fn m8_skill_missing_or_bad() {
-    let out = root("m8_missing")
-        .without(&format!("{SKILL_DIR}/SKILL.md"))
-        .without(&format!("{SKILL_DIR}/references/limits.md"))
-        .without(RECIPES_MD)
-        .run();
+    let out = root("m8_missing").without_dir(SKILL_DIR).run();
     assert_problems(
         &out,
         &[&format!("{SKILL_DIR}: cannot read: not a directory")],
@@ -309,7 +363,7 @@ fn h4_no_hash_line() {
     let out = root("h4")
         .with(
             &format!("{SKILL_DIR}/SKILL.md"),
-            "Use noctis::rules::Limits, truncates, button_label_len, RuleId and discord_len.\n",
+            &format!("Use noctis::rules::Limits, truncates, button_label_len, RuleId and discord_len.\n{REFERENCE_INDEX}"),
         )
         .run();
     assert_problems(
@@ -332,7 +386,7 @@ const COMPONENTS_MD: &str =
 const MODALS_MD: &str = "examples/project-template/.claude/skills/noctis/references/modals.md";
 
 /// A Container entry with every label.
-const CONTAINER_ENTRY: &str = "# Components\n\n## 1. Container: `Container`\n\n- **Where:** top level.\n- **Limits:** 40 total.\n- **Builder:** `Container::new()`.\n\n```rust\n# `Container` in code is not a heading\n```\n\n## 2. Other\n";
+const CONTAINER_ENTRY: &str = "# Components\n\n## 1. Container: `Container`\n\n- **Where:** top level.\n- **Limits:** 40 total ([catalog](../docs/discord-rules.md#9-components-v2-messages)).\n- **Builder:** `Container::new()`.\n\n```rust\n# `Container` in code is not a heading\n```\n\n## 2. Other\n";
 
 /// The base root plus a snapshot exporting `noctis::ui::Container`.
 fn with_container(test: &'static str) -> Root {
@@ -358,7 +412,7 @@ fn c2_full_entry() {
         &out,
         0,
         &[
-            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync)",
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync, 2 rule ids indexed)",
         ],
     );
 }
@@ -431,8 +485,94 @@ fn c7_entry_in_modals() {
         &out,
         0,
         &[
-            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync)",
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync, 2 rule ids indexed)",
         ],
+    );
+}
+
+#[test]
+fn q18_limits_without_link() {
+    let entry = CONTAINER_ENTRY.replace(
+        " ([catalog](../docs/discord-rules.md#9-components-v2-messages))",
+        ", see docs/discord-rules.md",
+    );
+    let out = with_container("q18").with(COMPONENTS_MD, &entry).run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{COMPONENTS_MD}:3: component-entries: entry for Container: **Limits:** does not link docs/discord-rules.md"
+        )],
+    );
+}
+
+// Q rows: completeness.
+
+#[test]
+fn q1_missing_reference() {
+    let out = root("q1").without(PATTERNS).run();
+    assert_problems(
+        &out,
+        &[
+            &format!("{SKILL_DIR}/SKILL.md: lists references/patterns.md, which does not exist"),
+            &format!("{PATTERNS}: required reference missing"),
+        ],
+    );
+}
+
+#[test]
+fn q5_planned_marker() {
+    let out = root("q5")
+        .with(
+            PATTERNS,
+            "# Patterns\n\n## Patterns\n\nTabs [planned].\n\n## Anti-patterns\n\n## Common mistakes\n",
+        )
+        .run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{PATTERNS}:5: \"planned\" marker; document what exists or say it is not provided"
+        )],
+    );
+}
+
+#[test]
+fn q9_index_missing_id() {
+    let out = root("q9")
+        .with(
+            TROUBLESHOOTING,
+            &troubleshooting("| CMD-01 | name charset | `references/commands.md` |\n"),
+        )
+        .run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{TROUBLESHOOTING}: rule id index: REG-06 has no row"
+        )],
+    );
+}
+
+#[test]
+fn q17_catalog_missing() {
+    let out = root("q17").without(CATALOG).run();
+    assert_exit(
+        &out,
+        1,
+        &["skill-check: docs/discord-rules.md: cannot read: "],
+    );
+    assert_eq!(stderr(&out).lines().count(), 1, "{}", stderr(&out));
+}
+
+#[test]
+fn q19_listener_in_markdown_example() {
+    let out = root("q19")
+        .with(
+            "docs/guides/events.md",
+            "# Events\n\n```rust,ignore\n// app.on_listener(f) is not allowed\napp.on_listener(f);\n```\n",
+        )
+        .run();
+    assert_problems(
+        &out,
+        &["docs/guides/events.md:5: [UD-7] inline listener; register a #[handler] for a Route"],
     );
 }
 

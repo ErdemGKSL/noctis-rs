@@ -31,7 +31,7 @@ Media Gallery, bio modal), a custom
 - Always build, test, check and run with `--release`; never create a debug build (disk space in cloud sessions is limited). If the disk fills anyway, delete `target/debug/`.
 - Run locally with `NOCTIS_TOKEN` set: `cargo run --release -- --publish-guild <test guild id>` once, then `cargo run --release`; add `--no-resume` for a full reset that starts and stops with fresh sessions (no RESUME). See `README.md`.
 - Commands reach Discord only through Publish (`--publish-guild [<id>]` in dev, `--publish` or one `NOCTIS_PUBLISHER=true` process in prod; add `--dry-run` to preview); never publish on READY. Tests start Apps with `app.run_with_args(std::iter::empty::<&str>())`, never `app.run()`, which rejects the test harness's flags.
-- Compile errors and `BuildError`s name a Discord rule id such as `[CID-01]` or `[CMD-11]`. Look the id up in `.claude/skills/noctis/references/limits-cheatsheet.md` (and `troubleshooting.md`); fix the cause the error's `help:` line names instead of working around the check.
+- Compile errors and `BuildError`s name a Discord rule id such as `[CID-01]` or `[CMD-11]`. Look the id up in the `## Rule id index` of `.claude/skills/noctis/references/troubleshooting.md` (meaning and fix) and in `limits-cheatsheet.md` (numbers); fix the cause the error's `help:` line names instead of working around the check. For a feature, start from the shapes in `references/patterns.md` (`## Patterns`), and check its `## Common mistakes` table (symptom, cause, fix, rule id) when something compiles but misbehaves; coming from tescord, dbi, serenity or poise, translate with `references/concept-map.md`.
 
 ## Conventions that differ from defaults
 

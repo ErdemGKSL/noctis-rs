@@ -9,7 +9,7 @@ Everything here is in `noctis::ui` (`use noctis::ui::*;` or name the items); the
 derives that give `.build()` are in the prelude. Every builder takes text as `impl Into<Cow<'static,
 str>>` (a `&'static str` or a `String`), setters are by value and chainable, and every
 type is `Debug + Clone + Send + Sync` and serializes straight to Discord JSON with unset
-fields and `false` flags left out. Items marked **[planned]** do not exist yet.
+fields and `false` flags left out.
 
 ## 0. The message body: `Components`
 
@@ -41,8 +41,8 @@ assert_eq!(body.len(), 2);                   // also is_empty(), Default
 | ATT-03 | ≤ 10 attachments [U] |
 
 Counts, lengths and the other per-field Limits are checked at runtime by
-`noctis::ui::validate(&mut msg, &limits)` (§16; the Responder will run it before every
-send [planned]) and at `cargo check` by `components!` for literal trees (§14);
+`noctis::ui::validate(&mut msg, &limits)` (§16; the Responder runs it before every
+send) and at `cargo check` by `components!` for literal trees (§14);
 `noctis::ui::cost(&msg, &limits)` measures a message, and the rule functions of §15
 check bare descriptor trees.
 
@@ -136,7 +136,7 @@ says ``write `Route { .. }.build()` ``.
 - The struct needs a `#[handler]` method (`impl X { #[handler] async fn handle(self,
   ctx: ComponentCtx) -> HandlerResult<Responded> }`); without one the derive fails with
   E0080 ``[CID-04] `X` has no #[handler] method, so no component can be built for it``.
-  Running the handler on a click needs Epic 7 [planned]. Never implement the hidden
+  Never implement the hidden
   `Handled`/`ComponentRoute` traits by hand.
 - Every select kind carries the per-render nonce (FR-25; it implements
   `noctis::codec::SelectRoute`); there is no `select` argument (`#[string_select("id",
@@ -152,7 +152,7 @@ says ``write `Route { .. }.build()` ``.
 ## 1. Container: `Container`
 
 - **Where:** message top level only. **Not** inside another Container (CV2-05).
-- **Limits:** children count toward the 40 total (CV2-03); `accent_color`
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) children count toward the 40 total (CV2-03); `accent_color`
   0x000000–0xFFFFFF (CV2-13, guaranteed by `Rgb`). Cost 1.
 - **Builder:** `Container::new()`, `.push(child)` (any `ContainerChild`: Section, Text
   Display, Media Gallery, File, Separator, Action Row), `.accent(Rgb::new(r, g, b))`,
@@ -175,7 +175,7 @@ Use one Container per View, an accent colour per state (neutral / success / dang
 ## 2. Text Display: `TextDisplay`
 
 - **Where:** top level, Container, Section (1–3 texts), modals (top level).
-- **Limits:** no per-component maximum documented; counts toward the 4000 total
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) no per-component maximum documented; counts toward the 4000 total
   (CV2-04) and the 40 components. Empty text builds (the validator checks it). Cost 1.
 - **Builder:** `TextDisplay::new(content)`; `.content()` reads it back. JSON type 10.
   Content is Markdown: `#`/`##`/`###`, `-#` subtext, lists, code, mentions,
@@ -193,7 +193,7 @@ Use one Container per View, an accent colour per state (neutral / success / dang
 ## 3. Section: `Section`
 
 - **Where:** top level or Container. Messages only.
-- **Limits:** 1–3 Text Displays and exactly one accessory, a button (any kind) or a
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) 1–3 Text Displays and exactly one accessory, a button (any kind) or a
   Thumbnail (CV2-07). Cost 1 + texts + 1.
 - **Builder:** `Section::new([TextDisplay; N], accessory)`. There is no constructor
   without an accessory: passing anything else (even `()`) fails with
@@ -214,7 +214,7 @@ Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle_button
 
 - **Where:** **only** as a Section accessory (CV2-05); anywhere else fails with
   ``[CV2-05] `Thumbnail` cannot be a Container child`` (or top-level component).
-- **Limits:** `media.url` https or `attachment://` (ATT-05), ≤ 2048 [U] (CV2-17);
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) `media.url` https or `attachment://` (ATT-05), ≤ 2048 [U] (CV2-17);
   `description` ≤ 1024 (CV2-11); missing alt = warning (Strict: `[ATT-06]` error for
   rendered images, FR-30). Images only (GIF/WebP animate), **no video**. Cost 1.
 - **Builder:** `Thumbnail::new(media)` where `media` is a `Media` or an
@@ -228,7 +228,7 @@ Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle_button
 ## 5. Media Gallery: `MediaGallery`
 
 - **Where:** top level or Container.
-- **Limits:** 1–10 items (CV2-10); item `media.url` https or `attachment://` (ATT-05);
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) 1–10 items (CV2-10); item `media.url` https or `attachment://` (ATT-05);
   item `description` (alt) ≤ 1024 (CV2-10). Cost 1 regardless of items — the cheapest
   way to show visual data. 1 item = full width; 2–4 = grid. Images and video.
 - **Builder:** `MediaGallery::new([MediaItem; N])`; `MediaItem::new(media).alt(..)
@@ -245,7 +245,7 @@ MediaGallery::new([MediaItem::new(card_ref).alt(s.profile.card_alt(&name))])
 ## 6. File: `File`
 
 - **Where:** top level or Container.
-- **Limits:** `file` is **only** `attachment://<name>` (CV2-12); one file per File
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) `file` is **only** `attachment://<name>` (CV2-12); one file per File
   component. `name`/`size` are response-only. Cost 1.
 - **Builder:** `File::new(attachment_ref).spoiler(bool)`; `.attachment()` reads the
   ref. It takes only an `AttachmentRef`, which only `AttachmentSet::add` returns, so a
@@ -307,7 +307,7 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
 ## 7. Separator: `Separator`
 
 - **Where:** top level or Container.
-- **Limits:** `divider` bool; `spacing` 1 small / 2 large only (CV2-13, the `Spacing`
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) `divider` bool; `spacing` 1 small / 2 large only (CV2-13, the `Spacing`
   enum has no other value). Cost 1.
 - **Builder:** `Separator::new()` = `Separator::default()` = `Separator::small()`
   (divider, small); `Separator::large()`; `.divider(false)`;
@@ -317,7 +317,7 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
 ## 8. Action Row: `ActionRow`
 
 - **Where:** top level or Container (in modals: deprecated; Noctis never emits it).
-- **Limits:** 1–5 buttons **or** exactly 1 select, never mixed (CV2-06).
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) 1–5 buttons **or** exactly 1 select, never mixed (CV2-06).
   `ActionRow::buttons` is bounded by `Arity<N>: RowButtons` (1..=5): an empty array or
   6 buttons fail `cargo check` with `[CV2-06] an Action Row holds 1 to 5 buttons`. For a
   count known only at runtime use `ActionRow::try_buttons(buttons, &limits)` (any
@@ -360,7 +360,7 @@ in your render function (`views-and-recipes.md` §3).
 ### 9a. Route button: `RouteButton`
 
 - **Where:** Action Row (`RowItem`) or Section accessory (`SectionAccessory`).
-- **Limits:** styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
   derive (CID-01).
 - **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
   Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)` (a literal or
@@ -388,13 +388,13 @@ ToggleModule { guild, module, enable: !enabled }
 ### 9b. Link button: `LinkButton`
 
 - **Where:** Action Row or Section accessory.
-- **Limits:** `url` 1–512 (CV2-08), label ≤ 80; no `custom_id`, no interaction.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) `url` 1–512 (CV2-08), label ≤ 80; no `custom_id`, no interaction.
 - **Builder:** `LinkButton::new(url)`, `.label(..)`, `.emoji(..)`, `.disabled(bool)`.
 
 ### 9c. Premium button: `PremiumButton`
 
 - **Where:** Action Row or Section accessory.
-- **Limits:** needs `sku_id`; no label, emoji, URL or `custom_id` (CV2-08: the type has
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) needs `sku_id`; no label, emoji, URL or `custom_id` (CV2-08: the type has
   no such setters).
 - **Builder:** `PremiumButton::new(sku_id)` (`Id<SkuMarker>`), `.disabled(bool)`; `const`.
 
@@ -422,18 +422,19 @@ Shared fields of all five:
 - Empty list: render a disabled select with one explanatory option, or an empty-state
   Text Display, never nothing.
 - More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
-- `derive(Choices)` enums can produce options: `Severity::select_options(locale)` [planned].
+- `derive(Choices)` enums have no options helper in Noctis 0.1; map `Severity::ALL`
+  yourself: `SelectOption::new(s.label(), s.value())`.
 - Selected values in the handler: `ctx.values()` returns a `SelectedValues` typed by the
   select's kind: `.strings()` (every raw value, any kind), `.users()`, `.roles()` and
   `.channels()` (ids in the order sent, duplicates kept); a Mentionable Select's values
   are split into `.users()` and `.roles()` by the interaction's resolved data. A value
-  that is not an id stays in `.strings()` only. Resolved entities (`ctx.resolved()`) are
-  [planned].
+  that is not an id stays in `.strings()` only. Noctis 0.1 has no `ctx.resolved()` on a
+  component context; load the entities with `ctx.cache()` from the ids.
 
 ### 10a. String Select: `StringSelect`
 
 - **Where:** alone in an Action Row (`RowSelect`).
-- **Limits:** ≤ 25 options; option label/value/description ≤ 100; `default` count
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) ≤ 25 options; option label/value/description ≤ 100; `default` count
   within [min, max] (CV2-09). Zero options build (the validator checks them).
 - **Builder:** `route.build()` on a `#[derive(StringSelectMenu)]` struct. With
   `defaults(options = SomeChoicesEnum)` it returns a `StringSelect` holding the enum's
@@ -451,7 +452,8 @@ Shared fields of all five:
   min_values, max_values, disabled, options, default_values, ..Default::default() })` sets
   several fields at once.
   Options given empty at runtime fail the validator with `[CV2-09]` in every limit mode.
-  JSON type 3. `try_string_select` [planned].
+  JSON type 3. There is no `try_string_select`; check a runtime-built select with
+  `noctis::ui::validate` (§16).
 
 ```rust
 #[derive(StringSelectMenu, Debug, Clone, Copy)]
@@ -469,7 +471,7 @@ Size { item }.build().options([
 - **Where:** nowhere until it has options: `.options(..)` turns it into a `StringSelect`
   for an Action Row; placing it as is is E0277 `[CV2-09] this String Select has no
   options` (the `OptionsGiven` bound).
-- **Limits:** as String Select once given options; setters keep the typestate.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as String Select once given options; setters keep the typestate.
 - **Builder:** `X.build()` on a `#[derive(StringSelectMenu)]` struct whose `defaults(..)`
   have no `options`; `.placeholder(..)`, `.min_values(n)`, `.max_values(n)`,
   `.disabled(bool)`, then `.options(iter) -> StringSelect`.
@@ -477,7 +479,7 @@ Size { item }.build().options([
 ### 10b. User Select: `UserSelect`
 
 - **Where:** alone in an Action Row.
-- **Limits:** shared fields; `default_values` count within [min, max] (CV2-09).
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) shared fields; `default_values` count within [min, max] (CV2-09).
 - **Builder:** `route.build()` on a `#[derive(UserSelectMenu)]` struct, `.default_users(ids)`
   (any `IntoIterator<Item = Id<UserMarker>>`, so an `Option` works; appends, duplicates
   count once), `.default_values(ids)` (replaces), `.overrides(UserSelectOverrides { .. })`.
@@ -486,14 +488,14 @@ Size { item }.build().options([
 ### 10c. Role Select: `RoleSelect`
 
 - **Where:** alone in an Action Row.
-- **Limits:** as User Select.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as User Select.
 - **Builder:** `route.build()` on a `#[derive(RoleSelectMenu)]` struct, `.default_roles(ids)`.
   JSON type 6.
 
 ### 10d. Mentionable Select: `MentionableSelect`
 
 - **Where:** alone in an Action Row.
-- **Limits:** as User Select.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as User Select.
 - **Builder:** `route.build()` on a `#[derive(MentionableSelectMenu)]` struct,
   `.default_users(ids)`, `.default_roles(ids)`
   (appended in call order). JSON type 7.
@@ -501,7 +503,7 @@ Size { item }.build().options([
 ### 10e. Channel Select: `ChannelSelect`
 
 - **Where:** alone in an Action Row.
-- **Limits:** as User Select.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as User Select.
 - **Builder:** `route.build()` on a `#[derive(ChannelSelectMenu)]` struct,
   `.default_channels(ids)`, `.channel_types([ChannelType::GuildText])` (twilight's
   `ChannelType`; none = every type; also a `defaults(channel_types = [GuildText, ..])`
@@ -533,7 +535,7 @@ let view = V2Message::new(
   `TopLevel` and `ContainerChild`), also as a `components!` `{hole}` there. Never a
   Section accessory, an Action Row item or a modal input: those fail `cargo check`
   (E0277, `[CV2-05]`/`[CV2-07]`/`[MOD-03]` messages).
-- **Limits:** CV2-03: counts `raw.count()` components (every component object it holds,
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) CV2-03: counts `raw.count()` components (every component object it holds,
   itself included) in `validate`, `cost` and `Budget`; a `{hole}` counts 1 at
   expansion and the real count at run time. CV2-14: an `id` key on any walked component
   object is rejected (``remove `id`; Discord numbers raw components itself``); Noctis
@@ -753,7 +755,7 @@ let msg = StaticMessage::new(
 ### Static Container: `StaticContainer`
 
 - **Where:** top level of a `StaticComponents`. Never nested.
-- **Limits:** as `Container` (§1): CV2-03 counts, accent colour, spoiler; WH-02 for its
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as `Container` (§1): CV2-03 counts, accent colour, spoiler; WH-02 for its
   children (`StaticContainerChild`: `StaticSection`, `StaticActionRow`, `TextDisplay`,
   `MediaGallery`, `File`, `Separator`). A plain `Section` or `ActionRow` is a compile
   error, because it may hold interactive components.
@@ -763,7 +765,7 @@ let msg = StaticMessage::new(
 ### Static Section: `StaticSection`
 
 - **Where:** top level of a `StaticComponents` or a `StaticContainer` child.
-- **Limits:** as `Section` (§3): 1–3 Text Displays (CV2-07); the accessory is a
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) as `Section` (§3): 1–3 Text Displays (CV2-07); the accessory is a
   `Thumbnail` or a `LinkButton` (`StaticAccessory`, WH-02). A `RouteButton`,
   `PremiumButton` or `Button` accessory fails with
   ``[WH-02] `X` is not a static Section accessory``.
@@ -773,7 +775,7 @@ let msg = StaticMessage::new(
 ### Static Action Row: `StaticActionRow`
 
 - **Where:** top level of a `StaticComponents` or a `StaticContainer` child.
-- **Limits:** 1–5 `LinkButton`s (CV2-06 arity, `StaticRowButton`, WH-02). No selects and
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) 1–5 `LinkButton`s (CV2-06 arity, `StaticRowButton`, WH-02). No selects and
   no buttons with a `custom_id`: ``[WH-02] `X` is not a static row button``.
 - **Builder:** `StaticActionRow::buttons([LinkButton; N])`; `ActionRow::from(static_row)`.
   JSON type 1.
@@ -847,7 +849,8 @@ spread    := ".." expr                          IntoIterator of components; top 
   derive: the receiver is the Route value and the calls after it
   (`.style(..)`, `.label(..)`, `.placeholder(..)`, `.max_values(..)`, `.disabled(..)`,
   `.emoji(..)`, …) are re-applied in order.
-- `link` needs literal `url` and `label`, in that order. `button_with` is [planned].
+- `link` needs literal `url` and `label`, in that order. There is no `button_with`; build a
+  configured button outside the macro and pass it as a `{hole}`.
   Spreads in a `row`, `section` or `gallery` are a syntax error:
   build a dynamic row with `ActionRow::try_buttons` and pass it as a `{hole}`.
 - A `{hole}` inside `row [ .. ]` is a button; a pre-built select there fails with E0277
@@ -934,7 +937,7 @@ lower bound only: `noctis::ui::validate` (§16) checks the actual tree before se
 
 - **Where:** any button label setter (`RouteButton::label`, `LinkButton::label`, and
   `.button(label)` in `components!`); it converts into `Cow<'static, str>`.
-- **Limits:** CV2-08, at most 80 characters by `discord_len`; never truncated.
+- **Limits:** ([catalog §9](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)) CV2-08, at most 80 characters by `discord_len`; never truncated.
 - **Builder:** `label!("Save")` (compile time, `const`-friendly), `Label::try_new(text,
   &limits)` or `Label::try_from(text)` (runtime, against `Limits::default()`);
   `.as_str()`. `Placeholder` (CV2-09, `placeholder!`) and `Content` (MSG-01,
@@ -1066,8 +1069,8 @@ Noctis has no embed API in v1 (MSG-02), so there is nothing to check for embeds.
 ## 16. Runtime validation: validate and cost
 
 `noctis::ui::validate` checks a built message against `noctis::rules::Limits` before it
-is sent; `noctis::ui::cost` measures one. The Responder runs validate before every send
-[planned]; call it yourself to check a message early (tests, previews, budgets).
+is sent; `noctis::ui::cost` measures one. The Responder runs validate before every send;
+call it yourself to check a message early (tests, previews, budgets).
 
 ```rust
 use noctis::rules::{LimitMode, Limits};

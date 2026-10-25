@@ -17,9 +17,8 @@ description: >-
 
 # Noctis Usage Skill
 
-> **Status: v0.** This skill documents the **planned** Noctis API from the architecture
-> spine. Sections and signatures marked **[planned]** may change as the crates land; the
-> skill is updated in the same commit as any public API change.
+> **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
+> signature here exists. It is updated in the same commit as any public API change.
 > **API hash:** `72557931a4cfd95963a3521853043b8232777913a225ae8c1ed494f74cf75d6a` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
@@ -411,6 +410,9 @@ to **act** on an item → a Section with an accessory button or a select option.
 
 ## 5. Anti-patterns (and the fix)
 
+The short list; `references/patterns.md` adds more anti-patterns and the common mistakes
+table (symptom, cause, fix, rule id).
+
 | Never | Instead |
 | --- | --- |
 | A per-message listener, collector, `await` for the next click, or `tokio::spawn` + sleep tied to a message | One `#[handler]` per component struct; state in the Payload/Ref; expiry via Ref TTL and the Expired Handler |
@@ -459,27 +461,11 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 8. Button → modal → re-render chains carry the same Payload through.
 9. Every user-visible string via locales; one-line notices with `ctx.reply_text`.
 
-## 6. tescord → Noctis concept map
+## 6. Concept map (tescord, dbi, serenity, poise)
 
-| tescord / dbi | Noctis |
-| --- | --- |
-| `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
-| `pack.slashCommand({ name: "a (b\|c)", handle })` | `#[derive(SlashCommand)] #[command("a (b\|c)")] struct A;` + `impl A { #[handler] async fn handle(self, ctx, path: APath) }` |
-| `options: { user: { type: "User" } }` | fields of the command struct: `struct Ban { #[option(..)] user: ResolvedUser }` |
-| `autoComplete` | `#[option(.., autocomplete)]` + an `#[autocomplete(field)] async fn x(ctx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` method on the command struct; Noctis sends the result (`commands.md` §4) |
-| `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
-| `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
-| `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
-| lifecycle listeners (`ready`, shard state, shutdown) | `#[derive(Hook)] struct X;` + `impl X { #[handler] async fn handle(self, ctx: HookCtx, event: AllShardsReady) }` (`noctis::lifecycle`; `references/app-and-sharding.md` §7) |
-| `renderSetupMenu(..)` + `deferUpdate()` + `editReply({ components, flags })` | `render_x(..) -> V2Message` + `ctx.update(render_x(..))` (flags and deferral are automatic) |
-| `data[i] as number` | typed Payload fields |
-| dbi references / store | `by_ref` Routes + `RefStore` |
-| `locale.user.x.y(a)` / `locale.guild…` | `Strings::of(ctx.user_locale()).x.y(a)` / `ctx.guild_locale()` |
-| `*.interactions.yaml` `names:` | `cmdword.<word>` and `cmd.<path>.*` keys in the same locale files |
-| `beforeInteraction` returning `false`/object | Middleware returning `Flow::Stop` / inserting an `Ext<T>` |
-| `--publish [--guildId]` | `--publish`, `--publish-guild [<id>]`, `--publish-clear`, `--dry-run`; in code `app.publish(PublishScope::..)`; `--no-resume` (run without resuming, fresh shutdown) |
-| `--features a,b` | Boot Flags: `Module::flags([..])` / `flags = [..]` on a kind attribute, selected with `--features a,b\|all\|none` or `NOCTIS_FEATURES` (read by `App::from_env()`) or `.boot_flags(BootFlags)` |
-| inline listeners | not supported (UD-7): Route + `one_shot` Ref |
+Coming from tescord, dbi, serenity or poise? `references/concept-map.md` maps each of
+their concepts (packs, listeners, collectors, `poise::command`, `ctx.say`) to the Noctis
+item that replaces it.
 
 ## 7. Reference index (progressive disclosure)
 
@@ -501,4 +487,6 @@ Read only what the task touches.
 | `references/testing.md` | test commands, clicks, Views, message snapshots, Template pixel snapshots (`assert_render_snapshot!`, `Tolerance`), Adapters, memory |
 | `references/voice.md` | join and leave voice channels (`voice` feature, C compiler and cmake: `.voice(VoiceConfig)`, `ctx.voice().join/leave/call`, `CallHandle`, `VoiceError` with `[VC-01]`/`[VC-02]`, the shutdown leave), tracks (`Track::file/url/command`) and the per-guild queue (`enqueue`, `skip`, `pause`, `resume`, `stop`, `clear`, `set_volume`, `now_playing`, `list`, `max_queue`), track events (`TrackStart`, `TrackEnd`, `TrackError`, `QueueEmpty` as `#[derive(Hook)]` events), idle leave, media HTTP rules, Opus passthrough and pre-encoding (`ffmpeg`, `yt-dlp`), the encoder bitrate (`max_bitrate`) and the frame metrics, raw op 4 (`GatewayHandle::update_voice_state`, `VoiceStateRequest`, `current_user_id`), music-bot patterns (the author's channel via `user_voice_state`, `yt-dlp` input, the `render_player` View with its Routes), testing voice (`VoiceConfig::recording()`, `VoiceRecorder`, `RecordedCommand`, `RecordedEvent`, `TestApp::answer_voice`, `voice_state_updates`, `dispatch_bot_voice_state`, `dispatch_voice_server`) |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
-| `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
+| `references/troubleshooting.md` | decode a compile error, BuildError or runtime error (its `## Rule id index` lists every rule id with its meaning and fix), or debug "interaction failed" |
+| `references/patterns.md` | pick a proven shape for a feature (patterns with short code), check the anti-patterns, or match a symptom against the common mistakes table |
+| `references/concept-map.md` | translate tescord, dbi, serenity or poise concepts into Noctis items |

@@ -106,8 +106,7 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
   plus `NOCTIS_PAYLOAD_KEY_PREVIOUS` during a rotation; `app-and-sharding.md`): a bad or
   missing tag is `forged`. A **stale** id (another `schema`, body kind or flag set of
   the Route) and a **Ref** id whose record is missing or expired (§7) are not
-  rejections: they go to the Expired Handler chain (§8), logged once at `debug`. The rest of this file's runtime parts
-  stay **[planned]** where marked.
+  rejections: they go to the Expired Handler chain (§8), logged once at `debug`.
 
 - **Keys.** `noctis::codec::PayloadKey` is the 32-byte secret (`PayloadKey::from_hex(..)`
   for the 64-hex-digit `NOCTIS_PAYLOAD_KEY`, `PayloadKey::from_bytes([u8; 32])`; errors
@@ -811,7 +810,8 @@ struct needs a `#[handler]` method (`[CID-04]`); on a struct without a declared 
 
 Selected values: `ctx.values()` → `SelectedValues` with `.strings()` (every raw value),
 `.users()`, `.roles()` and `.channels()` (typed ids; a Mentionable Select's values are
-split into users and roles); resolved entities: `ctx.resolved()` [planned].
+split into users and roles). Noctis 0.1 has no `ctx.resolved()` on a component context:
+load the picked entities with `ctx.cache()` (or `ctx.http()`) from those ids.
 
 ## 10. Interaction pipeline (fixed order)
 

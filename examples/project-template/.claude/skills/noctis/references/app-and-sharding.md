@@ -3,7 +3,7 @@
 Covers: `App`, `AppBuilder`, environment variables, CLI modes, Publish, sharding,
 Shard Ranges and Clusters, the HTTP proxy, the gateway URL, presence and gateway commands, Lifecycle
 Hooks, shutdown, `State<T>`, plugins, multiple Apps and the process `Runtime`.
-Rules: GW-01..07, RL-01..04, REG-01..06. Signatures marked [planned] may change.
+Rules: GW-01..07, RL-01..04, REG-01..06.
 
 ## 1. Build and run
 
@@ -143,7 +143,7 @@ Implemented:
 | `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()`. The effective id also selects `apps = [..]` / `Module::apps` registrations before the fold (§10) |
 | `.build()` | — | `Result<App, BuildError>` |
 
-Planned (signatures may change):
+More builder methods:
 
 | Method | Default | Notes |
 | --- | --- | --- |
@@ -1002,8 +1002,8 @@ and an `Ext<T>` no Middleware on the handler's Module path provides is a
 `BuildViolation::MissingExtension`. Read state with `ctx.state::<T>()`
 (`Option<State<T>>`); Middleware read it with `ctx.state::<T>()` too.
 
-[planned] `State<T>` handler parameters (registered with `.state(T)`, `Deref<Target =
-T>`) in any order after the path / target, a missing `State<T>` being a `BuildError`.
+Noctis 0.1 has no `State<T>` handler parameter: read state with `ctx.state::<T>()` as
+above and treat `None` as a setup error (`.state(T)` missing in `configure`).
 Mutable state: put interior mutability inside `T` (`tokio::sync::RwLock`, atomics) or,
 better, use a port.
 
@@ -1158,8 +1158,7 @@ Spans (live):
   handler run (the `LogSink` failure line is inside it). `guild_id` is empty for
   guildless events.
 - `noctis.interaction{app, shard, guild_id, module, path}` around each interaction;
-  `module` and `path` are declared but empty until command and Route handlers land
-  (Epic 6) [planned].
+  `module` is the handling Module's id and `path` the Command Path, menu name or Route id.
 - `noctis.http{app, kind, method, attempt, reused, status_class}` around each Discord
   HTTP upstream attempt of the edge (§5); `kind` is `forward`, `callback` or `warmup`.
   It never carries a path, a token, an id or a header value (twilight's own `req` span

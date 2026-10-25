@@ -12,21 +12,31 @@
 //! - **component entries** ([`components`]): every component builder type
 //!   the snapshot exports has exactly one entry, with `**Where:**`,
 //!   `**Limits:**` and `**Builder:**`, in the skill's
-//!   `references/components-v2.md` or `references/modals.md`;
+//!   `references/components-v2.md` or `references/modals.md`, and its
+//!   `**Limits:**` links `docs/discord-rules.md`;
 //! - **UI Doctrine** ([`doctrine`]): UD-1, UD-3 and UD-7 over the `src/` and
 //!   `tests/` of every crate directory under `examples/` (the Project Template
 //!   and `examples/ui-recipes`);
 //! - **recipes** ([`recipes`]): the ```` ```rust recipe=<name> ```` blocks of
 //!   the skill's `references/views-and-recipes.md` equal the regions of
-//!   `examples/ui-recipes/src`.
+//!   `examples/ui-recipes/src`;
+//! - **completeness** ([`completeness`]): the required references
+//!   (`concept-map.md`, `limits-cheatsheet.md`, `patterns.md`,
+//!   `troubleshooting.md`) and their headings exist, `SKILL.md` lists every
+//!   reference, no `planned`/`v0`/`Epic <n>`/`Story <n>.<m>` marker remains,
+//!   `troubleshooting.md`'s `## Rule id index` lists every rule id of
+//!   `docs/discord-rules.md` in catalog order, `limits-cheatsheet.md` names
+//!   every id, and the Rust examples in the skill's and `docs/`'s Markdown
+//!   follow UD-7.
 //!
 //! # Output
 //!
 //! Every problem is one stderr line `skill-check: <subject>: <message>`, sorted
 //! and deduplicated, and the exit code is 1. Success prints `skill-check: ok (<N>
 //! public items mentioned, <E> component entries checked, <F> example files
-//! linted, <R> recipes in sync)`.
+//! linted, <R> recipes in sync, <I> rule ids indexed)`.
 
+mod completeness;
 mod components;
 mod doctrine;
 mod hash;
@@ -179,8 +189,12 @@ fn check(repo: &Repo<'_>, problems: &mut Problems) -> String {
         }
     }
 
+    let indexed = skill.as_ref().map_or(0, |files| {
+        completeness::check(repo, SKILL_DIR, files, problems)
+    });
+
     format!(
-        "{mentioned} public items mentioned, {entries} component entries checked, {linted} example files linted, {in_sync} recipes in sync"
+        "{mentioned} public items mentioned, {entries} component entries checked, {linted} example files linted, {in_sync} recipes in sync, {indexed} rule ids indexed"
     )
 }
 

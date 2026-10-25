@@ -8,6 +8,10 @@
 //! `references/modals.md` that names it as a code span (`` `Name` ``); the
 //! entry's body runs to the next heading of the same or a higher level and
 //! must contain each of [`LABELS`]. A heading may name at most one builder.
+//!
+//! Q18: the text of an entry from `**Limits:**` to the next `**Where:**` or
+//! `**Builder:**` (or the body's end) has a Markdown link whose target
+//! (`](…)`) contains [`CATALOG`].
 
 use std::collections::BTreeSet;
 
@@ -21,6 +25,10 @@ const ENTRY_FILES: &[&str] = &["references/components-v2.md", "references/modals
 const LABELS: &[&str] = &["**Where:**", "**Limits:**", "**Builder:**"];
 
 const CHECK: &str = "component-entries";
+
+/// The rule catalog every entry's **Limits:** must link (Q18).
+const CATALOG: &str = "docs/discord-rules.md";
+const LIMITS: &str = "**Limits:**";
 
 /// The Components V2 message and modal builder names.
 pub(super) const BUILDERS: &[&str] = &[
@@ -87,7 +95,7 @@ struct Heading<'a> {
 }
 
 /// The code spans of one line.
-fn code_spans(line: &str) -> impl Iterator<Item = &str> {
+pub(super) fn code_spans(line: &str) -> impl Iterator<Item = &str> {
     line.split('`').skip(1).step_by(2)
 }
 
@@ -182,6 +190,12 @@ pub(super) fn check(
                         );
                     }
                 }
+                if !limits_link_catalog(&entry.body) {
+                    problems.add(
+                        entry.at.as_str(),
+                        format!("{CHECK}: entry for {name}: {LIMITS} does not link {CATALOG}"),
+                    );
+                }
             }
             many => {
                 for entry in many {
@@ -194,6 +208,27 @@ pub(super) fn check(
         }
     }
     due.len()
+}
+
+/// Q18: whether the entry's **Limits:** text links the catalog; `true` when
+/// the label is absent (reported as a missing label).
+fn limits_link_catalog(body: &str) -> bool {
+    let Some(start) = body.find(LIMITS) else {
+        return true;
+    };
+    let rest = &body[start + LIMITS.len()..];
+    let end = ["**Where:**", "**Builder:**"]
+        .iter()
+        .filter_map(|label| rest.find(label))
+        .min()
+        .unwrap_or(rest.len());
+    let limits = &rest[..end];
+    limits.match_indices("](").any(|(i, _)| {
+        limits[i + 2..]
+            .split(')')
+            .next()
+            .is_some_and(|target| target.contains(CATALOG))
+    })
 }
 
 #[cfg(test)]
@@ -243,5 +278,25 @@ mod tests {
         assert_eq!(heading_level("#[derive(Button)]"), None);
         assert_eq!(heading_level("####### seven"), None);
         assert_eq!(heading_level("###"), Some(3));
+    }
+
+    #[test]
+    fn q18_limits_link_the_catalog() {
+        let ok = [
+            "**Where:** x\n**Limits:** 40 ([catalog](../../../../../../docs/discord-rules.md#9-components-v2-messages)).\n**Builder:** y",
+            "**Limits:** see [CV2-04](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#9-components-v2-messages)",
+            "no label here",
+        ];
+        for body in ok {
+            assert!(limits_link_catalog(body), "{body:?}");
+        }
+        let bad = [
+            "**Limits:** 40, see docs/discord-rules.md.\n**Builder:** y",
+            "**Limits:** 40.\n**Where:** [catalog](docs/discord-rules.md)",
+            "**Limits:** 40 ([cheatsheet](limits-cheatsheet.md)).",
+        ];
+        for body in bad {
+            assert!(!limits_link_catalog(body), "{body:?}");
+        }
     }
 }

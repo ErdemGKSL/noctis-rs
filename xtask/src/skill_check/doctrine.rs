@@ -38,9 +38,11 @@ const UD1_CONTENT: &str = "[UD-1] content as handler output; return a View";
 const UD3_TYPE: &str = "[UD-3] manual response-type selection; send the rendered message with ctx.respond/ctx.update and let Noctis pick the response";
 const UD3_CALL: &str =
     "[UD-3] manual response through the Responder; use ctx.respond(msg) or ctx.update(msg)";
-const UD7_COLLECTOR: &str = "[UD-7] collectors are not allowed; one #[handler] per Route";
-const UD7_AWAIT: &str = "[UD-7] await-component loop; state goes in Payloads, Refs or ports";
-const UD7_LISTENER: &str = "[UD-7] inline listener; register a #[handler] for a Route";
+pub(super) const UD7_COLLECTOR: &str =
+    "[UD-7] collectors are not allowed; one #[handler] per Route";
+pub(super) const UD7_AWAIT: &str =
+    "[UD-7] await-component loop; state goes in Payloads, Refs or ports";
+pub(super) const UD7_LISTENER: &str = "[UD-7] inline listener; register a #[handler] for a Route";
 const UD7_SPAWN: &str = "[UD-7] task spawned per interaction or event; use a Ref TTL or a port";
 
 const RESPONSE_TYPES: &[&str] = &[
@@ -51,7 +53,7 @@ const RESPONSE_TYPES: &[&str] = &[
     "CallbackType",
     "ResponseType",
 ];
-const AWAIT_LOOPS: &[&str] = &[
+pub(super) const AWAIT_LOOPS: &[&str] = &[
     "wait_for",
     "wait_for_component",
     "wait_for_interaction",
@@ -109,7 +111,7 @@ fn lint(src: &str) -> Result<Vec<Finding>, String> {
 }
 
 /// The words of an ident (see the module docs).
-fn words(ident: &str) -> Vec<String> {
+pub(super) fn words(ident: &str) -> Vec<String> {
     let ident = ident.strip_prefix("r#").unwrap_or(ident);
     let mut out = Vec::new();
     for part in ident.split('_') {

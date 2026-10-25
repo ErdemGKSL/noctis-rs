@@ -332,7 +332,9 @@ submission.unknown();                                        // &[serde_json::Va
   The handler takes `(self, ctx: ModalSubmitCtx[, r: ModalResponder])`, or
   `ModalResponder<Manual>` with `#[modal(.., auto_defer = false)]` (§3.0).
   `ModalResponder` has no `show_modal()`: modals can't chain (INT-04, E0599).
-- Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
+- Noctis 0.1 has no per-field validation attribute on modal inputs: check the decoded
+  values in the `#[handler]` and answer a bad value with `HandlerError::user(key)` (or
+  re-render the View with the problem shown).
 
 ### 3.1 Downloading uploads
 
@@ -347,8 +349,9 @@ let bytes = form.files[0].download(&fetcher, &limits).await?;   // -> Result<Byt
 ```
 
 - `fetcher: &impl FileFetcher` (`fn fetch(&self, url: &str, max_bytes: u64) -> impl
-  Future<Output = Result<Bytes, Box<dyn Error + Send + Sync>>> + Send`); core supplies the
-  HTTP implementation [planned, Epic 7], tests pass a fake. A fetcher must fail (never
+  Future<Output = Result<Bytes, Box<dyn Error + Send + Sync>>> + Send`); Noctis 0.1 ships no
+  `FileFetcher` implementation: implement the trait in your bot over an HTTP client of
+  your choice, and pass a fake in tests. A fetcher must fail (never
   truncate) on a body over `max_bytes`, never read beyond it and never follow a redirect off
   the two CDN hosts.
 - Only `https://cdn.discordapp.com/` and `https://media.discordapp.net/` URLs are fetched
@@ -369,7 +372,7 @@ never a Route; the modal's own `custom_id` is.
 (`ModalInput`). Type 18. It is Discord's Label component; `noctis::ui::Label` is the
 unrelated checked button-label text.
 
-**Limits:** `label` 1–45, `description` ≤ 100 (MOD-04). A Label and its input cost 2
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) `label` 1–45, `description` ≤ 100 (MOD-04). A Label and its input cost 2
 components. Anything but the ten modal inputs fails `cargo check` with `[MOD-03] … cannot
 be a modal Label input`.
 
@@ -381,7 +384,7 @@ be a modal Label input`.
 **Where:** inside a `ModalLabel` only. Type 4. Never wrapped in an Action Row and never
 with a `label` of its own (the Label holds the text).
 
-**Limits:** `min_length` 0–4000, `max_length` 1–4000, `min_length ≤ max_length`, `value`
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) `min_length` 0–4000, `max_length` 1–4000, `min_length ≤ max_length`, `value`
 (pre-fill) ≤ 4000 and ≤ its own `max_length` (by `discord_len`), `placeholder` ≤ 100
 (MOD-05). Lenient mode truncates the placeholder, never the `value`: a too-long value is
 an error in both modes.
@@ -396,7 +399,7 @@ an error in both modes.
 **Where:** inside a `ModalLabel` only. Type 3. A message `StringSelect` is rejected with
 `[MOD-03]`.
 
-**Limits:** 1–25 `SelectOption`s, `placeholder` ≤ 150, `min_values` 0–25, `max_values`
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) 1–25 `SelectOption`s, `placeholder` ≤ 150, `min_values` 0–25, `max_values`
 1–25, `min_values(0)` only with `.required(false)` (CV2-09). No `disabled` method (MOD-03).
 
 **Builder:** `ModalStringSelect::new(key, options)` (options are `SelectOption`s),
@@ -407,7 +410,7 @@ an error in both modes.
 
 **Where:** inside a `ModalLabel` only. Type 5.
 
-**Limits:** as `ModalStringSelect` without options; `default_values` within
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) as `ModalStringSelect` without options; `default_values` within
 `min_values..=max_values` (CV2-09). No `disabled`.
 
 **Builder:** `ModalUserSelect::new(key)`, `.default_users(ids)`, plus `.placeholder`,
@@ -417,7 +420,7 @@ an error in both modes.
 
 **Where:** inside a `ModalLabel` only. Type 6.
 
-**Limits:** as `ModalUserSelect` (CV2-09). No `disabled`.
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) as `ModalUserSelect` (CV2-09). No `disabled`.
 
 **Builder:** `ModalRoleSelect::new(key)`, `.default_roles(ids)`, plus `.placeholder`,
 `.min_values`, `.max_values`, `.required`.
@@ -426,7 +429,7 @@ an error in both modes.
 
 **Where:** inside a `ModalLabel` only. Type 7 (users and roles).
 
-**Limits:** as `ModalUserSelect` (CV2-09). No `disabled`.
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) as `ModalUserSelect` (CV2-09). No `disabled`.
 
 **Builder:** `ModalMentionableSelect::new(key)`, `.default_users(ids)`,
 `.default_roles(ids)`, `.default_mentionables([MentionableId::User(id), MentionableId::Role(id)])`
@@ -436,7 +439,7 @@ an error in both modes.
 
 **Where:** inside a `ModalLabel` only. Type 8.
 
-**Limits:** as `ModalUserSelect` (CV2-09). No `disabled`.
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) as `ModalUserSelect` (CV2-09). No `disabled`.
 
 **Builder:** `ModalChannelSelect::new(key)`, `.default_channels(ids)`,
 `.channel_types([ChannelType::GuildText, …])` (appends; none = every type), plus
@@ -446,7 +449,7 @@ an error in both modes.
 
 **Where:** inside a `ModalLabel` only. Type 19.
 
-**Limits:** `min_values` 0–10 (0 only with `.required(false)`), `max_values` 1–10,
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) `min_values` 0–10 (0 only with `.required(false)`), `max_values` 1–10,
 `min ≤ max`, `file_types` ≤ 10 entries, each `image`, `video`, `audio` or `.ext` (MOD-06).
 Size is capped by the user's upload limit. URLs are **ephemeral**: download promptly
 with `ResolvedAttachment::download` (§3.1) and re-check the content type (MOD-09).
@@ -459,7 +462,7 @@ with `ResolvedAttachment::download` (§3.1) and re-check the content type (MOD-0
 
 **Where:** inside a `ModalLabel` only. Type 21. Submits one option or none.
 
-**Limits:** 2–10 options; each `ModalOption` label and value 1–100, description ≤ 100
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) 2–10 options; each `ModalOption` label and value 1–100, description ≤ 100
 (MOD-07); at most one option with `.default(true)` (MOD-07, both modes). The constructor
 accepts any count; `validate` rejects a wrong one. A
 `#[radio_group]` field's option count is checked at `cargo check` instead (§1.2).
@@ -472,7 +475,7 @@ accepts any count; `validate` rejects a wrong one. A
 
 **Where:** inside a `ModalLabel` only. Type 22.
 
-**Limits:** 1–10 options, `min_values` 0–10 (0 only with `.required(false)`),
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) 1–10 options, `min_values` 0–10 (0 only with `.required(false)`),
 `max_values` 1–10, `min ≤ max` (default max = option count); option text as Radio Group;
 the count of `.default(true)` options, when there is one, within `[min_values, max_values]`
 (MOD-07, both modes).
@@ -484,7 +487,7 @@ the count of `.default(true)` options, when there is one, within `[min_values, m
 
 **Where:** inside a `ModalLabel` only. Type 23.
 
-**Limits:** never required (MOD-07): it has no `required` method. For "must accept", use a
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) never required (MOD-07): it has no `required` method. For "must accept", use a
 one-option `CheckboxGroup` with `min_values(1)`.
 
 **Builder:** `Checkbox::new(key)`, `.default(bool)`. JSON:
@@ -503,7 +506,7 @@ and counts toward the 5. In a derived modal it is a `#[text_display("…")]` fie
 a `Modal` (`.into()`, `Modal::from(b)`) and `show_modal` takes it directly. Never store
 it across renders; build a new one each time.
 
-**Limits:** the converted `Modal` is validated with everything else before it is sent, in
+**Limits:** ([catalog §10](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/discord-rules.md#10-modals)) the converted `Modal` is validated with everything else before it is sent, in
 every Limit mode: title 1–45 (MOD-01), Label text ≤ 45 and description ≤ 100 (MOD-04), a
 Text Input placeholder ≤ 100 and a select's ≤ 150 (Lenient truncates these), a Text Input
 `value` ≤ 4000 and ≤ its `max_length` (MOD-05), a Checkbox Group's defaults within

@@ -53,7 +53,7 @@
 
 #[cfg(test)]
 mod audit;
-mod catalog;
+pub(crate) mod catalog;
 pub(crate) mod pending;
 mod scan;
 

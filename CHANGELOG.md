@@ -9,6 +9,28 @@ everything else bumps the patch version.
 
 ## [Unreleased]
 
+### Usage Skill (v1)
+
+- `xtask skill-check` gains a completeness check: the required references
+  (`concept-map.md`, `limits-cheatsheet.md`, `patterns.md`, `troubleshooting.md`) and
+  their headings, a `SKILL.md` reference index that lists every reference file, no
+  `planned`/`v0`/`Epic <n>`/`Story <n>.<m>` markers, a `## Rule id index` in
+  `troubleshooting.md` that lists every `docs/discord-rules.md` rule id in catalog order
+  with its meaning and fix, every id in `limits-cheatsheet.md`, a catalog link in every
+  component entry's `**Limits:**`, and UD-7 over the Rust examples of the skill's and
+  `docs/`'s Markdown. Success now ends with `, 135 rule ids indexed)`.
+- New references: `references/patterns.md` (patterns with short code, anti-patterns,
+  a common mistakes table with symptom, cause, fix and rule id) and
+  `references/concept-map.md` (tescord / dbi and serenity / poise → Noctis).
+- Every `[planned]` marker is resolved against the public API: the text now matches
+  the real signatures, or says plainly what Noctis 0.1 does not provide (no `Ctx`
+  trait, no `ctx.resolved()` on components, no `State<T>` parameters, no integer
+  choices, no `FileFetcher` implementation, …). `SKILL.md` drops its v0 banner.
+- UJ-5 agent trial (SM-3): in one round, 4 of 5 isolated agents built a leaderboard
+  feature on the first attempt, learning Noctis only from the template and the skill. The
+  gaps they hit are now covered: `Kv` key listing, YAML colon spacing, and `doc_markdown`
+  (`_bmad-output/implementation-artifacts/uj5-agent-trial-summary.md`).
+
 ### Rules catalog (v1 audit)
 
 - `xtask/rules-pending.toml` is empty, and every entry it may hold must now carry

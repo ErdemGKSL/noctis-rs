@@ -73,8 +73,9 @@ impl SetupStart {
 
 Answer with `ctx.respond(render_x(..))` (or `ctx.reply_text(key)` for a one-line
 notice; `responder.md` §1b, `views-and-recipes.md`). `CommandCtx` has no `update`
-(E0599, INT-04): a Command has no message to update. [planned] Extractors as further
-parameters.
+(E0599, INT-04): a Command has no message to update. The only further parameters are
+`Ext<T>` / `Option<Ext<T>>` from Middleware (`modules-middleware-ratelimits.md` §5) and
+the responder.
 
 Register it: `Module::new("setup").add::<SetupStart>()` (the derive also gives
 `SetupStart::descriptor() -> CommandHandler`). `CommandHandler` has `name()`
@@ -563,8 +564,8 @@ than 10, then each entry that isn't `image`, `video`, `audio` or `.` + ASCII let
 `.pdf`, `.PNG`, `.7z` pass, `pdf`, `.tar.gz`, `Image` fail); then OPT-01 for each required
 option after an optional one (``= note: after optional `b` ``); then CMD-06 per duplicate
 name, first-occurrence order (`= note: declared at positions 0, 2`). Orderings run only when
-both bounds passed their own checks. Localized option names are not validated here
-(LOC-02, planned).
+both bounds passed their own checks. Localized option names are not validated here: `i18n!`
+checks them at `cargo check` and `App::build` at build time (LOC-02, `i18n.md`).
 
 ### Choices
 
@@ -582,7 +583,8 @@ STRING, `CHOICES` = `[("Low", "Low"), ("High", "hi")]`, decoding by value; an un
 limit at most 100, actual 101 `` with notes `in the choice value` and `the same limit applies
 to modal and select options (MOD-07, CV2-09)`; an empty `value = ""` and descriptions stay
 MOD-07. The enum may have more than 25 variants (modal selects), but as an option field it
-fails OPT-08. Command choices are STRING only: integer/number choices are [planned].
+fails OPT-08. Command choices are STRING only: Noctis 0.1 has no integer or number choices; use an
+integer option with `min_value`/`max_value` instead.
 Localized choice names come from `cmd.<path>.opt.<opt>.choice.<value>` (`i18n.md` §4).
 
 ## 4. Autocomplete
@@ -856,7 +858,7 @@ Module state (`ctx.modules()`, `modules-middleware-ratelimits.md` §3) filters i
 Publish reloads the snapshot and leaves a Module's guild-scoped Commands out of each guild
 where it is disabled (an emptied base or group is dropped; `[REG-02]` is counted after
 that filter); global Commands stay published and answer the ephemeral
-`noctis.module.disabled` notice. A toggle never publishes by itself. [planned]
+`noctis.module.disabled` notice. A toggle never publishes by itself.
 
 ## 8. Handler context (`CommandCtx`)
 
@@ -884,8 +886,8 @@ Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` a
 subcommand names, in the scope Discord sends (`data.guild_id` → that guild, else global;
 no fallback between them). An unknown name logs `unknown command` on target
 `noctis::dispatch` and sends nothing. The span `noctis.interaction` records `module` and
-`path`. Calling a handler directly from bot tests is [planned]; never use
-`noctis::__private`.
+`path`. Noctis 0.1 does not let bot tests call a handler directly: drive it through
+`noctis::testkit::TestApp` (`testing.md`); never use `noctis::__private`.
 
 `ctx.kv() -> Kv` (your typed key-value data over the App's namespaced `CacheStore`;
 `adapters.md` §3) exists on `CommandCtx` (context menus too), `AutocompleteCtx` and
@@ -914,9 +916,11 @@ Every context also has `cache() -> DiscordCacheReader`, the Discord resource cac
 `extend`, `reset` on a declared `rate_limit(..)` scope
 (`modules-middleware-ratelimits.md` §7).
 
-[planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
-`render(..)`, `gateway()`, `app_permissions()`, `member()`.
-Command-only: `attachment_size_limit()`.
+Noctis 0.1 has no shared context trait (there is no `Ctx`) and no `user()`,
+`member()`, `app_permissions()` or `attachment_size_limit()` accessor: each context has
+the accessors listed above (`ctx.render(..)` and `ctx.gateway()` included). Load the
+user or member with `ctx.cache().user(ctx.user_id())` / `ctx.cache().member(guild,
+user)`, and read the upload limit from `ctx.limits().attachment_bytes`.
 
 ## 9. Prefix commands (`prefix` feature, P2)
 

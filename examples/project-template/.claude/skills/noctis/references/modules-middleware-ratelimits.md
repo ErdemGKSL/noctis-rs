@@ -19,7 +19,7 @@ pub fn module() -> Module {
         .group("profile badges", "Manage badges")   // subcommand group description
         .add::<OpenProfile>()              // #[derive(Button)]: this Module handles its clicks
         .uses::<ToggleModule>()            // a Route its Views render, handled by another Module
-        .template::<ProfileCard>()         // image Templates [planned]
+        .template::<ProfileCard>()         // image Templates (`images.md`)
         .locales(profile_strings::catalog())   // Module-scoped strings (App-wide keys)
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // Middleware (§5)
         .after(Middleware::after(audit))
@@ -665,8 +665,8 @@ builder
 - A cancelled handler also counts in `noctis_handler_errors_total{kind="event"}`.
 - Lifecycle Hook errors, panics and end-of-run cancellations report as `Hook`
   (`LogSink` target `noctis::hook`, `event_type` = the hook event's `NAME`;
-  `app-and-sharding.md` §7). The user-facing localized ephemeral error for interactions arrives with
-  Epic 6 [planned].
+  `app-and-sharding.md` §7). A failing interaction handler also shows the user one localized ephemeral
+  error notice (`responder.md` §5).
 
 ## 7. Rate limits (FR-46)
 

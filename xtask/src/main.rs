@@ -10,8 +10,10 @@
 //!   `cargo public-api` into `xtask/public-api.txt` and fails when the committed
 //!   file is stale (FR-49, NFR-8, AD-27).
 //! - `skill-check [--root <path>]`: checks that the Noctis Usage Skill mentions
-//!   every snapshot item and carries its API hash, and lints the Project
-//!   Template for UI Doctrine violations (FR-49, FR-50, AD-17, AD-28).
+//!   every snapshot item and carries its API hash, that it is complete
+//!   (required references, rule id index, no planning markers), and lints the
+//!   example crates and Markdown Rust examples for UI Doctrine violations
+//!   (FR-49, FR-50, AD-17, AD-28).
 //! - `tw-grammar [--check]`: generates `crates/noctis-image/src/tw/generated.rs`
 //!   from the pinned takumi-core sources and the closed suffix table; `--check`
 //!   fails when the committed file is stale (FR-32, FR-66, AD-15, AD-28).
@@ -39,8 +41,10 @@ tasks:
       check that xtask/public-api.txt matches the facade's public API
       (needs cargo-public-api 0.52.0 on nightly-2026-10-15); --bless rewrites it
   skill-check [--root <path>]
-      check the Usage Skill against xtask/public-api.txt and lint the Project
-      Template for UI Doctrine violations (default root: the noctis-rs repo)
+      check the Usage Skill against xtask/public-api.txt and
+      docs/discord-rules.md (references, rule id index, no planning markers)
+      and lint the examples for UI Doctrine violations (default root: the
+      noctis-rs repo)
   tw-grammar [--check]
       generate crates/noctis-image/src/tw/generated.rs from the pinned
       takumi-core sources; --check fails if the committed file is stale

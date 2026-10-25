@@ -130,7 +130,8 @@ Locale, default `en-US`). `CommandRun`, `MenuRun` and `AutocompleteRun` add
   `radio(key, value)`, `checkbox(key, bool)`. Unset inputs send their pre-filled value
   or nothing. A required text input left empty or a text outside its length bounds is
   `InvalidInput`; an unknown key is `UnknownInput`; the wrong setter is `WrongInput`; a
-  File Upload is `Unsupported` ([planned]). A form opened from a component
+  File Upload is `Unsupported`: the testkit cannot fill a File Upload input (an optional
+  one is submitted empty). A form opened from a component
   keeps that component's message, so the submit can `ctx.update(..)` it.
 
 ## 4. Assertions on a response
