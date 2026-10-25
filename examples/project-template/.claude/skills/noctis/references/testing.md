@@ -256,7 +256,8 @@ use noctis::testkit::{TestApp, Tolerance, assert_render_snapshot};
 #[tokio::test(flavor = "multi_thread")]
 async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
     // Your own `configure`: its `.theme(..)`/`.image(..)` install the ImagePlugin, which puts
-    // the Renderer on the App exactly as in production; register fonts explicitly there.
+    // the Renderer on the App exactly as in production (bundled `default-font` or your
+    // `ImageConfig::font(..)` fonts: never a font that differs between machines).
     let app = TestApp::build(configure(&mut App::builder())).await?;
     let card = ProfileCard {
         name: "Deniz".into(),
@@ -304,8 +305,9 @@ async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
   update mode wins over `CI`.
 - **Names.** 1..=64 bytes of `[A-Za-z0-9_-]` (no dots, slashes or spaces), checked before
   rendering; keep each name unique in the crate, since all tests share one directory.
-- **Determinism.** Register your fonts explicitly with `ImageConfig::font(..)` (the same
-  font file on every machine), use `RemoteImage::placeholder()` for `#[asset]` fields so
+- **Determinism.** Use the bundled `default-font` or fonts registered with
+  `ImageConfig::font(..)`; both are the same on every machine (avoid any font that
+  differs between machines). Use `RemoteImage::placeholder()` for `#[asset]` fields so
   no network is needed, and a small tolerance (`0.01`) absorbs antialiasing differences.
   A downscaled render (the size budget shrank it) fails: snapshots compare the declared
   size. Runtime class strings with unknown Tailwind classes are errors on a test Runtime,

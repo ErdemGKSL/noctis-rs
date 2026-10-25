@@ -33,6 +33,11 @@ sed -i -E \
   -e "s/^takumi = \{ version = \"=[^\"]+\"/takumi = { version = \"=${takumi}\"/" \
   -e "s/^takumi-core = \{ version = \"=[^\"]+\"/takumi-core = { version = \"=${takumi_core}\"/" \
   Cargo.toml
+if ! grep -qF "takumi = { version = \"=${takumi}\"" Cargo.toml ||
+  ! grep -qF "takumi-core = { version = \"=${takumi_core}\"" Cargo.toml; then
+  echo "- FAIL: pin rewrite (Cargo.toml pin lines did not match)" >>"$summary"
+  exit 0
+fi
 
 run() {
   local label="$1"

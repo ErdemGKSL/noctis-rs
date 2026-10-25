@@ -5,7 +5,7 @@
 //! `noctis-image` itself, AD-24) as a still PNG, decodes it with `png` and
 //! compares it with `<dir>/<name>.png` pixel by pixel.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
@@ -120,9 +120,14 @@ pub(crate) struct SnapshotEnv {
 impl SnapshotEnv {
     /// Reads `NOCTIS_UPDATE_SNAPSHOTS` and `CI`.
     pub(crate) fn from_env() -> Self {
+        Self::from_lookup(|name| std::env::var_os(name))
+    }
+
+    /// Reads `NOCTIS_UPDATE_SNAPSHOTS` and `CI` through `get`.
+    pub(crate) fn from_lookup(get: impl Fn(&str) -> Option<OsString>) -> Self {
         Self {
-            update: flag(std::env::var_os("NOCTIS_UPDATE_SNAPSHOTS").as_deref()),
-            ci: flag(std::env::var_os("CI").as_deref()),
+            update: flag(get("NOCTIS_UPDATE_SNAPSHOTS").as_deref()),
+            ci: flag(get("CI").as_deref()),
         }
     }
 }

@@ -2,10 +2,10 @@
 title: 'Story 10.11: Pixel snapshots and the reference card benchmark'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2b1cfce38cf2733733716233258cec3178d9b79f'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -14,7 +14,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/macros.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/api-design.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Story 14.2 must generate and commit examples/project-template/tests/snapshots/profile_card.png once the template crate builds.
+    evidence: |-
+      Story 10.11 reconciles examples/project-template/tests/templates.rs to the real assert_render_snapshot! API but commits no snapshot (the template does not build until 14.2). Under CI=true a missing snapshot fails with "missing snapshot (CI)", so the template's test fails as soon as it joins the gate unless 14.2 runs it locally first and commits the PNG.
+    location: >-
+      examples/project-template/tests/templates.rs:27
+    severity: low
 ---
 
 <intent-contract>
@@ -233,6 +240,44 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 34 findings — high 0, medium 4, low 21, false 9, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `latest-takumi.sh` never checks that the `sed` pin rewrite matched, so a reformatted pin line yields a false green against the old takumi — verified at `latest-takumi.sh:32-35` (no check after sed); patch: fail loudly in the summary when the new pins are absent.
+  - `[low]` `[reject]` (blind) `cargo search --limit 1` may rank another crate first or report a pre-release — `cargo search takumi`/`takumi-core` rank the exact name first today (checked); the pre-release case is hypothetical and the job is report-only, and the fix (crates.io API) adds machinery.
+  - `[low]` `[reject]` (blind) latest-takumi runs only build, grammar, tw_crosscheck and the snapshot, not the full noctis-image suite — the spec's step 11 and AD-28 name exactly these checks; any real bump commit runs the full `ci.yml` Test job anyway.
+  - `[low]` `[reject]` (blind) bench results go only to the job log, not `$GITHUB_STEP_SUMMARY` — report-only until Story 14.3 and visible in the log; adding summary plumbing is an enhancement, not a defect.
+  - `[low]` `[reject]` (blind) a failing `.new.png` write replaces the real diagnosis with `Io` — needs a read-only or full checkout, rare and still loud; the fix adds error-combining branches.
+  - `[low]` `[reject]` (blind) float tolerance boundary (`0.29*100 = 28.999…`) rejects exactly-at-ratio counts — the code implements the spec's formula verbatim; it bites only when `ratio*total` is an exact integer, unlikely in everyday use.
+  - `[low]` `[reject]` (blind) `impl From<f64> for Tolerance` can panic, against C-CONV — mandated by the spec; out-of-range is a programmer error reported with `#[track_caller]`, and changing it reshapes public API.
+  - `[low]` `[reject]` (blind) `Outcome` is discarded, so Written/Updated pass silently; `check_name` runs twice — silent update is the documented update-mode behaviour; the double check is harmless; the fix adds output nobody asked for.
+  - `[low]` `[reject]` (blind) fully transparent pixels with different RGB count as differing — the spec defines differing on raw RGBA; a spurious failure would be loud and fixed with update mode.
+  - `[low]` `[patch]` (blind) test gaps: no test reaches `DecodeRendered`, palette/low-bit expansion, `Io` paths or the `render_snapshot` panics — grouped with the vgap DecodeRendered and panic-path gaps; patch: add the undecodable-render test (palette/Io parts not patched).
+  - `[low]` `[patch]` (blind) the reference card is tied to the template's view and theme only by a comment — verified the theme files are identical and the template's `view.rs` contains every class literal today, but nothing enforces it; patch: a drift test in `crates/noctis/tests/reference_card.rs`.
+  - `[low]` `[patch]` (blind) the skill says "register fonts explicitly" while the template's `configure` relies on the bundled `default-font` — verified at `testing.md:259,307` and `images.md:822` vs `templates.rs:17`; patch: reword the skill so the bundled default font counts as deterministic.
+  - `[low]` `[defer]` (blind) no `profile_card.png` is committed for the template, so its test will fail "missing snapshot (CI)" once Story 14.2 builds it — intent and spec exclude the template's own snapshot until 14.2; deferred so 14.2 generates and commits it.
+  - `[low]` `[reject]` (blind) T clients on T threads understate saturated latency; large xp labels widen text — the spec's Design Notes choose clients = threads deliberately (no queue wait); the label width difference is negligible.
+  - `[low]` `[patch]` (edge) with `NOCTIS_UPDATE_SNAPSHOTS=1`, the second `fake_card` call in `tests/render_snapshot.rs` stores shade 122 and the next normal EXACT shade-120 run fails — verified at `render_snapshot.rs:89-96`; patch: run the shade-122 call first so update mode leaves shade 120 stored.
+  - `[medium]` `[patch]` (edge) sed pin rewrite unchecked in `latest-takumi.sh` — same root cause as the blind sed finding; same patch.
+  - `[false]` `[reject]` (edge) `cargo search` ranks another crate first for `takumi` — `cargo search takumi --limit 3` returns `takumi` first (checked 2026-10-24), and the sed filter keys on the exact name.
+  - `[false]` `[reject]` (edge) a failed `cargo update` leaves later steps passing misleadingly — the later `cargo build`/`test` run without `--locked` and re-resolve against the rewritten `=` pins, so they fail too rather than pass.
+  - `[false]` `[reject]` (edge) `percentile` with pct > 100 indexes out of bounds — the private fn is called only with the constants 50 and 99.
+  - `[low]` `[reject]` (edge) a non-NotFound read error of the stored file writes no `.new.png` — the spec writes `.new.png` only on a mismatch or decode failure; the `Io` error is loud and rare.
+  - `[low]` `[reject]` (edge) names differing only by case collide on case-insensitive filesystems — unlikely in practice, and a new name rule adds surface the spec did not ask for.
+  - `[low]` `[reject]` (edge) env values `no`/`off`/`FALSE` count as on — the spec's matrix fixes the off set (`""`, `"0"`, `"false"`); setting the update flag to "off" is unusual.
+  - `[low]` `[reject]` (edge) T clients for T pool threads is not a saturated pool — grouped with the blind saturation finding; deliberate spec design.
+  - `[medium]` `[patch]` (vgap) the `render_snapshot` panic path is never exercised, so a regression that swallows errors would pass every test — pre-verified; patch: `#[should_panic]` tests calling `render_snapshot` with a differing render and with no Renderer.
+  - `[low]` `[patch]` (vgap) `SnapshotEnv::from_env`'s variable names are untested — pre-verified; patch: have `from_env` delegate to a `pub(crate)` lookup-taking helper and unit-test that it reads `NOCTIS_UPDATE_SNAPSHOTS` and `CI` (no env mutation, `unsafe_code` is denied).
+  - `[low]` `[patch]` (vgap) the undecodable-render (`DecodeRendered`) branch has no test — pre-verified; patch: `an_undecodable_render_fails_and_writes_new_png` under `LOCAL` and update mode.
+  - `[false]` `[reject]` (intent) on CI the first run does not write the snapshot — deliberately and correctly settled by the spec's CI guard (Design Notes, matrix "Missing, CI").
+  - `[false]` `[reject]` (intent) the reference card is a hand-lowered copy, not macro output — the spec's Design Notes settle this deliberately (noctis-image cannot depend on the facade); drift risk is handled by the drift-test patch.
+  - `[false]` `[reject]` (intent) "pool saturated" measured with clients = threads — deliberately settled in the spec's Design Notes.
+  - `[false]` `[reject]` (intent) `tolerance = 0.01` lets a takumi bump change up to 1 % of pixels unnoticed — FR-51 requires a tolerance and the spec fixes 0.01 for this test deliberately.
+  - `[false]` `[reject]` (intent) `examples/` Template snapshots are not exercised by the gate — the only `examples/` Template is the Project Template's, which the intent defers to Story 14.2.
+  - `[low]` `[patch]` (intent) `templates.rs` and the skill example are not compile-checked, and `templates.rs` says "default font" while the skill says "register fonts explicitly" — the compile-check part is settled by the spec's Never rule (template builds in 14.2); the font conflict is real and grouped with the blind font finding; same patch.
+  - `[medium]` `[patch]` (intent) latest-takumi can report pass without testing the newest takumi — same root cause as the blind sed finding; same patch.
+  - `[false]` `[reject]` (intent) `$crate::__private` in `assert_render_snapshot!` vs AD-2's `::noctis::__private` rule — AD-2 targets proc-macro output; `$crate` resolves through the facade's re-export for bot authors who depend only on `noctis`.
+
 ## Design Notes
 
 - **Why a hand-written card.** `#[derive(Template)]` and `view!` expand to `::noctis::__private::…` (`template.rs:206`, `view.rs:417`). A `noctis` dev-dependency of `noctis-image` would unify `render` into every `noctis-image` test build, and it would compile the crate twice. The card therefore mirrors the expansion by hand:
@@ -274,3 +319,17 @@ deferred: []
 - `cargo bench -p noctis-image --features render --bench reference_card` (cloud container, T = 2 threads, 2 clients, 1000 samples): min 4.530 ms, mean 7.711 ms, **p50 6.518 ms**, **p99 15.934 ms**, max 25.287 ms; both within budget (10 / 50 ms, report only).
 - Committed snapshots: `crates/noctis/tests/snapshots/reference_card.png` (first run, then re-run twice against it) and `crates/noctis-testkit/tests/snapshots/fake_card.png`.
 - `*.new.png` is ignored in the repository and in the Project Template.
+
+## Auto Run Result
+
+- **Summary:** Adds FR-51 pixel snapshots to `noctis-testkit` (`assert_render_snapshot!`/`render_snapshot`, `Tolerance`, `SnapshotEnv` with `NOCTIS_UPDATE_SNAPSHOTS`/`CI` matrix, `.new.png` on mismatch, no writes on CI), a committed reference-card snapshot test in the facade, a `reference_card` bench in `noctis-image` with budgets in `crates/noctis-core/benches/budgets.toml`, and the report-only latest-takumi job (`.github/scripts/latest-takumi.sh`, disabled workflows).
+- **Files changed:**
+  - `crates/noctis-testkit/src/snapshot.rs`, `snapshot/tests.rs`, `tests/render_snapshot.rs`, `tests/snapshots/fake_card.png`, `src/lib.rs`, `src/app.rs`, `Cargo.toml` — snapshot API, tests and fixture.
+  - `crates/noctis/src/lib.rs`, `tests/reference_card.rs`, `tests/snapshots/reference_card.png` — facade re-export, reference-card snapshot and template drift test.
+  - `crates/noctis-image/benches/reference_card.rs`, `benches/reference_card/{card.rs,noctis-theme.css}`, `Cargo.toml`; `crates/noctis-core/benches/budgets.toml` — reference-card benchmark and budgets.
+  - `.github/scripts/latest-takumi.sh`, `.github/workflows-disabled/{ci.yml,main.yml}` — latest-takumi job and gates.
+  - `examples/project-template/` (skill SKILL.md, images.md, testing.md, AGENTS.md, .gitignore, tests/templates.rs); `xtask/public-api.txt` — template, Usage Skill and API snapshot.
+- **Review findings:** 34 findings (high 0, medium 4, low 21, false 9). Patched: 4 medium (sed pin rewrite unchecked x3 same root cause; `render_snapshot` panic path untested) and 6 low (DecodeRendered test, reference-card drift test, font wording in skill, update-mode shade ordering, `from_env` variable-name test, font conflict grouped). Deferred: 1 (template `profile_card.png` to Story 14.2). Rejected: 23, each with its recorded reason in the Review Triage Log (spec-settled design, hypothetical or report-only cases).
+- **Follow-up review recommended:** true — first pass patched 4 medium entries; unverified risk: the new pin-rewrite check in `latest-takumi.sh` only runs in the disabled CI job and is not exercised by any local gate.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV); CI paused by maintainer.
+- **Residual risks:** latest-takumi script untested until CI returns; the Project Template's own snapshot is missing until Story 14.2; bench budgets are report-only until Story 14.3.

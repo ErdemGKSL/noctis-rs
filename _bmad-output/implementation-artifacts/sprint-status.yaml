@@ -134,7 +134,7 @@ development_status:
   10-8-remote-image-fetching-through-the-assetfetcher: done
   10-9-emoji-rendering: done
   10-10-render-cache-and-single-flight-deduplication: done
-  10-11-pixel-snapshots-and-the-reference-card-benchmark: in-progress
+  10-11-pixel-snapshots-and-the-reference-card-benchmark: done
   epic-10-retrospective: optional
 
   epic-11: done

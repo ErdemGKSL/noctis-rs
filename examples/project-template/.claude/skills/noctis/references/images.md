@@ -819,7 +819,8 @@ The Template (registered with `Module::template::<T>()`) is rendered as a still 
 compared with `tests/snapshots/<name>.png` within a `Tolerance` (a share of differing
 pixels, plus `.channel(d)` per-channel slack); the first run writes the file (commit it),
 a mismatch writes `<name>.new.png` and fails, `NOCTIS_UPDATE_SNAPSHOTS=1` rewrites it,
-and on `CI` a missing snapshot fails. Register fonts explicitly and use
+and on `CI` a missing snapshot fails. Use the bundled `default-font` or fonts registered
+with `ImageConfig::font(..)` (never a font that differs between machines) and
 `RemoteImage::placeholder()` so renders are deterministic and offline. See `testing.md` §6.
 
 ## 12. Unstable

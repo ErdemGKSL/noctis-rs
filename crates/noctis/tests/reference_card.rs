@@ -28,6 +28,20 @@ fn reference_card_classes_are_valid() {
     }
 }
 
+/// The card's theme is the Project Template's verbatim, and its class
+/// strings are the template's profile view node for node.
+#[test]
+fn reference_card_matches_the_project_template() {
+    assert_eq!(
+        include_str!("../../noctis-image/benches/reference_card/noctis-theme.css"),
+        include_str!("../../../examples/project-template/noctis-theme.css"),
+    );
+    let view = include_str!("../../../examples/project-template/src/modules/profile/view.rs");
+    for classes in card::CLASS_STRINGS {
+        assert!(view.contains(&format!("\"{classes}\"")), "{classes}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn reference_card_matches_snapshot() -> Result<(), Box<dyn std::error::Error>> {
     let app = TestApp::build(card::configure(&mut App::builder())?).await?;

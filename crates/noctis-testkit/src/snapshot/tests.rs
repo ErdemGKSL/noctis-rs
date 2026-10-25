@@ -582,3 +582,87 @@ async fn the_job_is_forced_to_a_still_png_without_a_budget() {
     assert_eq!(last.animation, None);
     assert_eq!(last.upload_budget, u64::MAX);
 }
+
+#[tokio::test]
+async fn an_undecodable_render_fails_and_writes_new_png() {
+    let update = SnapshotEnv {
+        update: true,
+        ci: false,
+    };
+    for env in [LOCAL, update] {
+        let dir = Dir::new();
+        let fake = Fake::png(b"junk".to_vec(), Size::new(10, 10));
+        let message = run(&fake, "card", Tolerance::EXACT, &dir, env)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("cannot decode the rendered PNG"),
+            "{message}"
+        );
+        assert_eq!(std::fs::read(dir.file("card.new.png")).unwrap(), b"junk");
+        assert!(!dir.file("card.png").exists(), "{env:?}");
+    }
+}
+
+#[test]
+fn env_reads_exactly_its_two_variables() {
+    let lookup = |vars: &'static [&'static str]| {
+        move |name: &str| vars.contains(&name).then(|| OsString::from("1"))
+    };
+    assert_eq!(
+        SnapshotEnv::from_lookup(lookup(&[])),
+        SnapshotEnv::default()
+    );
+    assert_eq!(
+        SnapshotEnv::from_lookup(lookup(&["NOCTIS_UPDATE_SNAPSHOTS"])),
+        SnapshotEnv {
+            update: true,
+            ci: false
+        }
+    );
+    assert_eq!(
+        SnapshotEnv::from_lookup(lookup(&["CI"])),
+        SnapshotEnv {
+            update: false,
+            ci: true
+        }
+    );
+    assert_eq!(
+        SnapshotEnv::from_lookup(lookup(&["UPDATE_SNAPSHOTS", "NOCTIS_CI", "ci"])),
+        SnapshotEnv::default()
+    );
+}
+
+/// `render_snapshot` panics on a differing render (the stored file exists,
+/// so `CI` does not matter).
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic(expected = "differs")]
+async fn render_snapshot_panics_on_a_mismatch() {
+    let dir = Dir::new();
+    write(&dir.file("card.png"), &rgba(10, 10, &base(10, 10))).unwrap();
+    let fake = Fake::png(changed(1, 1), Size::new(10, 10));
+    render_snapshot(
+        &fake,
+        "card",
+        Animated,
+        Tolerance::EXACT,
+        dir.0.to_str().unwrap(),
+    )
+    .await;
+}
+
+/// `render_snapshot` panics without a Renderer before any file access.
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic(expected = "no Renderer")]
+async fn render_snapshot_panics_without_a_renderer() {
+    let dir = Dir::new();
+    render_snapshot(
+        None::<&Arc<dyn Renderer>>,
+        "card",
+        Animated,
+        Tolerance::EXACT,
+        dir.0.to_str().unwrap(),
+    )
+    .await;
+}

@@ -85,15 +85,17 @@ async fn a_testapp_snapshots_through_its_renderer() -> Result<(), TestError> {
         .module(Module::new("cards").template::<FakeCard>());
     let app = TestApp::build(&mut builder).await?;
     assert!(Arc::ptr_eq(app.renderer().unwrap(), &fake));
-    // The committed `tests/snapshots/fake_card.png` (written by the first run).
-    assert_render_snapshot!(app.renderer(), "fake_card", FakeCard { shade: 120 });
-    // One channel off by 2 everywhere: within a channel delta of 2 only.
+    // The committed `tests/snapshots/fake_card.png` holds shade 120. One
+    // channel off by 2 everywhere: within a channel delta of 2 only.
     assert_render_snapshot!(
         app.renderer(),
         "fake_card",
         FakeCard { shade: 122 },
         tolerance = Tolerance::ratio(0.0).channel(2),
     );
+    // The exact match runs last, so `NOCTIS_UPDATE_SNAPSHOTS=1` leaves
+    // shade 120 stored.
+    assert_render_snapshot!(app.renderer(), "fake_card", FakeCard { shade: 120 });
     app.stop().await
 }
 
