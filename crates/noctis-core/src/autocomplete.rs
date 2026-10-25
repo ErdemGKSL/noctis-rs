@@ -19,6 +19,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
 use noctis_i18n::Builtin;
 use noctis_rules::command::{Choice, ChoiceValue, OptionType, validate_autocomplete};
@@ -657,7 +658,8 @@ where
         let typed = ctx.focused().value().to_owned();
         let filled = <Partial<S> as PartialOptions>::__from_input(input);
         let fut = f(ctx, typed, filled);
-        Box::pin(async move { fut.await.__lower() })
+        // A `map` combinator: an async block would store `fut` twice.
+        Box::pin(fut.map(__SuggestionsFor::__lower))
     };
     __AutocompleteMethod {
         name,

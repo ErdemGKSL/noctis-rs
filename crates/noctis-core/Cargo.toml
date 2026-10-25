@@ -49,6 +49,12 @@ toml.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 
 [[bench]]
+name = "dispatch_latency"
+path = "benches/dispatch_latency/main.rs"
+harness = false
+test = true
+
+[[bench]]
 name = "memory_per_guild"
 path = "benches/memory_per_guild/main.rs"
 harness = false
@@ -56,6 +62,11 @@ harness = false
 [[bench]]
 name = "pipeline"
 path = "benches/pipeline.rs"
+harness = false
+
+[[test]]
+name = "interaction_alloc"
+path = "tests/interaction_alloc.rs"
 harness = false
 
 [[test]]

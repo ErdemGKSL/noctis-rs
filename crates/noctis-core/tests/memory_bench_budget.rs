@@ -87,7 +87,7 @@ fn u1_real_file_parses() {
     let budgets = real();
     assert_eq!(budgets.nfr, "NFR-1");
     assert_eq!(budgets.guilds(), 10_000);
-    assert!(!budgets.gate);
+    assert!(budgets.gate);
     assert_eq!(budgets.framework_bytes_per_guild.max, Some(1024));
     assert_eq!(budgets.discord_cache_bytes_per_guild.max, None);
     assert_eq!(budgets.render_cache_bytes.max, Some(67_108_864));
@@ -276,7 +276,7 @@ fn u15_markdown_golden() {
     let expected = "\
 ## Memory per idle guild (NFR-1)
 
-10000 idle guilds through FakeGateway; Discord cache: GUILD | CHANNEL | ROLE (no members, no messages); gate: off (reporting until Story 14.3)
+10000 idle guilds through FakeGateway; Discord cache: GUILD | CHANNEL | ROLE (no members, no messages); gate: on (over-budget rows fail the run)
 
 | Metric | Measured | Budget | Status |
 |---|---|---|---|

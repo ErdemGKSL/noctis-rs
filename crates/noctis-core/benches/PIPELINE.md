@@ -6,11 +6,18 @@ optimization. Stories 16.2 and 16.3 compare against these numbers and update
 this file; Story 16.2's numbers follow the baseline in
 [Story 16.2](#story-162-partitioned-lanes-parallel-drain-per-guild-fifos), and
 Story 16.3's follow them in
-[Story 16.3](#story-163-per-event-and-per-handler-overhead).
+[Story 16.3](#story-163-per-event-and-per-handler-overhead), and Story
+14.3's NFR-3 gate and per-interaction allocations are in
+[Story 14.3](#story-143-dispatch-latency-and-per-interaction-allocations).
 
-**Not a gate.** No number here gates CI or the story loop: no gate runs the
-bench and `benches/budgets.toml` has no `[pipeline]` table. Story 14.3 sets
-budgets; Stories 16.2/16.3 compare against these numbers.
+**The NFR-3 gate is `dispatch_latency`.** Since Story 14.3 the
+`dispatch_latency` bench (same fixtures, recorder, run and statistics
+modules, included by path; the AD-25 mix at a fixed 10 000 events/s, 4
+workers, P = 4, median p99 of 3 runs) gates NFR-3 against
+`[dispatch_latency]` in `benches/budgets.toml` on `main`
+([Story 14.3](#story-143-dispatch-latency-and-per-interaction-allocations)).
+The `pipeline` bench itself still gates nothing: no gate runs it and
+`budgets.toml` has no `[pipeline]` table.
 
 ## Machine
 
@@ -436,6 +443,72 @@ run-to-run spread (Story 16.2 saw the P = 1 push cost vary 145-294 ns/item
 between runs). Reaching 1.3× would need fewer task spawns per event (running a
 single concurrent handler inside the drain task, or batching jobs), which
 changes the AD-10 worker contract and is out of this story's scope.
+
+## Story 14.3: dispatch latency and per-interaction allocations
+
+### Machine
+
+- CPUs: 4 (`nproc`), Intel(R) Xeon(R) Processor @ 2.10GHz (`/proc/cpuinfo`)
+- rustc: `rustc 1.97.0 (2d8144b78 2026-07-07)`
+- OS: Ubuntu 24.04.5 LTS, Linux 6.18.44 (cloud container, shared host)
+
+### Commit
+
+`40e090b9b5c032cab8a5b690ffa7dfae4f73eefb` plus Story 14.3's changes (measured
+on the working tree that became the Story 14.3 commit).
+
+### `dispatch_latency` (the NFR-3 gate)
+
+```sh
+cargo bench -p noctis-core --bench dispatch_latency
+```
+
+The same fixtures, recorder, run and statistics modules as `pipeline`, with
+the AD-25 mix at a fixed 10 000 events/s, P = 4 producers on a 4-worker
+runtime (4 lane partitions), 3 runs of 5 measured seconds after a 1 s
+warm-up each; the gated values are the median of the runs' p99. The budget
+verification run (gate on) printed:
+
+| Metric | Measured µs | Budget µs | Status |
+|---|---|---|---|
+| Event p99 | 148.8 | <= 1000 | ok |
+| Interaction p99 | 259.7 | <= 1000 | ok |
+| Event p50 | 22.8 | - | reported |
+| Event p99.9 | 405.7 | - | reported |
+| Interaction p50 | 90.3 | - | reported |
+| Interaction p99.9 | 900.9 | - | reported |
+
+Per-run p99 µs: events 135.1, 148.8, 199.0; interactions 243.6, 259.7,
+304.9; lowest achieved rate 9998 events/s; worst schedule lag 8779.2 µs.
+The first measurement, which set the budgets per the Q3 rule, gave event
+p99 164.4 µs (runs 191.9, 164.4, 162.0) and
+interaction p99 284.7 µs (runs 316.2, 265.2, 284.7): NFR-3's 1 ms is met, so
+both budgets stay 1000 µs.
+
+### Allocation counts (`tests/interaction_alloc.rs`)
+
+`cargo test --release -p noctis-core --test interaction_alloc`: heap blocks
+and bytes from `InboundSink::push` to the handler's first statement (min of 7
+windows after 3 warm-ups, one-worker runtime, `DiscordCacheConfig::none()`),
+and the `RefStore` calls in the same window (a counting wrapper of
+`MemoryRefStore`; they must hold in every window). The block counts are the
+test's `RECORDED` constants; its docs itemize every block.
+
+| Case | Blocks | Bytes | RefStore ops |
+| --- | ---: | ---: | ---: |
+| `component_inline` (inline `u64` Button) | 12 | 19160 | 0 |
+| `component_by_ref` (`by_ref` Button) | 16 | 19367 | 1 (`get`) |
+| `command` (`/seq`, one integer option) | 88 | 26246 | 0 |
+| `component_inline_big` (+ `[u8; 16384]` across an await) | 12 | 35552 | 0 |
+| `command_big` (+ `[u8; 16384]` across an await) | 88 | 42647 | 0 |
+
+The `_big` twins cost the same blocks as their small twins and 16 392 / 16 401
+more bytes: the handler future is allocated once. Before Story 14.3 the
+handler future was wrapped in `async move { fut.await.map(..) }`, whose state
+held the moved-in future twice: the twins then measured 32 784 / 32 793 more
+bytes (and `component_inline` 20 560 bytes, `command` 27 654).
+The command's 88 blocks are mostly (71) the `serde_json::Value` tree
+`CommandInput::from_json` builds from the whole raw interaction.
 
 ## Method notes
 

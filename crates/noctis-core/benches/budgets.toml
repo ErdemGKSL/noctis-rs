@@ -1,14 +1,17 @@
 # Noctis performance budgets (AD-25, AD-28). One top-level table per bench;
 # each bench reads only its own table and prints its measured statistics next
-# to these budgets. Budgets are report-only until Story 14.3 confirms the
-# numbers and decides which ones gate (PRD Q3): with `gate = false` an
-# over-budget run prints a line and still exits 0; `gate = true` makes it
-# exit 1. Story 14.3 adds its benches' tables here.
+# to these budgets. Every table gates since Story 14.3 (PRD Q3): with
+# `gate = true` an over-budget metric makes the bench exit 1; `gate = false`
+# would only print a line and exit 0. A budget the measurement met stays the
+# PRD target; a missed one is re-set to the measurement + 10 % and its note
+# names the target. NFR-9 allocation budgets are not here: they are exact
+# pins in noctis-core/tests/{pipeline_alloc,interaction_alloc}.rs,
+# noctis/tests/alloc_dispatch.rs and noctis-codec/tests/alloc_decode.rs.
 
 [memory_per_guild]
 nfr = "NFR-1"
 guilds = 10000
-gate = false
+gate = true
 
 [memory_per_guild.framework_bytes_per_guild]
 max = 1024
@@ -23,8 +26,25 @@ note = "MemoryRenderCache::DEFAULT_LIMITS byte budget (64 MiB); idle guilds rend
 
 # The reference card (crates/noctis-image/benches/reference_card.rs): a
 # 934x282 PNG profile card rendered with warm caches on a saturated render
-# pool, in milliseconds per render (NFR-3).
+# pool, in milliseconds per render (NFR-3; PRD targets confirmed by Story
+# 14.3: measured p50 8.3 ms, p99 20.0 ms).
 [reference_card]
 p50_ms = 10.0
 p99_ms = 50.0
-gate = false
+gate = true
+
+# Dispatch latency (crates/noctis-core/benches/dispatch_latency/): event
+# arrival to handler start at a fixed 10 000 events/s of the AD-25 mix, 4
+# workers, 4 producers; the gated value is the median p99 of 3 runs, in
+# microseconds (NFR-3).
+[dispatch_latency]
+nfr = "NFR-3"
+gate = true
+
+[dispatch_latency.event_p99_us]
+max = 1000
+note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (event arrival to handler start); confirmed by Story 14.3 (measured 164.4 µs)"
+
+[dispatch_latency.interaction_p99_us]
+max = 1000
+note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (interaction arrival to handler start); confirmed by Story 14.3 (measured 284.7 µs)"

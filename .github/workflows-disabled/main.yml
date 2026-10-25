@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  # Benches against crates/noctis-core/benches/budgets.toml (AD-25). Budgets
-  # are report-only until Story 14.3 (`gate = false`): an over-budget run
-  # prints a line and passes. Story 14.3 adds its benches here.
+  # Benches against crates/noctis-core/benches/budgets.toml (AD-25, AD-28).
+  # Since Story 14.3 every table gates (`gate = true`): an over-budget metric
+  # exits 1 and fails the job; an invalid run exits 2 and fails it too.
   benches:
     name: Benches
     runs-on: ubuntu-latest
@@ -21,6 +21,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       # `cargo bench` has no --release: the bench profile inherits release.
+      # Story 14.3: dispatch latency p99 at 10 000 events/s (NFR-3) on a
+      # 4-worker runtime; GitHub's ubuntu-latest runner has 4 vCPUs.
+      - run: cargo bench -p noctis-core --bench dispatch_latency
       # Story 12.6: memory per idle guild (NFR-1).
       - run: cargo bench -p noctis-core --bench memory_per_guild
       # Story 10.11: the reference card render latency (NFR-3).

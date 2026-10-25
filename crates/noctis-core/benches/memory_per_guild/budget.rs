@@ -301,7 +301,7 @@ impl Report {
         let gate = if self.gate {
             "on (over-budget rows fail the run)"
         } else {
-            "off (reporting until Story 14.3)"
+            "off (report only)"
         };
         let mut out = String::new();
         // Writing to a String cannot fail.

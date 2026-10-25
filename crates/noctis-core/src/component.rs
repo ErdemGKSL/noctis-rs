@@ -24,6 +24,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
 use noctis_codec::{
     DeclaredRuntime, DecodeError, Decoded, PayloadDecode, PayloadSource, Ref, RefRecord, Route,
@@ -481,7 +482,10 @@ where
     R: IntoResponse<K>,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
 {
-    Box::pin(async move { fut.await.map(<R as IntoResponse<K>>::__into_response) })
+    // A `map` combinator, not `async move { fut.await.. }`: an async block
+    // stores the moved-in future twice (its upvar and its awaitee), which
+    // doubled every boxed handler future (Story 14.3, AD-25).
+    Box::pin(fut.map(|result| result.map(<R as IntoResponse<K>>::__into_response)))
 }
 
 /// How a typed start begins: the handler future of an inline id, or the

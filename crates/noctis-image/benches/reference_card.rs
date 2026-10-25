@@ -11,8 +11,10 @@
 //! - `cargo test` (smoke mode): the percentile and budget parser
 //!   self-checks, the real `budgets.toml`, and three distinct renders.
 //!
-//! Over budget the bench prints a report-only line and exits 0, unless the
-//! table sets `gate = true` (then it exits 1).
+//! Over budget the bench exits 1 when the table sets `gate = true` (the
+//! committed table does since Story 14.3); with `gate = false` it prints a
+//! report-only line and exits 0. An optional string `note` (a re-set
+//! budget's PRD target) is printed after the budget lines.
 
 #![allow(clippy::print_stdout, reason = "a bench reports on stdout")]
 #![allow(
@@ -46,12 +48,14 @@ const SAMPLES: u32 = 1000;
 const WARMUP_XP: u32 = 1_000;
 const TIMED_XP: u32 = 2_000;
 
-/// The `[reference_card]` budgets, in milliseconds.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// The `[reference_card]` budgets, in milliseconds, and the table's
+/// optional `note` (a re-set budget names its PRD target there).
+#[derive(Debug, Clone, PartialEq)]
 struct Budgets {
     p50_ms: f64,
     p99_ms: f64,
     gate: bool,
+    note: Option<String>,
 }
 
 /// The nearest-rank percentile `pct` (1..=100) of `sorted`:
@@ -77,7 +81,7 @@ fn parse_budgets(source: &str, file: &str) -> Result<Budgets, String> {
         .ok_or_else(|| format!("{file}: no [{TABLE}] table"))?;
     if let Some(key) = table
         .keys()
-        .find(|key| !matches!(key.as_str(), "p50_ms" | "p99_ms" | "gate"))
+        .find(|key| !matches!(key.as_str(), "p50_ms" | "p99_ms" | "gate" | "note"))
     {
         return Err(format!("{file}: [{TABLE}] has the unknown key `{key}`"));
     }
@@ -111,10 +115,16 @@ fn parse_budgets(source: &str, file: &str) -> Result<Budgets, String> {
         Some(toml::Value::Boolean(gate)) => *gate,
         Some(_) => return Err(format!("{file}: [{TABLE}] `gate` is not a bool")),
     };
+    let note = match table.get("note") {
+        None => None,
+        Some(toml::Value::String(note)) => Some(note.clone()),
+        Some(_) => return Err(format!("{file}: [{TABLE}] `note` is not a string")),
+    };
     Ok(Budgets {
         p50_ms,
         p99_ms,
         gate,
+        note,
     })
 }
 
@@ -124,12 +134,12 @@ fn load_budgets(path: &str) -> Result<Budgets, String> {
     parse_budgets(&source, path)
 }
 
-/// The budget lines for the measured p50 and p99 (ms), and whether one is
-/// over its budget.
-fn verdict(p50_ms: f64, p99_ms: f64, budgets: Budgets) -> (Vec<String>, bool) {
+/// The budget lines for the measured p50 and p99 (ms), then the table's
+/// note when it has one, and whether one is over its budget.
+fn verdict(p50_ms: f64, p99_ms: f64, budgets: &Budgets) -> (Vec<String>, bool) {
     let mode = if budgets.gate { "gated" } else { "report only" };
     let mut over = false;
-    let lines = [
+    let mut lines: Vec<String> = [
         ("p50", p50_ms, budgets.p50_ms),
         ("p99", p99_ms, budgets.p99_ms),
     ]
@@ -143,11 +153,14 @@ fn verdict(p50_ms: f64, p99_ms: f64, budgets: Budgets) -> (Vec<String>, bool) {
         }
     })
     .collect();
+    if let Some(note) = &budgets.note {
+        lines.push(format!("{TABLE}: note: {note}"));
+    }
     (lines, over)
 }
 
 /// The exit status: failure only when a budget is over and gated.
-fn exit_code(over: bool, budgets: Budgets) -> ExitCode {
+fn exit_code(over: bool, budgets: &Budgets) -> ExitCode {
     if over && budgets.gate {
         ExitCode::FAILURE
     } else {
@@ -247,11 +260,11 @@ async fn full() -> ExitCode {
         ms(p99),
         ms(samples[samples.len() - 1])
     );
-    let (lines, over) = verdict(ms(p50), ms(p99), budgets);
+    let (lines, over) = verdict(ms(p50), ms(p99), &budgets);
     for line in lines {
         println!("{line}");
     }
-    exit_code(over, budgets)
+    exit_code(over, &budgets)
 }
 
 /// The Percentile rows.
@@ -276,14 +289,23 @@ fn check_budgets() {
         p50_ms: 10.0,
         p99_ms: 50.0,
         gate: false,
+        note: None,
     };
-    assert_eq!(parse_budgets(valid, "b.toml"), Ok(expected));
+    assert_eq!(parse_budgets(valid, "b.toml"), Ok(expected.clone()));
+    let noted = "[reference_card]\np50_ms = 10.0\np99_ms = 50.0\nnote = \"NFR-3 ≤ 10 ms\"\n";
+    assert_eq!(
+        parse_budgets(noted, "b.toml"),
+        Ok(Budgets {
+            note: Some("NFR-3 ≤ 10 ms".to_owned()),
+            ..expected.clone()
+        })
+    );
     assert_eq!(
         parse_budgets(
             "[other]\nx = 1\n[reference_card]\np50_ms = 10\np99_ms = 50.0\n",
             "b.toml"
         ),
-        Ok(expected)
+        Ok(expected.clone())
     );
     let invalid = [
         ("[other]\np50_ms = 1.0\n", "[reference_card]"),
@@ -301,6 +323,14 @@ fn check_budgets() {
             "[reference_card]\np50_ms = 1.0\np99_ms = 5.0\np95_ms = 2.0\n",
             "p95_ms",
         ),
+        (
+            "[reference_card]\np50_ms = 1.0\np99_ms = 5.0\nnote = 3\n",
+            "note",
+        ),
+        (
+            "[reference_card]\np50_ms = 1.0\np99_ms = 5.0\nnote = \"x\"\nmax_ms = 9.0\n",
+            "max_ms",
+        ),
     ];
     for (source, key) in invalid {
         let error = parse_budgets(source, "b.toml").unwrap_err();
@@ -312,20 +342,23 @@ fn check_budgets() {
     let missing = load_budgets("/nonexistent/budgets.toml").unwrap_err();
     assert!(missing.contains("/nonexistent/budgets.toml"), "{missing}");
 
-    let (lines, over) = verdict(3.0, 60.0, expected);
+    let (lines, over) = verdict(3.0, 60.0, &expected);
     assert!(over);
     assert_eq!(
         lines[1],
         "reference_card: p99 60.000 ms is over its 50 ms budget (report only)"
     );
-    assert_eq!(exit_code(over, expected), ExitCode::SUCCESS);
+    assert_eq!(lines.len(), 2, "no note, no note line");
+    assert_eq!(exit_code(over, &expected), ExitCode::SUCCESS);
     let gated = Budgets {
         gate: true,
+        note: Some("re-set".to_owned()),
         ..expected
     };
-    assert_eq!(exit_code(over, gated), ExitCode::FAILURE);
-    let (_, within) = verdict(3.0, 20.0, gated);
-    assert_eq!(exit_code(within, gated), ExitCode::SUCCESS);
+    assert_eq!(exit_code(over, &gated), ExitCode::FAILURE);
+    let (lines, within) = verdict(3.0, 20.0, &gated);
+    assert_eq!(exit_code(within, &gated), ExitCode::SUCCESS);
+    assert_eq!(lines[2], "reference_card: note: re-set");
 }
 
 /// The size of a PNG.
@@ -340,7 +373,10 @@ async fn smoke() -> ExitCode {
     check_percentiles();
     check_budgets();
     let budgets = load_budgets(BUDGETS).expect("the real budgets.toml parses");
-    assert!(!budgets.gate, "budgets are report-only until Story 14.3");
+    assert!(
+        budgets.gate,
+        "the reference card budgets gate since Story 14.3"
+    );
     let (_app, renderer) = renderer(threads());
     let mut digests = Vec::new();
     for xp in [1, 2, 3] {

@@ -86,6 +86,12 @@ jobs:
       # Zero-allocation guard of component dispatch: Route lookup by borrowed
       # key plus fixed-width decode, over 10 and 10 000 Routes (Story 7.1).
       - run: cargo test --release -p noctis --test alloc_dispatch
+      # Exact heap-block pins of the event pipeline, push to handler start
+      # (Story 16.3).
+      - run: cargo test --release -p noctis-core --test pipeline_alloc
+      # The per-interaction budget (Story 14.3, NFR-9): exact block pins push
+      # to handler start, at most one RefStore call, one boxed handler future.
+      - run: cargo test --release -p noctis-core --test interaction_alloc
 
   each-feature:
     name: Test each feature

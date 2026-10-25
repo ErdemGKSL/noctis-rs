@@ -1364,6 +1364,38 @@ list in CI.
   never registered), so the recorder is installed before `App::run`. An `Event` is
   cloned only for an earlier handler whose payload type accepts it; the last
   accepting handler gets the original.
+- **Amended (Story 14.3):** the budgets are confirmed (PRD Q3) and gate. The NFR-3
+  gate is `noctis-core/benches/dispatch_latency/` (`harness = false`, `test = true`,
+  no criterion), reusing the `pipeline` bench's fixtures, recorder, run and
+  statistics modules by `#[path]`: the AD-25 mix (per 20 items 12 unhandled
+  `MESSAGE_CREATE`, 5 handled `MESSAGE_DELETE`, 2 inline-Payload clicks, 1 slash
+  command) at a fixed 10 000 events/s from 4 producers on a `worker_threads(4)`
+  runtime, 3 runs of 5 measured seconds after a 1 s warm-up. The gated values are the
+  median of the runs' event p99 and interaction p99 (push to handler start); the
+  median p50/p99.9, the lowest achieved rate and the worst schedule lag are reported.
+  Exit 0 after a report, 1 when gating is on and a metric is over (`measured > max`;
+  equal is within), 2 when nothing valid was measured (budgets unreadable or invalid,
+  a failed run, a gated p99 with fewer than 100 samples, or an achieved rate below
+  9 500 events/s). `cargo test` runs a 0.2 s smoke that never gates. Its table
+  `[dispatch_latency]` has `nfr`, `gate` and the metric tables `event_p99_us` and
+  `interaction_p99_us` (optional `max` in µs, at least 1; required `note`; unknown
+  keys rejected), and no `guilds`. The per-interaction budget is
+  `noctis-core/tests/interaction_alloc.rs` (dhat, push to handler start, a counting
+  `RefStore` installed with `ref_store(..)`): an inline click 12 blocks and 0
+  `RefStore` calls, a `by_ref` click 16 blocks and exactly one call (`get`), a slash
+  command 88 blocks and 0 calls; the handler snapshots the heap and the op counts at
+  its first statement. A twin of the inline click and of the command whose handler
+  holds `[u8; 16384]` across an `.await` must cost the same blocks and 16 384 to
+  32 767 more bytes: the handler future is allocated once. Handler futures are boxed
+  through a `map` combinator, never an `async move { fut.await }` wrapper (which
+  stores the moved-in future twice). Allocation budgets stay exact pins in the dhat
+  tests, never a `budgets.toml` table. Every `budgets.toml` table has `gate = true`;
+  a budget the measurement met stays the PRD target, a missed one is re-set to the
+  measurement + 10 % (rounded up) with a note naming the target. Q3 outcome: NFR-1
+  confirmed (28.9 bytes per idle guild ≤ 1 KiB); NFR-3 confirmed (event p99 164.4 µs
+  and interaction p99 284.7 µs ≤ 1 ms; reference card p50 8.3 ms ≤ 10 ms, p99 20.0 ms
+  ≤ 50 ms); NFR-9 confirmed (0 allocations for Route lookup and fixed-width decode;
+  ≤ 1 Payload port call and one handler-future allocation per interaction).
 
 ### AD-26 — Declarative, tescord-like authoring surface
 - **Binds:** `noctis-macros`, `noctis-core`, facade, Usage Skill; FR-7, FR-8,
@@ -1496,9 +1528,8 @@ list in CI.
     and falls outside `[graph] targets`.) A new license needs the maintainer's approval. Workspace crates declare
     `license = "MIT OR Apache-2.0"` in `[workspace.package]`. `bans` denies
     `aws-lc-rs` and `aws-lc-sys` (AD-21).
-  - On `main`: latency and memory benchmarks report against `budgets.toml` and gate
-    once PRD Q3 confirms the numbers; a job builds against the latest takumi and
-    reports.
+  - On `main`: latency and memory benchmarks run against `budgets.toml` and gate
+    (Story 14.3); a job builds against the latest takumi and reports.
   - The MSRV is the highest `rust-version` among dependencies (1.91 now). Raising it
     is a minor release noted in the changelog.
   - A takumi bump (both pins together) is its own commit that regenerates the Tailwind grammar and passes

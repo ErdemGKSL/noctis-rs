@@ -6,6 +6,7 @@ use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, LazyLock, OnceLock};
 
+use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
 use noctis_rules::command::OptionDecl;
 use noctis_rules::{Limits, Locale};
@@ -467,7 +468,9 @@ where
     R: IntoResponse<Command>,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
 {
-    Box::pin(async move { fut.await.map(<R as IntoResponse<Command>>::__into_response) })
+    // A `map` combinator: an async block would store `fut` twice (see
+    // `component::boxed`).
+    Box::pin(fut.map(|result| result.map(<R as IntoResponse<Command>>::__into_response)))
 }
 
 /// One slash Command handler, as `#[command]` builds it; add it to a
