@@ -689,8 +689,10 @@ pub async fn discord_cache<C: DiscordCache, F: Fn(DiscordCacheResources) -> C>(f
   `Err(PortError)` fails the case with the error's text; a panic in a racing task is
   re-raised with the same prefix.
 - **Clock.** Real time: `#[tokio::test]` (either flavor), never `start_paused`. All TTL
-  cases share one 2.5 s wait for 1 s TTLs, which tolerates second-resolution backends:
-  ~3 s per byte-store suite, ~5 s for `identify_queue`.
+  cases share one 2.5 s wait for 1 s TTLs, which tolerates backends that round TTLs up
+  to whole seconds; a 1 s entry must stay readable for its full second, so a backend
+  that truncates or rounds expiry down fails the live checks. ~3 s per byte-store
+  suite, ~10 s for `identify_queue`.
 
 Byte-store cases, in order (each runs when the port has the ops it needs): `missing_key`
 (`None`, `delete` twice is `Ok`, `touch` gives `false` and creates nothing),
@@ -711,7 +713,7 @@ is 512 and the returned values are exactly 1..=512), then `ttl_live_before_expir
 set on create only; an expired counter restarts).
 
 `identify_queue` cases: `lease_bucket` (the Lease names its bucket; an idle bucket
-grants within 1 s), `bucket_spacing` (the next Lease of one bucket comes 5 s later),
+grants within 1 s), `bucket_spacing` (three Leases of one bucket come 5 s apart),
 `buckets_parallel` (another bucket grants at once meanwhile).
 
 `discord_cache` cases (gateway fixtures for guild 1, channels 10 and 11, roles 1 and 20,
@@ -724,7 +726,9 @@ off too) and `disabled_message` (that getter `None`, every other `Some`), and
 
 The suites are proven both ways in noctis itself: every in-memory default passes, and
 deliberately broken stores (a TTL-ignoring cache, a non-atomic `take`, a read-then-write
-`incr_with_ttl`) fail on the matching case.
+`incr_with_ttl`, a read-then-write `put_if_absent`, an `incr_with_ttl` that resets the
+TTL on every call, a Discord cache that ignores its configured resources) fail on the
+matching case.
 
 ## 6. Namespacing and sharing (FR-71)
 

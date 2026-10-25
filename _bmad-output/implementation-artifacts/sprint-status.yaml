@@ -162,8 +162,8 @@ development_status:
   13-5-lifecycle-hooks: done
   epic-13-retrospective: optional
 
-  epic-14: backlog
-  14-1-adapter-conformance-suites: in-progress
+  epic-14: in-progress
+  14-1-adapter-conformance-suites: done
   14-2-project-template-builds-runs-and-gates-ci: backlog
   14-3-dispatch-latency-allocation-and-memory-gates: backlog
   14-4-rules-catalog-completeness-audit: backlog

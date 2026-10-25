@@ -17,7 +17,9 @@ use super::{Case, race};
 /// The TTL of every short-lived entry.
 const SHORT_TTL: Duration = Duration::from_secs(1);
 /// The one wait after writing short-lived entries: 2.5 s tolerates backends
-/// whose TTLs have second resolution.
+/// that round TTLs up to whole seconds. A [`SHORT_TTL`] entry must stay
+/// readable for its full second, so a backend that truncates or rounds
+/// expiry down fails the live checks.
 const EXPIRY_WAIT: Duration = Duration::from_millis(2_500);
 /// A TTL that never expires during a run, below every memory default's
 /// maximum TTL.

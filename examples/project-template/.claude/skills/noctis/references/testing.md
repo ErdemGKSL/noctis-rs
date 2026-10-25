@@ -383,8 +383,8 @@ case with `` conformance::<suite>: case `<case>` failed: <detail> `` (an unexpec
 `Err(PortError)` is a failure whose detail includes the error's text). The factory is
 called once per case and must return a fresh, empty store. The suites use the real
 clock: run them in `#[tokio::test]` (either flavor), never with `start_paused`. A
-byte-store suite takes about 3 s (one 2.5 s wait for 1 s TTLs), `identify_queue` about
-5 s. See `adapters.md` §5 for every suite and its cases.
+byte-store suite takes about 3 s (one 2.5 s wait for 1 s TTLs; a backend may round TTLs
+up to whole seconds, never down), `identify_queue` about 10 s. See `adapters.md` §5 for every suite and its cases.
 
 ## 8. Memory flatness (NFR-2)
 

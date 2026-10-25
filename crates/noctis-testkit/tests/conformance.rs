@@ -14,9 +14,9 @@ use bounded_cache::BoundedCacheStore;
 use bytes::Bytes;
 use futures_util::FutureExt;
 use noctis_ports::memory::{
-    MemoryAssetStore, MemoryCacheStore, MemoryDiscordCache, MemoryIdentifyQueue,
-    MemoryModuleStateStore, MemoryRateLimitStore, MemoryRefStore, MemoryRenderCache,
-    MemorySessionStore,
+    DiscordCacheResources, MemoryAssetStore, MemoryCacheStore, MemoryDiscordCache,
+    MemoryIdentifyQueue, MemoryModuleStateStore, MemoryRateLimitStore, MemoryRefStore,
+    MemoryRenderCache, MemorySessionStore,
 };
 use noctis_ports::{BoxFuture, CacheStore, PortError, RateLimitStore, RefStore};
 use noctis_testkit::conformance;
@@ -211,6 +211,90 @@ impl RateLimitStore for LostIncrements {
     }
 }
 
+/// A `CacheStore` whose `put_if_absent` is a non-atomic get, yield, put.
+struct RacyPutIfAbsent(MemoryCacheStore);
+
+impl CacheStore for RacyPutIfAbsent {
+    fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+        self.0.get(key)
+    }
+
+    fn put<'a>(
+        &'a self,
+        key: &'a str,
+        value: Bytes,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<(), PortError>> {
+        self.0.put(key, value, ttl)
+    }
+
+    fn put_if_absent<'a>(
+        &'a self,
+        key: &'a str,
+        value: Bytes,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<bool, PortError>> {
+        Box::pin(async move {
+            let current = self.0.get(key).await?;
+            tokio::task::yield_now().await;
+            if current.is_some() {
+                return Ok(false);
+            }
+            self.0.put(key, value, ttl).await?;
+            Ok(true)
+        })
+    }
+
+    fn delete<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<(), PortError>> {
+        self.0.delete(key)
+    }
+
+    fn incr_with_ttl<'a>(
+        &'a self,
+        key: &'a str,
+        by: u64,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<u64, PortError>> {
+        self.0.incr_with_ttl(key, by, ttl)
+    }
+}
+
+/// A `RateLimitStore` whose `incr_with_ttl` re-applies a given TTL on every
+/// call, not only when it creates the counter.
+struct TtlResettingIncr(MemoryRateLimitStore);
+
+impl RateLimitStore for TtlResettingIncr {
+    fn incr_with_ttl<'a>(
+        &'a self,
+        key: &'a str,
+        by: u64,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<u64, PortError>> {
+        Box::pin(async move {
+            let next = self.0.incr_with_ttl(key, by, ttl).await?;
+            if ttl.is_some() {
+                self.0
+                    .put(key, Bytes::copy_from_slice(&next.to_be_bytes()), ttl)
+                    .await?;
+            }
+            Ok(next)
+        })
+    }
+
+    fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+        self.0.get(key)
+    }
+
+    fn put<'a>(
+        &'a self,
+        key: &'a str,
+        value: Bytes,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<(), PortError>> {
+        self.0.put(key, value, ttl)
+    }
+}
+
 #[tokio::test]
 async fn ttl_ignoring_cache_store_fails_a_ttl_case() {
     assert_fails(
@@ -237,6 +321,38 @@ async fn lost_increments_fail_race_incr() {
         conformance::rate_limit_store(|| LostIncrements(MemoryRateLimitStore::new())),
         "conformance::rate_limit_store: case ",
         "case `race_incr`",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn racy_put_if_absent_fails_race_put_if_absent() {
+    assert_fails(
+        conformance::cache_store(|| RacyPutIfAbsent(MemoryCacheStore::new())),
+        "conformance::cache_store: case ",
+        "case `race_put_if_absent`",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn ttl_resetting_incr_fails_ttl_incr_create_only() {
+    assert_fails(
+        conformance::rate_limit_store(|| TtlResettingIncr(MemoryRateLimitStore::new())),
+        "conformance::rate_limit_store: case ",
+        "case `ttl_incr_create_only`",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn resource_ignoring_discord_cache_fails_disabled() {
+    assert_fails(
+        Box::pin(conformance::discord_cache(|_| {
+            MemoryDiscordCache::new(DiscordCacheResources::all())
+        })),
+        "conformance::discord_cache: case ",
+        "case `disabled_",
     )
     .await;
 }

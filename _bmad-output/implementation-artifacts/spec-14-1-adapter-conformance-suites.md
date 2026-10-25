@@ -2,16 +2,23 @@
 title: 'Story 14.1: Adapter conformance suites'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2590b2fa386b4b5f7705047ce6323f8d4c16f066'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/async-and-concurrency.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/api-design.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      No meta-test proves identify_queue fails a non-spacing or bucket-serialising IdentifyQueue.
+    evidence: |-
+      Verification-gap review (pass 1): the only identify test runs the correct MemoryIdentifyQueue; weakening the bucket_spacing lower bound or the buckets_parallel check would go unnoticed. A broken-queue meta-test costs another ~5-10 s of real-clock wait and is outside the story's mandated meta-tests.
+    location: >-
+      crates/noctis-testkit/tests/conformance.rs; crates/noctis-testkit/src/conformance/identify.rs
+    severity: medium
 ---
 
 <intent-contract>
@@ -140,6 +147,42 @@ Meta (broken stores in the test file) — the suite must panic, message containi
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 32 findings — high 0, medium 11, low 10, false 11, maybe-false 0
+- findings:
+  - `[low]` `[reject]` blind: `owned_reads` can never fail (getters return owned values) — true but harmless (<1 ms); the case is mandated by the matrix and removing it means editing the spec.
+  - `[medium]` `[patch]` blind: `updates_in_order` never checks child/list eviction after role, member and guild deletes — real: a backend leaving stale ids passes; patch adds `role_ids`/`member_ids` shrink checks and post-`GUILD_DELETE` `None` checks for channel 10, role 1 and the three id lists (twilight 0.17 `delete_guild` evicts them).
+  - `[low]` `[reject]` blind: `disabled`/`channel_only` never probe the list getters — real gap but list-getter behaviour per resource set is not pinned by the port docs; fix adds a resource-to-list mapping (more than a direct correction).
+  - `[low]` `[patch]` blind: `all_none` labels two different `member` calls `"member"` (duplicate call in `empty`) — patch gives each its own label and drops the duplicate.
+  - `[low]` `[reject]` blind: `race_take` does not check the winner's bytes or post-race `get` — `take_once` already proves value and deletion sequentially; adding checks for an unlikely race-only defect.
+  - `[medium]` `[patch]` blind: `bucket_spacing` uses one waiter, so a queue granting all pending callers together passes — real thundering-herd identify bug; patch joins a third `acquire(0)`, requires pairwise spacing, raises `GIVE_UP`, updates the time budget.
+  - `[low]` `[reject]` blind: byte suites have no per-op timeout and `race` leaves tasks running on failure — a deadlocked Adapter still fails visibly (hang); stray tasks end with the test runtime; fix adds timeout guards around every op.
+  - `[medium]` `[patch]` blind: meta-tests cover only three byte-store failures while the skill says "proven both ways" — grouped with the vgap meta-test gaps; patch adds racy `put_if_absent` and resource-ignoring `discord_cache` meta-tests and names them in `adapters.md`.
+  - `[medium]` `[patch]` blind: 1 s live-side TTL checks contradict "tolerates second-resolution backends" — a truncating backend can expire a 1 s entry before the live read/touch; constants are fixed by the intent contract, so patch rewords the claim (round-up tolerated, truncation not).
+  - `[false]` `[reject]` blind: `version_monotonic` requiring 0 on a fresh store — the port contract (`store.rs:110`, "0 on an empty store") requires it and the factory contract requires a fresh empty store.
+  - `[false]` `[reject]` blind: `namespacing` hard-codes core's prefix format — the matrix mandates the inner-key check, and the suite ships in the same noctis version as `Namespaced`, so a format change updates both together.
+  - `[low]` `[reject]` blind: template `tests/adapters.rs` keeps the planned-API banner and uses current-thread `#[tokio::test]` — the banner is the template-wide one Story 14.2 removes (the file also uses other planned modules); the call is pre-existing and docs allow either flavor.
+  - `[low]` `[reject]` blind: `#[path]` to `examples/` breaks `cargo test` of the packaged noctis-testkit — spec task (c) mandates it, `crates/noctis/tests/template_adapter.rs` already does the same, and only someone testing the unpacked crate meets it.
+  - `[low]` `[reject]` blind: `panic_text` duplicated with a different fallback in the test — the library helper is private; suites always panic with a `String`, so the empty fallback is never shown.
+  - `[medium]` `[patch]` edge: 1 s TTL entries may expire before the live read/touch/second incr on truncating backends — grouped with the TTL-claim patch (doc reword; constants fixed by intent contract).
+  - `[low]` `[reject]` edge: an Adapter op that never resolves hangs the suite — same as the timeout finding above.
+  - `[low]` `[reject]` edge: failing `race` leaves remaining tasks detached — the test runtime shuts them down when the panicking test ends; aborting adds handling for negligible harm.
+  - `[false]` `[reject]` edge: `disabled_user` uses `USER | MEMBER` so an Adapter leaking users with only `USER` off passes — `DiscordCacheResources::MEMBER` is documented as caching its users (`memory/discord.rs:36`), so users via members with `USER` off is conforming; the row still checks the `None` side of `USER` (memlog D3).
+  - `[medium]` `[patch]` edge: docs claim second-resolution tolerance only true on the expiry side — grouped with the TTL-claim patch.
+  - `[medium]` `[patch]` vgap: no broken-store test for `race_put_if_absent` (pre-verified) — grouped meta-test patch adds the racy `put_if_absent` meta-test.
+  - `[medium]` `[patch]` vgap: TTL meta-test only reaches `ttl_get_expires`, so `ttl_incr_create_only` is never shown to fail (pre-verified) — patch adds a TTL-reset-on-incr `RateLimitStore` meta-test.
+  - `[medium]` `[defer]` vgap: no broken-queue test for `identify_queue` (pre-verified) — deferred per its disposition (extra 5-10 s real-clock wait, beyond the mandated meta-tests); recorded in `deferred`.
+  - `[medium]` `[patch]` vgap: no resource-ignoring `discord_cache` meta-test (pre-verified) — grouped meta-test patch adds it.
+  - `[false]` `[reject]` vgap other: template banner stale and facade path only compile-checked — the banner is template-wide (Story 14.2); the `no_run` facade doctest compiles the `noctis::testkit::conformance` path and the re-export is a plain `pub use`.
+  - `[false]` `[reject]` intent D-1: template conformance runs via a mirrored include — the intent defers the template gate to Story 14.2 and the spec settles the `#[path]` mirror.
+  - `[false]` `[reject]` intent D-2: facade path exercised only by a doctest — the `no_run` doctest compiles the path; runtime behaviour is the same functions.
+  - `[false]` `[reject]` intent D-3: `disabled_user` narrows the per-resource contract — conforming per the documented `MEMBER`-caches-users semantics (see edge row).
+  - `[false]` `[reject]` intent D-4: namespacing checked on the wrapper — the matrix's namespacing row deliberately tests composition with `Namespaced`.
+  - `[false]` `[reject]` intent D-5: atomicity only in-process — callers race on whatever backend the factory returns (a Redis/SQL Adapter's pool gives real concurrent clients); R3(a) is the only implementable reading in a test suite.
+  - `[medium]` `[patch]` intent D-6: meta-tests narrower than the suites — grouped meta-test patch (plus the separate TTL meta-test patch).
+  - `[false]` `[reject]` intent D-7: "when CI runs" met locally — CI is paused by maintainer workflow; the suites run in `cargo test --release --workspace`.
+  - `[false]` `[reject]` intent D-8: extra requirements beyond the AC — each traces to a port rustdoc contract and the spec matrix.
+
 ## Design Notes
 
 Decisions (log each in the memlog):
@@ -172,3 +215,20 @@ let tasks: Vec<_> = (0..RACE_CALLERS).map(|i| {
 - `cargo run --release -p xtask -- deps-check`, `-- api-snapshot`, `-- skill-check`, `-- rules-catalog`, `-- tw-grammar --check` -- ok
 - `cargo deny check` and `cargo +1.91 check --release --workspace` -- ok
 - `cargo test --release --manifest-path examples/project-template/Cargo.toml --test adapters` -- best effort: passes; if it fails for a reason outside the adapter files, record it in `deferred` for Story 14.2.
+
+## Auto Run Result
+
+- **Summary:** Added `noctis_testkit::conformance` (re-exported as `noctis::testkit::conformance`): factory-driven, panic-on-failure conformance suites for the 7 byte stores, `IdentifyQueue` and `DiscordCache` (`Fn(DiscordCacheResources) -> C`), with race, TTL-expiry, version, namespacing and disabled-resource checks; meta-tests prove suites fail on broken stores; template `tests/adapters.rs` and the usage skill updated; public API re-blessed.
+- **Files changed:**
+  - `crates/noctis-testkit/src/conformance.rs` (+ `bytes.rs`, `discord.rs`, `identify.rs`, `fixtures/*.json`): the suites and gateway fixtures.
+  - `crates/noctis-testkit/tests/conformance.rs`: suites against memory backends plus broken-store meta-tests.
+  - `crates/noctis-testkit/Cargo.toml`, `src/lib.rs`, `crates/noctis/src/lib.rs`: module wiring and facade re-export with doctest.
+  - `examples/project-template/` (`tests/adapters.rs`, `AGENTS.md`, `bounded_cache.rs`, skill `SKILL.md`, `references/adapters.md`, `references/testing.md`, `Cargo.lock`): template and Usage Skill.
+  - `xtask/public-api.txt`: re-blessed snapshot.
+- **Review findings:** 32 (high 0, medium 11, low 10, false 11).
+  - Patched (high 0, medium 9, low 1): eviction checks after role/member/guild deletes; duplicate `member` label in `all_none`; three-waiter pairwise `bucket_spacing`; meta-tests for racy `put_if_absent`, resource-ignoring `discord_cache`, TTL-reset-on-incr; TTL tolerance doc reworded (round-up tolerated, truncation not).
+  - Deferred (1): broken-queue meta-test for `identify_queue` (extra 5-10 s real-clock wait).
+  - Rejected (21): see triage log in the spec (each with reason: mandated by matrix/contract, template banner owned by Story 14.2, timeouts/stray tasks negligible, `MEMBER` caches users by design, CI paused).
+- **Follow-up review recommended: true** — 9 medium patches on a first pass; unverified risk: the new eviction assertions after `GUILD_DELETE` and the three-waiter `bucket_spacing` timing may be flaky or over-strict for third-party backends.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** `identify_queue` lacks a meta-test; suites have no per-op timeout (a hanging Adapter hangs the test); atomicity checked only with in-process concurrent callers; template gate deferred to Story 14.2.

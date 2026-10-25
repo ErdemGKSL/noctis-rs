@@ -10,7 +10,7 @@
 //! | [`cache_store`] | `CacheStore` | ~3 s |
 //! | [`render_cache`] | `RenderCache` | ~3 s |
 //! | [`asset_store`] | `AssetStore` | ~3 s |
-//! | [`identify_queue`] | `IdentifyQueue` | ~5 s |
+//! | [`identify_queue`] | `IdentifyQueue` | ~10 s |
 //! | [`discord_cache`] | `DiscordCache` | < 1 s |
 //!
 //! ```
@@ -50,8 +50,10 @@
 //! The suites use the real clock: run them inside `#[tokio::test]` (either
 //! flavor) with the time driver enabled, and never on a paused tokio clock
 //! (`start_paused`). A byte-store suite writes every short-TTL entry (1 s)
-//! first, then waits once for 2.5 s, which tolerates backends with
-//! second-resolution TTLs.
+//! first, then waits once for 2.5 s, which tolerates backends that round
+//! TTLs up to whole seconds. A 1 s entry must stay readable for its full
+//! second, so a backend that truncates or rounds expiry down fails the live
+//! checks (`ttl_live_before_expiry`, `ttl_touch`).
 //!
 //! # Cases
 //!

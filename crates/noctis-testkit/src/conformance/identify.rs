@@ -15,13 +15,13 @@ const MIN_SPACING: Duration = Duration::from_millis(4_900);
 /// The longest accepted gap between two Leases of one bucket.
 const MAX_SPACING: Duration = Duration::from_secs(8);
 /// How long any `acquire` may take before the case gives up.
-const GIVE_UP: Duration = Duration::from_secs(10);
+const GIVE_UP: Duration = Duration::from_secs(15);
 
 /// Runs the `IdentifyQueue` suite: a Lease names its bucket, one bucket
 /// grants at most once per 5 s, and different buckets grant in parallel.
 ///
 /// The factory must give a queue of at least 2 buckets that granted no
-/// Lease in the last 5 s. The suite takes about 5 s. See the
+/// Lease in the last 5 s. The suite takes about 10 s. See the
 /// [module docs](super) for the clock and runtime requirements.
 ///
 /// # Panics
@@ -71,22 +71,33 @@ async fn spacing_and_parallel(queue: &impl IdentifyQueue) {
     let parallel = Case::new(SUITE, "buckets_parallel");
     let (_first, t1) = acquire(spacing, queue, 0).await;
     let started = Instant::now();
-    let ((again, t2), (other, t_other)) =
-        tokio::join!(acquire(spacing, queue, 0), acquire(parallel, queue, 1));
-    let gap = t2 - t1;
-    spacing.check(again.bucket() == 0, || {
-        format!("acquire(0) returned a Lease for bucket {}", again.bucket())
-    });
-    spacing.check((MIN_SPACING..=MAX_SPACING).contains(&gap), || {
-        format!(
-            "the second Lease of bucket 0 came {gap:?} after the first; expected between {MIN_SPACING:?} and {MAX_SPACING:?}"
-        )
-    });
+    let ((a, ta), (b, tb), (other, t_other)) = tokio::join!(
+        acquire(spacing, queue, 0),
+        acquire(spacing, queue, 0),
+        acquire(parallel, queue, 1)
+    );
+    for lease in [&a, &b] {
+        spacing.check(lease.bucket() == 0, || {
+            format!("acquire(0) returned a Lease for bucket {}", lease.bucket())
+        });
+    }
+    let mut grants = [t1, ta, tb];
+    grants.sort_unstable();
+    for (n, pair) in grants.windows(2).enumerate() {
+        let gap = pair[1] - pair[0];
+        spacing.check((MIN_SPACING..=MAX_SPACING).contains(&gap), || {
+            format!(
+                "Lease {} of bucket 0 came {gap:?} after Lease {}; expected between {MIN_SPACING:?} and {MAX_SPACING:?}",
+                n + 2,
+                n + 1
+            )
+        });
+    }
     let waited = t_other - started;
     parallel.check(other.bucket() == 1, || {
         format!("acquire(1) returned a Lease for bucket {}", other.bucket())
     });
-    parallel.check(waited <= IDLE_GRANT && t_other < t2, || {
+    parallel.check(waited <= IDLE_GRANT && t_other < grants[1], || {
         format!(
             "acquire(1) took {waited:?} while bucket 0 was waiting; another bucket must grant within {IDLE_GRANT:?}"
         )

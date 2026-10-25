@@ -178,16 +178,18 @@ async fn all_none(case: Case, cache: &impl DiscordCache, ids: Ids, when: &str) {
     );
     none(
         case,
-        "member",
-        read(case, "member", cache.member(guild, user).await),
+        "member(guild, user)",
+        read(case, "member(guild, user)", cache.member(guild, user).await),
         when,
     );
-    none(
-        case,
-        "member",
-        read(case, "member", cache.member(GUILD, user).await),
-        when,
-    );
+    if guild != GUILD {
+        none(
+            case,
+            "member(1, user)",
+            read(case, "member(1, user)", cache.member(GUILD, user).await),
+            when,
+        );
+    }
     none(
         case,
         "user",
@@ -404,6 +406,11 @@ async fn updates_in_order(cache: &impl DiscordCache) {
         read(case, "role", cache.role(ROLE).await),
         "after GUILD_ROLE_DELETE",
     );
+    let roles = read(case, "role_ids", cache.role_ids(GUILD).await);
+    case.check(
+        !roles.as_ref().is_some_and(|ids| ids.contains(&ROLE)),
+        || format!("role_ids(1) after GUILD_ROLE_DELETE of 20: expected no 20, got {roles:?}"),
+    );
 
     apply(case, cache, &["guild_member_remove"]).await;
     none(
@@ -411,6 +418,15 @@ async fn updates_in_order(cache: &impl DiscordCache) {
         "member(1, 30)",
         read(case, "member", cache.member(GUILD, USER).await),
         "after GUILD_MEMBER_REMOVE",
+    );
+    let members = read(case, "member_ids", cache.member_ids(GUILD).await);
+    case.check(
+        !members.as_ref().is_some_and(|ids| ids.contains(&USER)),
+        || {
+            format!(
+                "member_ids(1) after GUILD_MEMBER_REMOVE of 30: expected no 30, got {members:?}"
+            )
+        },
     );
 
     apply(case, cache, &["channel_delete"]).await;
@@ -433,11 +449,47 @@ async fn updates_in_order(cache: &impl DiscordCache) {
     );
 
     apply(case, cache, &["guild_delete"]).await;
+    guild_deleted(case, cache).await;
+}
+
+/// After `GUILD_DELETE`, the guild and everything it held are gone.
+async fn guild_deleted(case: Case, cache: &impl DiscordCache) {
+    let when = "after GUILD_DELETE";
     none(
         case,
         "guild(1)",
         read(case, "guild", cache.guild(GUILD).await),
-        "after GUILD_DELETE",
+        when,
+    );
+    none(
+        case,
+        "channel(10)",
+        read(case, "channel", cache.channel(CHANNEL).await),
+        when,
+    );
+    none(
+        case,
+        "role(1)",
+        read(case, "role", cache.role(Id::new(1)).await),
+        when,
+    );
+    none(
+        case,
+        "channel_ids(1)",
+        read(case, "channel_ids", cache.channel_ids(GUILD).await),
+        when,
+    );
+    none(
+        case,
+        "role_ids(1)",
+        read(case, "role_ids", cache.role_ids(GUILD).await),
+        when,
+    );
+    none(
+        case,
+        "member_ids(1)",
+        read(case, "member_ids", cache.member_ids(GUILD).await),
+        when,
     );
 }
 
