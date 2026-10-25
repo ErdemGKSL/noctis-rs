@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 92 of 107" src="https://img.shields.io/badge/stories-92%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 95 of 107" src="https://img.shields.io/badge/stories-95%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -31,8 +31,8 @@
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
 > module operations, opt-in extras). Epic 16 (event pipeline throughput) is in progress
-> (1 of 3 stories done), Epic 14 (launch readiness) is next, and Epic 17 (voice and music
-> bots) is planned.
+> (2 of 3 stories done), Epic 17 (voice and music bots) is in progress (2 of 4 stories
+> done), and Epic 14 (launch readiness) is next.
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -224,7 +224,7 @@ Read the full design:
 ## Roadmap
 
 Noctis is planned and built with the [BMad Method](https://docs.bmad-method.org/). The
-work is split into 15 epics and 96 stories
+work is split into 17 epics and 107 stories
 ([`epics.md`](_bmad-output/planning-artifacts/epics.md)). Each story is planned, implemented,
 checked by the local gates and reviewed in four independent layers before it is marked
 done. Live per-story status is in
@@ -255,12 +255,12 @@ done. Live per-story status is in
 | 13 | Module operations | P1 | ✅ Done |
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
-| 16 | Event pipeline throughput | P1 | 🔨 In progress (1 / 3) |
-| 17 | Voice and music bots | P1 | ⏳ |
+| 16 | Event pipeline throughput | P1 | 🔨 In progress (2 / 3) |
+| 17 | Voice and music bots | P1 | 🔨 In progress (2 / 4) |
 
 **What already works**
 
-- **Workspace and quality gates.** There are 12 crates in strict layers, enforced by
+- **Workspace and quality gates.** There are 13 crates in strict layers, enforced by
   `xtask deps-check`. Builds use release-equivalent profiles only. Local gates cover
   fmt, clippy `-D warnings`, tests, `cargo-hack` per-feature tests, `cargo-deny`, an
   MSRV 1.91 check, a public-API snapshot and a Usage Skill coverage check.
@@ -369,9 +369,19 @@ done. Live per-story status is in
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
   - Prefix commands through `PrefixPlugin` (feature `prefix`), reusing slash Commands.
-- **Event pipeline throughput (in progress).** A criterion bench of the event pipeline
-  (throughput, latency percentiles, push cost) with a recorded baseline, and an
-  exact-count allocation test per event path.
+- **Event pipeline throughput (in progress).**
+  - A criterion bench of the event pipeline
+    (throughput, latency percentiles, push cost) with a recorded baseline, and an
+    exact-count allocation test per event path.
+  - Lanes split into per-shard partitions with global bounds, one drain task per
+    partition with batched pops, and per-guild ordering.
+- **Voice and music bots (in progress).** The `noctis-voice` crate (feature `voice`,
+  on Songbird):
+  - Join, leave and move voice calls through Noctis's own gateway with a `Voice`
+    handle, a `noctis_voice_calls` gauge, and every call left on shutdown.
+  - `Track` inputs (URL, file, child command) and a bounded per-guild queue with
+    enqueue, skip, stop, pause, resume, volume and idle leave.
+  - Typed `TrackStart`, `TrackEnd` and `TrackError` events delivered to Modules.
 - **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
   test runs without Discord, plus `TestApp` for simulated interactions and message
   snapshots (re-exported as `noctis::testkit`).
