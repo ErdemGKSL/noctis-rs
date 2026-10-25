@@ -2,7 +2,8 @@
 title: 'Story 17.3: Optimized Opus path: passthrough, encoder tuning and the voice bench'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7836d36323d6295ded8ef541a903eb22d20b7857'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
