@@ -168,7 +168,7 @@ development_status:
   14-3-dispatch-latency-allocation-and-memory-gates: done
   14-4-rules-catalog-completeness-audit: done
   14-5-usage-skill-completeness-and-agent-trial: done
-  14-6-launch-documentation: backlog
+  14-6-launch-documentation: in-progress
   14-7-release-pipeline-ready-for-0-1-0: backlog
   14-8-maintainer-gated-repository-settings-and-release-secrets: backlog
   14-9-maintainer-gated-publish-noctis-0-1-0: backlog

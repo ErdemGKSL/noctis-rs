@@ -2,7 +2,8 @@
 title: 'Story 14.6: Launch documentation'
 type: 'chore'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '27a50578a43c95a6425fb8af2c24186c70572e8f'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
