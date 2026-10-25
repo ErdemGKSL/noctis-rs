@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 87 of 103" src="https://img.shields.io/badge/stories-87%20%2F%20103-3B2F8F">
+  <img alt="Stories done: 88 of 103" src="https://img.shields.io/badge/stories-88%20%2F%20103-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -30,7 +30,7 @@
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, localization, clusters and scale). Epics 10 (generated images
-> and GIFs), 13 (module operations) and 15 (opt-in extras) are in progress,
+> and GIFs, 10 / 11), 13 (module operations, 4 / 5) and 15 (opt-in extras, 3 / 4) are in progress,
 > and Epic 14 (launch readiness) is next. Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -251,7 +251,7 @@ done. Live per-story status is in
 | 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | 🔨 In progress (4 / 5) |
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
-| 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | 🔨 In progress (2 / 4) |
+| 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | 🔨 In progress (3 / 4) |
 
 **What already works**
 
@@ -325,8 +325,9 @@ done. Live per-story status is in
     per-job caps and weighted admission control.
   - Ordered fonts with an optional bundled default, static images, and remote images
     fetched through an allow-listed, capped AssetFetcher.
-  - Discord custom emoji drawn inline, with a bundled Twemoji fallback font (feature `emoji`).
-  - A render cache behind the `RenderCache` port with single-flight de-duplication.
+  - Discord custom emoji drawn inline from template text, with a bundled Twemoji
+    fallback font behind the `emoji` feature.
+  - A render cache behind the `RenderCache` port with single-flight deduplication.
 - **Localization.**
   - `i18n!` compiles YAML locale files into typed `Strings` accessors, with
     compile-time checks; App and Module catalogs merge at `App::build`.
@@ -343,16 +344,18 @@ done. Live per-story status is in
     with default intents derived from the handlers and cached resources.
   - A memory-per-guild bench over 10 000 idle guilds that reports framework, Discord
     cache and Renderer cache memory against `budgets.toml`.
-- **Module trees.** Module ids are tree paths (`profile/badges`), validated for grammar
-  and uniqueness at `App::build`.
 - **Module operations (in progress).**
+  - Module ids are tree paths (`profile/badges`), validated for grammar and uniqueness
+    at `App::build`.
   - Boot-time feature flags (`flags = [..]`, `--features`, `NOCTIS_FEATURES`) that prune
     registrations before build.
-  - Runtime Module enable and disable per guild or globally with `ctx.modules()`, over the
-    `ModuleStateStore` port and propagated across processes.
-  - Declarative `rate_limit(..)` on commands, components and modals over the
+  - Runtime Module enable and disable via `ctx.modules()` over a `ModuleStateStore`
+    port, propagated across processes.
+  - Declarative `rate_limit(..)` on commands, components and modals over a
     `RateLimitStore` port, with `#[on_rate_limited]` and `ctx.rate_limits()`.
 - **Opt-in extras (in progress).**
+  - Several Apps in one process sharing a Runtime, with `apps = [..]` restrictions and
+    a `GuildAccessList` port.
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
   - Prefix commands through `PrefixPlugin` (feature `prefix`), reusing slash Commands.
