@@ -21,6 +21,10 @@ pub(crate) const MEDIA_CONNECT_TIMEOUT_RANGE: RangeInclusive<Duration> =
 /// The largest `media_max_redirects`.
 pub(crate) const MAX_REDIRECTS: u8 = 10;
 
+/// The allowed `max_bitrate` range (when set), in bits per second: Discord's
+/// voice channel bitrates, boosted guilds and stage channels included.
+pub(crate) const MAX_BITRATE_RANGE: RangeInclusive<u32> = 8_000..=384_000;
+
 /// The settings of the App's voice connections, passed to
 /// [`AppBuilderVoiceExt::voice`](crate::AppBuilderVoiceExt::voice).
 ///
@@ -32,12 +36,14 @@ pub(crate) const MAX_REDIRECTS: u8 = 10;
 /// let config = VoiceConfig::default()
 ///     .join_timeout(Duration::from_secs(5))
 ///     .max_queue(200)
-///     .idle_leave(Some(Duration::from_mins(5)));
+///     .idle_leave(Some(Duration::from_mins(5)))
+///     .max_bitrate(Some(96_000));
 /// assert_eq!(config.get_join_timeout(), Duration::from_secs(5));
 /// assert!(config.is_self_deaf());
 /// assert_eq!(config.get_max_queue(), 200);
 /// assert_eq!(config.get_idle_leave(), Some(Duration::from_mins(5)));
 /// assert_eq!(config.get_media_max_redirects(), 5);
+/// assert_eq!(config.get_max_bitrate(), Some(96_000));
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,12 +54,14 @@ pub struct VoiceConfig {
     idle_leave: Option<Duration>,
     media_connect_timeout: Duration,
     media_max_redirects: u8,
+    max_bitrate: Option<u32>,
 }
 
 impl Default for VoiceConfig {
     /// A 10 s join timeout; the bot joins self-deafened; queues hold at
     /// most 1000 tracks; no idle leave; media fetches connect within 10 s
-    /// and follow at most 5 redirects.
+    /// and follow at most 5 redirects; the encoder follows the channel's
+    /// bitrate with no cap.
     fn default() -> Self {
         Self {
             join_timeout: Duration::from_secs(10),
@@ -62,6 +70,7 @@ impl Default for VoiceConfig {
             idle_leave: None,
             media_connect_timeout: Duration::from_secs(10),
             media_max_redirects: 5,
+            max_bitrate: None,
         }
     }
 }
@@ -121,6 +130,23 @@ impl VoiceConfig {
     pub const fn media_max_redirects(mut self, max: u8) -> Self {
         self.media_max_redirects = max;
         self
+    }
+
+    /// Caps the Opus encoder's bitrate, in bits per second. The encoder
+    /// follows the joined channel's bitrate (64 kbps when the channel is not
+    /// in the Discord cache); `Some(max)` caps it at `max`, which takes
+    /// 8000..=384000, another value is a build violation. `None` (the
+    /// default) follows the channel. Passthrough frames keep the bitrate
+    /// they were encoded at.
+    #[must_use]
+    pub const fn max_bitrate(mut self, max: Option<u32>) -> Self {
+        self.max_bitrate = max;
+        self
+    }
+
+    /// The encoder bitrate cap, if any.
+    pub const fn get_max_bitrate(&self) -> Option<u32> {
+        self.max_bitrate
     }
 
     /// The most tracks a queue holds.
@@ -185,6 +211,13 @@ impl VoiceConfig {
             out.push(format!(
                 "media_max_redirects {} is out of range: use 0..=10",
                 self.media_max_redirects
+            ));
+        }
+        if let Some(max) = self.max_bitrate
+            && !MAX_BITRATE_RANGE.contains(&max)
+        {
+            out.push(format!(
+                "max_bitrate {max} is out of range: use None or 8000..=384000"
             ));
         }
         out
@@ -259,6 +292,29 @@ mod tests {
         }
         for (max, ok) in [(0, true), (10, true), (11, false)] {
             check(base().media_max_redirects(max), ok, "0..=10");
+        }
+    }
+
+    #[test]
+    fn max_bitrate_bounds() {
+        assert_eq!(VoiceConfig::default().get_max_bitrate(), None);
+        for (max, ok) in [
+            (None, true),
+            (Some(8_000), true),
+            (Some(96_000), true),
+            (Some(384_000), true),
+            (Some(0), false),
+            (Some(7_999), false),
+            (Some(384_001), false),
+            (Some(u32::MAX), false),
+        ] {
+            let config = VoiceConfig::default().max_bitrate(max);
+            assert_eq!(config.get_max_bitrate(), max);
+            let violations = config.violations();
+            assert_eq!(violations.is_empty(), ok, "{max:?}: {violations:?}");
+            if !ok {
+                assert!(violations[0].contains("8000..=384000"), "{violations:?}");
+            }
         }
     }
 }

@@ -60,9 +60,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 25);
+    assert_eq!(METRICS.len(), 27);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 27);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -115,6 +115,8 @@ fn catalog_static() {
             ("noctis_discord_cache_update_errors_total", &["app"][..]),
             ("noctis_voice_calls", &["app"][..]),
             ("noctis_voice_tracks_total", &["app", "result"][..]),
+            ("noctis_voice_passthrough_frames_total", &["app"][..]),
+            ("noctis_voice_encoded_frames_total", &["app"][..]),
         ]
     );
 }

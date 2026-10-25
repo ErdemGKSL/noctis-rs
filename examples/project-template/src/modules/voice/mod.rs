@@ -11,6 +11,11 @@
 //! `stop`, `clear`, `set_volume`, `now_playing`, `list`), at most
 //! `VoiceConfig::max_queue` tracks (default 1000). Track events (`TrackStart`,
 //! `TrackEnd`, `TrackError`, `QueueEmpty`) are hook events a `#[derive(Hook)]` takes.
+//!
+//! Pre-encoded Opus (Ogg or WebM Opus at 48 kHz with 20 ms frames) plays by
+//! passthrough: the packets go to Discord without decode or re-encode while the track
+//! plays alone at volume 1.0. Other inputs are decoded and encoded at the channel's
+//! bitrate (capped by `VoiceConfig::max_bitrate`).
 
 use noctis::lifecycle::HookCtx;
 use noctis::prelude::*;

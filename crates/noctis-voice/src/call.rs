@@ -8,14 +8,16 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use noctis_core::lifecycle::Emitter;
 use noctis_gateway::GatewayHandle;
+use songbird::Call;
+use songbird::driver::Bitrate;
 use songbird::id::{GuildId, UserId};
 use songbird::shards::Shard;
-use songbird::{Call, Config};
 use tokio::sync::oneshot;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::config::VoiceConfig;
+use crate::frames::{driver_config, effective_bitrate};
 use crate::player::SongbirdPlayer;
 use crate::queue::{Binding, IdleLeave, Player, QueueCell};
 use crate::shard::NoctisShard;
@@ -39,6 +41,9 @@ pub(crate) struct Entry {
     pub(crate) shard: Arc<NoctisShard>,
     /// The guild's queue; shut down whenever the entry is removed.
     pub(crate) queue: Arc<QueueCell>,
+    /// The encoder bitrate applied to the call: the channel's, capped by
+    /// `VoiceConfig::max_bitrate`.
+    pub(crate) bitrate: u32,
 }
 
 /// What a join works with, cloned out of its entry.
@@ -127,13 +132,16 @@ impl VoiceShared {
             gateway.clone(),
             self.config.is_self_deaf(),
         ));
-        let call = Call::from_config(
+        let mut call = Call::from_config(
             GuildId::from(guild.into_nonzero()),
             Shard::Generic(Arc::clone(&shard) as _),
             UserId::from(user.into_nonzero()),
-            // Noctis's own join timeout covers the whole join.
-            Config::default().gateway_timeout(None),
+            driver_config(),
         );
+        // The channel's bitrate is applied once the bot's own voice state
+        // names the channel.
+        let bitrate = effective_bitrate(None, self.config.get_max_bitrate());
+        call.set_bitrate(bits(bitrate));
         let call = Arc::new(tokio::sync::Mutex::new(call));
         let generation = self.next();
         let queue = self.new_queue(guild, generation, &call);
@@ -144,6 +152,7 @@ impl VoiceShared {
             call: Arc::clone(&call),
             shard: Arc::clone(&shard),
             queue,
+            bitrate,
         };
         calls.insert(guild, entry);
         let len = calls.len();
@@ -197,6 +206,7 @@ impl VoiceShared {
                 Arc::clone(call),
                 self.media.clone(),
                 Weak::clone(queue),
+                Arc::clone(&self.binding),
             ));
             QueueCell::new(
                 guild,
@@ -206,6 +216,51 @@ impl VoiceShared {
                 idle,
             )
         })
+    }
+}
+
+impl VoiceShared {
+    /// The bitrate of `channel` changed or became known (`None`: unknown):
+    /// when `guild`'s call is in `channel` and its encoder bitrate changes,
+    /// the new one is applied on the call in a task of its own (never while
+    /// holding the call map).
+    pub(crate) fn set_bitrate(
+        &self,
+        guild: Id<GuildMarker>,
+        channel: Id<ChannelMarker>,
+        channel_bitrate: Option<u32>,
+    ) {
+        let bitrate = effective_bitrate(channel_bitrate, self.config.get_max_bitrate());
+        let call = {
+            let mut calls = self.calls();
+            let Some(entry) = calls.get_mut(&guild) else {
+                return;
+            };
+            if entry.channel != Some(channel) || entry.bitrate == bitrate {
+                return;
+            }
+            entry.bitrate = bitrate;
+            Arc::clone(&entry.call)
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let inner = Arc::downgrade(&self.0);
+        runtime.spawn(async move {
+            let mut driver = call.lock().await;
+            // The entry's latest bitrate, read under the Call lock: tasks
+            // that run out of order still leave the newest one applied.
+            let latest = inner.upgrade().and_then(|inner| {
+                inner
+                    .calls()
+                    .get(&guild)
+                    .filter(|entry| Arc::ptr_eq(&entry.call, &call))
+                    .map(|entry| entry.bitrate)
+            });
+            if let Some(latest) = latest {
+                driver.set_bitrate(bits(latest));
+            }
+        });
     }
 }
 
@@ -257,6 +312,12 @@ impl VoiceInner {
         self.calls()
             .get(&guild)
             .map(|entry| (entry.generation, entry.channel))
+    }
+
+    /// The encoder bitrate of `guild`'s call.
+    #[cfg(test)]
+    pub(crate) fn bitrate(&self, guild: Id<GuildMarker>) -> Option<u32> {
+        self.calls().get(&guild).map(|entry| entry.bitrate)
     }
 
     /// The call of `guild`'s entry.
@@ -390,4 +451,9 @@ impl VoiceInner {
     pub(crate) fn clear_leaving(&self) {
         self.leaving().clear();
     }
+}
+
+/// A Songbird bitrate of `bitrate` bits per second.
+fn bits(bitrate: u32) -> Bitrate {
+    Bitrate::Bits(i32::try_from(bitrate).unwrap_or(i32::MAX))
 }

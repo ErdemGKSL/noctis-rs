@@ -1,7 +1,7 @@
 //! [`VoicePlugin`] and [`AppBuilderVoiceExt`]: installing voice on an App.
 
 use futures_util::future::join_all;
-use noctis_core::events::{GuildDelete, VoiceServerUpdate, VoiceStateUpdate};
+use noctis_core::events::{ChannelUpdate, GuildDelete, VoiceServerUpdate, VoiceStateUpdate};
 use noctis_core::lifecycle::AppStarted;
 use noctis_core::{
     AppBuilder, BuildViolation, EventCtx, EventHandler, HandlerResult, HookCtx, LifecycleHook,
@@ -17,7 +17,8 @@ use crate::media::media_client;
 const MODULE: &str = "noctis-voice";
 
 /// Installs voice on an App: the call map (App state), the handlers of the
-/// bot's own `VOICE_STATE_UPDATE`, every `VOICE_SERVER_UPDATE` and
+/// bot's own `VOICE_STATE_UPDATE`, every `VOICE_SERVER_UPDATE`,
+/// `CHANNEL_UPDATE` (the encoder follows the channel's bitrate) and
 /// `GUILD_DELETE` (Module `noctis-voice`, which adds the
 /// `GUILD_VOICE_STATES` intent) and a Shutdown Task that leaves every voice
 /// channel before the shards close.
@@ -74,6 +75,12 @@ impl Plugin for VoicePlugin {
                     false,
                     on_voice_server,
                 ))
+                .__add(EventHandler::__new::<ChannelUpdate, _, _>(
+                    "noctis_voice::on_channel_update",
+                    true,
+                    false,
+                    on_channel_update,
+                ))
                 .__add(EventHandler::__new::<GuildDelete, _, _>(
                     "noctis_voice::on_guild_delete",
                     true,
@@ -96,8 +103,9 @@ impl Plugin for VoicePlugin {
     }
 }
 
-/// The bot's own voice state: a move updates the call, no channel removes
-/// it (and confirms a shutdown leave). Others' states are ignored.
+/// The bot's own voice state: a move updates the call and its encoder
+/// bitrate (the channel's, from the Discord cache), no channel removes it
+/// (and confirms a shutdown leave). Others' states are ignored.
 async fn on_voice_state(ctx: EventCtx, event: VoiceStateUpdate) -> HandlerResult<()> {
     let Some(shared) = ctx.state::<VoiceShared>() else {
         return Ok(());
@@ -127,8 +135,27 @@ async fn on_voice_state(ctx: EventCtx, event: VoiceStateUpdate) -> HandlerResult
                     state.session_id,
                     Some(ChannelId::from(channel.into_nonzero())),
                 );
+                // Not cached, or no cache: Discord's default bitrate.
+                let bitrate = match ctx.cache().channel(channel).await {
+                    Ok(Some(cached)) => cached.bitrate,
+                    _ => None,
+                };
+                shared.set_bitrate(guild, channel, bitrate);
             }
         }
+    }
+    Ok(())
+}
+
+/// A guild channel changed: when the call is in it, the encoder follows its
+/// bitrate.
+async fn on_channel_update(ctx: EventCtx, event: ChannelUpdate) -> HandlerResult<()> {
+    let Some(shared) = ctx.state::<VoiceShared>() else {
+        return Ok(());
+    };
+    let channel = event.0;
+    if let Some(guild) = channel.guild_id {
+        shared.set_bitrate(guild, channel.id, channel.bitrate);
     }
     Ok(())
 }
@@ -297,6 +324,19 @@ mod tests {
             .unwrap_or_default();
         assert!(error.contains("1 s..=60 s"), "{error}");
         assert!(error.contains("VoicePlugin"), "{error}");
+    }
+
+    /// An out-of-range `max_bitrate` fails the build naming the range.
+    #[tokio::test]
+    async fn max_bitrate_violation_fails_the_build() {
+        let mut builder = App::builder();
+        builder.voice(VoiceConfig::default().max_bitrate(Some(384_001)));
+        let error = builder
+            .build()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(error.contains("8000..=384000"), "{error}");
     }
 
     /// Without the plugin every operation is `NotInstalled`.

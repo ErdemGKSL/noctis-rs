@@ -512,6 +512,16 @@ impl QueueCell {
         let _ = self.apply(|queue, out| queue.on_error(token, error, out));
     }
 
+    /// Whether the current track's `TrackStart` fired.
+    #[cfg(test)]
+    pub(crate) fn started(&self) -> bool {
+        self.lock()
+            .queue
+            .current
+            .as_ref()
+            .is_some_and(|current| current.started)
+    }
+
     /// Whether the idle timer is armed.
     #[cfg(test)]
     pub(crate) fn idle_armed(&self) -> bool {

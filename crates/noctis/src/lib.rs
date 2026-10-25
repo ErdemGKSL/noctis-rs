@@ -2879,9 +2879,23 @@ pub mod voice {
     //! - **Idle leave.** `VoiceConfig::idle_leave(Some(d))` (1 s..=24 h,
     //!   default off) leaves a connected call that had no playing track for
     //!   `d`.
+    //! - **Passthrough.** Pre-encoded Opus (Ogg Opus or WebM/Matroska Opus,
+    //!   48 kHz, 20 ms frames) goes to the wire without decode or re-encode
+    //!   while it is the call's only track at volume 1.0. Any other volume,
+    //!   another format, or 40/60 ms Opus frames are decoded, mixed and
+    //!   encoded (soft-clipped, stereo); passthrough resumes when the
+    //!   volume returns to 1.0. Pre-encode a library with
+    //!   `ffmpeg -i in -c:a libopus -b:a 128k -ar 48000 -frame_duration 20 out.opus`.
+    //! - **Encoder bitrate.** The encoder follows the joined channel's
+    //!   bitrate (from the Discord cache and `CHANNEL_UPDATE`; 64 kbps when
+    //!   unknown), capped by `VoiceConfig::max_bitrate(Some(bps))`
+    //!   (8000..=384000, default `None`; another value fails the build).
     //! - **Metrics.** `noctis_voice_calls{app}`: the live and pending calls;
     //!   `noctis_voice_tracks_total{app, result}`: the tracks that became
-    //!   current, by `finished`, `skipped`, `stopped` or `error`.
+    //!   current, by `finished`, `skipped`, `stopped` or `error`;
+    //!   `noctis_voice_passthrough_frames_total{app}` and
+    //!   `noctis_voice_encoded_frames_total{app}`: the 20 ms frames sent by
+    //!   passthrough and the ones decoded for encoding.
     //!
     //! ```no_run
     //! use noctis::prelude::*;

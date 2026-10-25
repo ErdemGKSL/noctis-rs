@@ -32,11 +32,25 @@ flac = ["symphonia/flac"]
 wav = ["symphonia/wav", "symphonia/pcm"]
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["cargo_bench_support"] }
+dhat.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
 noctis = { workspace = true, features = ["testkit", "voice"] }
 noctis-testkit.workspace = true
 serde_json.workspace = true
+# `internals` (Songbird's mock mixer and scheduler) for the frame-counting
+# tests, the allocation test and the bench only; never a normal feature
+# (AD-30, deps-check `songbird-gated`).
+songbird = { workspace = true, features = ["internals"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "test-util", "time"] }
+
+[[bench]]
+name = "voice"
+harness = false
+
+[[test]]
+name = "passthrough_alloc"
+harness = false
 
 [lints]
 workspace = true

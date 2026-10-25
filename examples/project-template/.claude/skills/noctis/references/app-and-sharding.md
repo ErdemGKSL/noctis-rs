@@ -1199,6 +1199,8 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_discord_cache_update_errors_total` | counter | `app` | Discord cache updates that failed or exceeded 1 s; the event or interaction still reaches its handlers (one `noctis::cache` warning per outage) |
 | `noctis_voice_calls` | gauge | `app` | live and pending voice calls (feature `voice`, see `voice.md` §5) |
 | `noctis_voice_tracks_total` | counter | `app`, `result` | tracks that became current, by outcome: `finished`, `skipped`, `stopped`, `error` (feature `voice`, see `voice.md` §5) |
+| `noctis_voice_passthrough_frames_total` | counter | `app` | 20 ms Opus frames sent by passthrough, without decode or encode (feature `voice`, see `voice.md`, Passthrough and encoding) |
+| `noctis_voice_encoded_frames_total` | counter | `app` | 20 ms frames decoded for mixing and encoding (feature `voice`, see `voice.md`, Passthrough and encoding) |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
 `autocomplete` are emitted today; `component` and `render` join with their handlers.

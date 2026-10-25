@@ -30,15 +30,24 @@
 //! - `VoiceConfig::idle_leave` leaves calls that stayed idle.
 //! - Demux formats are the features `ogg`, `mkv`, `mp3`, `aac`, `isomp4`,
 //!   `flac` and `wav` (all on by default).
+//! - Each current track's input is parsed by Noctis before the driver gets
+//!   it. Pre-encoded Opus (Ogg or WebM/Matroska, 48 kHz, 20 ms frames) is
+//!   sent by passthrough, without decode or encode, while it is the only
+//!   track at volume 1.0; anything else is decoded, mixed and encoded.
+//! - The encoder bitrate follows the joined channel's bitrate (64 kbps when
+//!   unknown), capped by `VoiceConfig::max_bitrate`.
 //! - The gauge `noctis_voice_calls{app}` counts the live and pending calls;
 //!   the counter `noctis_voice_tracks_total{app, result}` counts the tracks
 //!   that became current by outcome (`finished`, `skipped`, `stopped`,
-//!   `error`).
+//!   `error`); `noctis_voice_passthrough_frames_total{app}` and
+//!   `noctis_voice_encoded_frames_total{app}` count the 20 ms frames sent by
+//!   passthrough and the ones decoded for encoding.
 
 mod call;
 mod config;
 mod error;
 mod events;
+mod frames;
 mod media;
 mod player;
 mod plugin;
@@ -53,6 +62,29 @@ pub use events::{EndReason, QueueEmpty, TrackEnd, TrackError, TrackStart};
 pub use plugin::{AppBuilderVoiceExt, VoicePlugin};
 pub use track::{Track, TrackId, TrackInfo, TrackSource};
 pub use voice::{CallHandle, Voice, VoiceExt};
+
+/// Test and bench support: not part of the API, never re-exported by
+/// `noctis`, and exempt from semver.
+#[doc(hidden)]
+pub mod __testing {
+    use std::sync::Arc;
+
+    use crate::frames::{FrameCounters, instrument as wrap};
+
+    /// Wraps an already-parsed Songbird input with the frame counters a
+    /// played track gets, labelled `app`; any other input comes back
+    /// unchanged as `Err`.
+    ///
+    /// # Errors
+    ///
+    /// `input` when it is not `Input::Live(LiveInput::Parsed(_), _)`.
+    pub fn instrument(
+        input: songbird::input::Input,
+        app: &str,
+    ) -> Result<songbird::input::Input, songbird::input::Input> {
+        wrap(input, FrameCounters::new(Some(&Arc::from(app))))
+    }
+}
 
 #[cfg(test)]
 mod test_support;

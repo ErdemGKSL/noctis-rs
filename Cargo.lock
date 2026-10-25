@@ -3132,6 +3132,8 @@ dependencies = [
 name = "noctis-voice"
 version = "0.1.0"
 dependencies = [
+ "criterion",
+ "dhat",
  "futures-util",
  "metrics",
  "metrics-util",

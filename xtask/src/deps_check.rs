@@ -43,9 +43,11 @@
 //! hyper-util legacy client.
 //!
 //! The `songbird-gated` rule (AD-30) keeps the voice driver in one crate:
-//! only `noctis-voice` may depend on `songbird`, and only as a normal
-//! dependency (the facade reaches it through its optional `voice` feature,
-//! so default builds never contain Songbird).
+//! only `noctis-voice` may depend on `songbird`, as a normal dependency (the
+//! facade reaches it through its optional `voice` feature, so default builds
+//! never contain Songbird) or as a dev-dependency (Songbird's `internals`
+//! mock mixer for its tests and bench, Story 17.3); a build dependency, or
+//! any other crate's dependency, fails.
 //!
 //! The `keyed-map` rule (AD-25) keeps framework memory bounded per guild: in
 //! the sources (`src/**/*.rs`) of every internal crate except
@@ -713,7 +715,7 @@ fn check_session_store(ws: &Workspace, out: &mut BTreeSet<Violation>) {
     }
 }
 
-/// Only `noctis-voice` depends on `songbird`, as a normal dependency
+/// Only `noctis-voice` depends on `songbird`, as a normal or dev dependency
 /// (AD-30).
 fn check_songbird(ws: &Workspace, out: &mut BTreeSet<Violation>) {
     for member in &ws.crates {
@@ -722,8 +724,8 @@ fn check_songbird(ws: &Workspace, out: &mut BTreeSet<Violation>) {
                 format!(
                     "only `{VOICE}` may depend on {SONGBIRD}, behind the facade's `voice` (AD-30)"
                 )
-            } else if dep.kind != Kind::Normal {
-                format!("`{VOICE}` must depend on {SONGBIRD} as a normal dependency (AD-30)")
+            } else if !matches!(dep.kind, Kind::Normal | Kind::Dev) {
+                format!("`{VOICE}` must depend on {SONGBIRD} as a normal or dev dependency (AD-30)")
             } else {
                 continue;
             };
@@ -1434,37 +1436,53 @@ mod tests {
     fn songbird_on_voice_passes() {
         let voice = Member {
             name: VOICE.to_owned(),
-            deps: vec![Dep {
-                optional: false,
-                ..dep(SONGBIRD)
-            }],
+            deps: vec![
+                Dep {
+                    optional: false,
+                    ..dep(SONGBIRD)
+                },
+                // Story 17.3: Songbird's `internals` for tests and the bench.
+                Dep {
+                    kind: Kind::Dev,
+                    optional: false,
+                    ..dep(SONGBIRD)
+                },
+            ],
             ..member(&[])
         };
         assert_eq!(songbird_rule(vec![voice]), Vec::<String>::new());
     }
 
     #[test]
-    fn songbird_elsewhere_or_as_dev_fails() {
+    fn songbird_elsewhere_or_as_build_fails() {
         let other = Member {
             name: "noctis-core".to_owned(),
-            deps: vec![dep(SONGBIRD)],
+            deps: vec![
+                dep(SONGBIRD),
+                Dep {
+                    kind: Kind::Dev,
+                    ..dep(SONGBIRD)
+                },
+            ],
             ..member(&[])
         };
-        let dev = Member {
+        let build = Member {
             name: VOICE.to_owned(),
             deps: vec![Dep {
-                kind: Kind::Dev,
+                kind: Kind::Build,
                 ..dep(SONGBIRD)
             }],
             ..member(&[])
         };
         assert_eq!(
-            songbird_rule(vec![other, dev]),
+            songbird_rule(vec![other, build]),
             [
                 "deps-check: noctis-core -> songbird (normal): only `noctis-voice` may depend \
                  on songbird, behind the facade's `voice` (AD-30) [songbird-gated]",
-                "deps-check: noctis-voice -> songbird (dev): `noctis-voice` must depend on \
-                 songbird as a normal dependency (AD-30) [songbird-gated]"
+                "deps-check: noctis-core -> songbird (dev): only `noctis-voice` may depend \
+                 on songbird, behind the facade's `voice` (AD-30) [songbird-gated]",
+                "deps-check: noctis-voice -> songbird (build): `noctis-voice` must depend on \
+                 songbird as a normal or dev dependency (AD-30) [songbird-gated]"
             ]
         );
     }

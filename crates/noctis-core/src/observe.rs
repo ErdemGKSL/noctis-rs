@@ -102,6 +102,8 @@ const fn row(
 /// | `noctis_discord_cache_update_errors_total` | counter | `app` (failed or timed-out Discord cache updates; the event or interaction still runs) |
 /// | `noctis_voice_calls` | gauge | `app` (live and pending voice calls; feature `voice`) |
 /// | `noctis_voice_tracks_total` | counter | `app`, `result` (`finished`, `skipped`, `stopped`, `error`: one per track that became current; feature `voice`) |
+/// | `noctis_voice_passthrough_frames_total` | counter | `app` (20 ms Opus frames sent by passthrough, without decode or encode; feature `voice`) |
+/// | `noctis_voice_encoded_frames_total` | counter | `app` (20 ms frames decoded for mixing and encoding; one track per call, so the frames the call encoded; feature `voice`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -259,6 +261,18 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "result"],
         "Tracks that became current, by outcome (feature `voice`)",
+    ),
+    row(
+        "noctis_voice_passthrough_frames_total",
+        MetricType::Counter,
+        &["app"],
+        "20 ms Opus frames sent by passthrough (feature `voice`)",
+    ),
+    row(
+        "noctis_voice_encoded_frames_total",
+        MetricType::Counter,
+        &["app"],
+        "20 ms frames decoded for mixing and encoding (feature `voice`)",
     ),
 ];
 

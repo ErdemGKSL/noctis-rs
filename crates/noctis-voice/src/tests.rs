@@ -156,6 +156,15 @@ struct Running {
 
 impl Running {
     async fn start(app: &str, config: VoiceConfig) -> Self {
+        Self::start_with(app, config, |_| {}).await
+    }
+
+    /// As [`start`](Self::start), with `customize` applied to the builder.
+    async fn start_with(
+        app: &str,
+        config: VoiceConfig,
+        customize: impl FnOnce(&mut noctis_core::AppBuilder),
+    ) -> Self {
         snapshotter();
         let http = FakeDiscordHttp::start_with(GatewayBot {
             shards: 2,
@@ -179,6 +188,7 @@ impl Running {
             .shard_total(2)
             .module(music(&seen))
             .voice(config);
+        customize(&mut builder);
         let built = builder.build().unwrap_or_else(|e| panic!("{e}"));
         let shared = built
             .state::<VoiceShared>()
@@ -563,5 +573,163 @@ async fn driver_reports_map_to_events() {
             empty.as_str(),
         ]
     );
+    running.stop().await;
+}
+
+/// The bot's own `VOICE_STATE_UPDATE` in `guild()`'s `channel`.
+fn bot_voice_state(running: &Running, channel: u64) {
+    running.gw.dispatch(
+        "VOICE_STATE_UPDATE",
+        json!({
+            "guild_id": guild().to_string(),
+            "channel_id": channel.to_string(),
+            "user_id": "1",
+            "session_id": "voice-session",
+            "deaf": false,
+            "mute": false,
+            "self_deaf": true,
+            "self_mute": false,
+            "self_video": false,
+            "suppress": false,
+            "request_to_speak_timestamp": null
+        }),
+    );
+}
+
+/// A guild channel JSON: voice with `bitrate`, or text without.
+fn channel_json(guild: Id<GuildMarker>, id: u64, bitrate: Option<u32>) -> serde_json::Value {
+    let mut channel = json!({
+        "id": id.to_string(),
+        "guild_id": guild.to_string(),
+        "type": if bitrate.is_some() { 2 } else { 0 },
+        "name": format!("c{id}"),
+        "position": 0,
+        "permission_overwrites": [],
+    });
+    if let Some(bitrate) = bitrate {
+        channel["bitrate"] = json!(bitrate);
+        channel["user_limit"] = json!(0);
+    }
+    channel
+}
+
+/// Caches `guild()` with V (10, 96 kbps), V2 (11, 32 kbps) and a text
+/// channel (12); channel 13 is never cached.
+fn seed_cache(running: &Running) {
+    let g = guild();
+    running.gw.dispatch(
+        "GUILD_CREATE",
+        json!({
+            "id": g.to_string(), "name": "G", "owner_id": "1", "preferred_locale": "en-US",
+            "afk_timeout": 300, "default_message_notifications": 0,
+            "explicit_content_filter": 0, "features": [], "mfa_level": 0, "nsfw_level": 0,
+            "premium_progress_bar_enabled": false, "premium_tier": 0,
+            "system_channel_flags": 0, "verification_level": 0, "emojis": [], "stickers": [],
+            "channels": [
+                channel_json(g, 10, Some(96_000)),
+                channel_json(g, 11, Some(32_000)),
+                channel_json(g, 12, None),
+            ],
+            "roles": [], "threads": [], "members": [], "voice_states": [], "presences": [],
+            "stage_instances": [], "guild_scheduled_events": [],
+        }),
+    );
+}
+
+/// A `CHANNEL_UPDATE` of `channel` in `guild` with `bitrate`.
+fn channel_update(running: &Running, guild: Id<GuildMarker>, channel: u64, bitrate: u32) {
+    running.gw.dispatch(
+        "CHANNEL_UPDATE",
+        channel_json(guild, channel, Some(bitrate)),
+    );
+}
+
+async fn bitrate_is(running: &Running, want: u32) {
+    until(&format!("bitrate {want}"), || {
+        running.shared.bitrate(guild()) == Some(want)
+    })
+    .await;
+}
+
+/// The encoder follows the call's channel bitrate: the bot's own voice
+/// state (from the cache), `CHANNEL_UPDATE` of that channel, a move; other
+/// channels, other guilds and others' voice states change nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn bitrate_follows_the_channel() {
+    let running = Running::start(
+        "voice-bitrate",
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+    )
+    .await;
+    seed_cache(&running);
+    let _call = running.pending_call().await;
+    assert_eq!(running.shared.bitrate(guild()), Some(64_000), "unknown yet");
+    // Another member's voice state in V: ignored.
+    running.gw.dispatch(
+        "VOICE_STATE_UPDATE",
+        json!({
+            "guild_id": guild().to_string(), "channel_id": "11", "user_id": "99",
+            "session_id": "s", "deaf": false, "mute": false, "self_deaf": false,
+            "self_mute": false, "self_video": false, "suppress": false,
+            "request_to_speak_timestamp": null
+        }),
+    );
+    bot_voice_state(&running, 10);
+    bitrate_is(&running, 96_000).await;
+    channel_update(&running, guild(), 10, 128_000);
+    bitrate_is(&running, 128_000).await;
+    // Another channel of G, and a channel of a guild with no call.
+    channel_update(&running, guild(), 12, 8_000);
+    channel_update(&running, Id::new(7), 70, 8_000);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(running.shared.bitrate(guild()), Some(128_000));
+    assert_eq!(running.shared.bitrate(Id::new(7)), None);
+    // A move to V2 (cached), then to an uncached channel.
+    bot_voice_state(&running, 11);
+    bitrate_is(&running, 32_000).await;
+    bot_voice_state(&running, 13);
+    bitrate_is(&running, 64_000).await;
+    running.stop().await;
+}
+
+/// `max_bitrate` caps the channel's bitrate.
+#[tokio::test(flavor = "multi_thread")]
+async fn max_bitrate_caps_the_channel() {
+    let running = Running::start(
+        "voice-bitrate-cap",
+        VoiceConfig::default()
+            .join_timeout(Duration::from_mins(1))
+            .max_bitrate(Some(64_000)),
+    )
+    .await;
+    seed_cache(&running);
+    let _call = running.pending_call().await;
+    bot_voice_state(&running, 11);
+    bitrate_is(&running, 32_000).await;
+    bot_voice_state(&running, 10);
+    bitrate_is(&running, 64_000).await;
+    running.stop().await;
+}
+
+/// Without a Discord cache the channel's bitrate is unknown (64 kbps)
+/// until a `CHANNEL_UPDATE` names it.
+#[tokio::test(flavor = "multi_thread")]
+async fn bitrate_without_a_cache() {
+    let running = Running::start_with(
+        "voice-bitrate-nocache",
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+        |builder| {
+            builder.discord_cache(noctis_core::DiscordCacheConfig::none());
+        },
+    )
+    .await;
+    seed_cache(&running);
+    let call = running.pending_call().await;
+    bot_voice_state(&running, 11);
+    until("the move", || call.channel() == Some(Id::new(11))).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(running.shared.bitrate(guild()), Some(64_000));
+    channel_update(&running, guild(), 11, 128_000);
+    bitrate_is(&running, 128_000).await;
     running.stop().await;
 }

@@ -81,6 +81,8 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // cmake for libopus): `.voice(..)` installs voice and adds GUILD_VOICE_STATES, and
     // the `voice` Module's `/join`, `/leave`, `/play`, `/skip` and `/stop` call
     // `ctx.voice()`. At shutdown every call leaves its channel before the shards close.
+    // The Opus encoder follows the channel's bitrate; cap it with
+    // `VoiceConfig::default().max_bitrate(Some(96_000))`.
     #[cfg(feature = "voice")]
     builder
         .voice(noctis::voice::VoiceConfig::default())

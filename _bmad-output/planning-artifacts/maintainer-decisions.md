@@ -438,6 +438,17 @@ support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
   never the bot token, and Discord's API refused in `Track::url` and in every
   redirect hop. deps-check `asset-http` allows `reqwest` only as a normal dependency
   of `noctis-voice`.
+- Amended (2026-10-25, Story 17.3): Noctis prepares each current track's input
+  itself and wraps the parsed demuxer and decoder in allocation-free frame counters:
+  `noctis_voice_passthrough_frames_total` counts the 20 ms Opus frames Songbird sent
+  by passthrough and `noctis_voice_encoded_frames_total` the 20 ms frames decoded for
+  encoding (`app` label only). The driver config is explicit (stereo, soft clipping on
+  mixed frames only, one preallocated track). The encoder bitrate follows the joined
+  channel's bitrate (64 kbps when unknown), capped by the new
+  `VoiceConfig::max_bitrate` (8000..=384000, default none); it is a sender setting
+  Discord does not enforce, so it is a config range, not a rule id. Songbird's
+  `internals` feature is a `noctis-voice` dev-dependency only (tests, the dhat test
+  and the bench), and deps-check `songbird-gated` allows that dev edge.
 - **Order.** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
   with Epic 16; merges serialize through the merge lock. Epic 14's template, skill
   and docs stories cover the `voice` feature once Epic 17 is merged.

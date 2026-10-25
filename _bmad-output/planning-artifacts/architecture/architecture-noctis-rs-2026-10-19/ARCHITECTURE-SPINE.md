@@ -1582,6 +1582,30 @@ list in CI.
     nothing playing. Demux formats are `noctis-voice` features `ogg`, `mkv`, `mp3`,
     `aac`, `isomp4`, `flac` and `wav` (all on by default) mapped to symphonia 0.5,
     with one symphonia version in the graph. Media inputs use the AD-24 media client.
+  - Amended (2026-10-25, Story 17.3): passthrough is Songbird 0.6.1's own (one playing
+    track at volume 1.0, an Opus packet of 960 samples, re-checked every 20 ms;
+    Songbird passes three non-960-sample packets through, then blocks passthrough for
+    the track). Noctis prepares each current track's input itself
+    (`make_playable_async`, outside the Call lock, token re-checked after preparation
+    and under the lock) and wraps the parsed symphonia `FormatReader`/`Decoder` in
+    allocation-free counters, then hands the driver the parsed input and reports
+    `TrackStart` itself after `play_only` (Songbird fires no `Playable` for a parsed
+    input); a preparation failure is `TrackError`. Metric semantics:
+    `noctis_voice_passthrough_frames_total` = packets of the played track the mixer
+    read and never decoded; `noctis_voice_encoded_frames_total` = 20 ms frames the
+    track supplied by decoding (the frames the call encoded, since the queue plays one
+    track); both labelled `app` only. The driver config is explicit
+    (`MixMode::Stereo`, soft clipping, which Songbird applies to mixed frames only,
+    `preallocated_tracks(1)`, no gateway timeout); the encoder stays Songbird's
+    `Application::Audio` with automatic signal detection (`OPUS_SET_SIGNAL` is not
+    reachable without a fork). The encoder bitrate follows the joined channel's
+    bitrate (Discord cache on the bot's own `VOICE_STATE_UPDATE`, then
+    `CHANNEL_UPDATE`), clamped to 8000..=384000, 64 kbps when unknown, capped by
+    `VoiceConfig::max_bitrate` (default `None`, range 8000..=384000; a config range,
+    not a Discord rule). `songbird`'s `internals` feature is enabled only as a
+    `noctis-voice` dev-dependency (mock mixer for the frame tests, the dhat test and
+    the bench); deps-check `songbird-gated` allows `songbird` as a normal or dev
+    dependency of `noctis-voice` (a build dependency, or any other crate, fails).
 
 ## Consistency Conventions
 

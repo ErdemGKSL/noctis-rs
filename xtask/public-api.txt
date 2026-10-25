@@ -9808,12 +9808,14 @@ pub fn noctis::voice::Voice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::
 impl noctis::voice::VoiceConfig
 pub const fn noctis::voice::VoiceConfig::get_idle_leave(&self) -> core::option::Option<core::time::Duration>
 pub const fn noctis::voice::VoiceConfig::get_join_timeout(&self) -> core::time::Duration
+pub const fn noctis::voice::VoiceConfig::get_max_bitrate(&self) -> core::option::Option<u32>
 pub const fn noctis::voice::VoiceConfig::get_max_queue(&self) -> usize
 pub const fn noctis::voice::VoiceConfig::get_media_connect_timeout(&self) -> core::time::Duration
 pub const fn noctis::voice::VoiceConfig::get_media_max_redirects(&self) -> u8
 pub const fn noctis::voice::VoiceConfig::idle_leave(self, core::option::Option<core::time::Duration>) -> Self
 pub const fn noctis::voice::VoiceConfig::is_self_deaf(&self) -> bool
 pub const fn noctis::voice::VoiceConfig::join_timeout(self, core::time::Duration) -> Self
+pub const fn noctis::voice::VoiceConfig::max_bitrate(self, core::option::Option<u32>) -> Self
 pub const fn noctis::voice::VoiceConfig::max_queue(self, usize) -> Self
 pub const fn noctis::voice::VoiceConfig::media_connect_timeout(self, core::time::Duration) -> Self
 pub const fn noctis::voice::VoiceConfig::media_max_redirects(self, u8) -> Self

@@ -1,5 +1,9 @@
 //! The Songbird [`Player`]: plays a queue's current track on the guild's
 //! driver with `play_only`, so the driver never holds more than one track.
+//!
+//! Each current track's input is prepared (created, probed and wrapped with
+//! the frame counters, see [`crate::frames`]) in the play task, outside the
+//! Call lock, and handed to the driver already parsed.
 
 use std::future::{Future, ready};
 use std::pin::Pin;
@@ -10,7 +14,8 @@ use songbird::Call;
 use songbird::events::{Event, EventContext, EventData, EventHandler, TrackEvent};
 use songbird::tracks::{PlayMode, Track as SongbirdTrack, TrackHandle};
 
-use crate::queue::{Player, QueueCell};
+use crate::frames::{self, FrameCounters};
+use crate::queue::{Binding, Player, QueueCell};
 use crate::track::TrackInfo;
 
 /// The player's view of the current track: what it should be, and its
@@ -28,6 +33,8 @@ pub(crate) struct SongbirdPlayer {
     media: reqwest::Client,
     queue: Weak<QueueCell>,
     slot: Arc<Mutex<Slot>>,
+    /// The `app` label of the frame counters.
+    binding: Arc<Binding>,
 }
 
 impl SongbirdPlayer {
@@ -35,11 +42,13 @@ impl SongbirdPlayer {
         call: Arc<tokio::sync::Mutex<Call>>,
         media: reqwest::Client,
         queue: Weak<QueueCell>,
+        binding: Arc<Binding>,
     ) -> Self {
         Self {
             call,
             media,
             queue,
+            binding,
             slot: Arc::new(Mutex::new(Slot {
                 token: 0,
                 paused: false,
@@ -91,36 +100,13 @@ impl Player for SongbirdPlayer {
             return;
         };
         let input = track.input(&self.media);
+        let counters = FrameCounters::new(self.binding.app.get());
         let call = Arc::clone(&self.call);
         let slot = Arc::clone(&self.slot);
         let queue = self.queue.clone();
-        // The Call's lock is awaited in a task of its own, so advancing the
-        // queue never blocks a driver event task.
-        runtime.spawn(async move {
-            let mut call = call.lock().await;
-            let mut slot = lock(&slot);
-            if slot.token != token {
-                return;
-            }
-            let mut track = SongbirdTrack::new(input).volume(slot.volume);
-            if slot.paused {
-                track = track.pause();
-            }
-            for event in [TrackEvent::Playable, TrackEvent::End, TrackEvent::Error] {
-                track.events.add_event(
-                    EventData::new(
-                        Event::Track(event),
-                        Report {
-                            queue: queue.clone(),
-                            token,
-                            event,
-                        },
-                    ),
-                    Duration::ZERO,
-                );
-            }
-            slot.handle = Some(call.play_only(track));
-        });
+        // Preparation and the Call's lock are awaited in a task of their
+        // own, so advancing the queue never blocks a driver event task.
+        runtime.spawn(play_prepared(input, counters, call, slot, queue, token));
     }
 
     fn pause(&self, token: u64) {
@@ -163,6 +149,64 @@ impl Player for SongbirdPlayer {
                 let _ = handle.set_volume(volume);
             },
         );
+    }
+}
+
+/// Prepares `input` (token `token`), then plays it with `play_only` unless
+/// the token went stale meanwhile (a stale input is dropped, which kills a
+/// command's child). A preparation failure is the track's error.
+async fn play_prepared(
+    input: songbird::input::Input,
+    counters: FrameCounters,
+    call: Arc<tokio::sync::Mutex<Call>>,
+    slot: Arc<Mutex<Slot>>,
+    queue: Weak<QueueCell>,
+    token: u64,
+) {
+    let input = match frames::prepare(input, counters).await {
+        Ok(input) => input,
+        Err(error) => {
+            let current = lock(&slot).token == token;
+            if current && let Some(queue) = queue.upgrade() {
+                queue.on_error(token, error);
+            }
+            return;
+        }
+    };
+    if lock(&slot).token != token {
+        return;
+    }
+    {
+        let mut call = call.lock().await;
+        let mut slot = lock(&slot);
+        if slot.token != token {
+            return;
+        }
+        let mut track = SongbirdTrack::new(input).volume(slot.volume);
+        if slot.paused {
+            track = track.pause();
+        }
+        // An already-parsed input fires no `Playable`; the registration is
+        // harmless and keeps the mapping in one place.
+        for event in [TrackEvent::Playable, TrackEvent::End, TrackEvent::Error] {
+            track.events.add_event(
+                EventData::new(
+                    Event::Track(event),
+                    Report {
+                        queue: queue.clone(),
+                        token,
+                        event,
+                    },
+                ),
+                Duration::ZERO,
+            );
+        }
+        slot.handle = Some(call.play_only(track));
+    }
+    // The driver has the track: `TrackStart` (the queue fires it once and
+    // ignores a stale token).
+    if let Some(queue) = queue.upgrade() {
+        queue.on_playable(token);
     }
 }
 

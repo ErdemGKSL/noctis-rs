@@ -44,10 +44,13 @@ builder
     `None` (default, never) or 1 s..=24 h (§9).
   - `.media_connect_timeout(Duration)`: 1 s..=60 s, default 10 s (§9).
   - `.media_max_redirects(u8)`: 0..=10, default 5; 0 follows none (§9).
+  - `.max_bitrate(Option<u32>)`: caps the Opus encoder's bitrate in bits per second:
+    `None` (default, follow the channel) or 8000..=384000 (§10).
   - Any value out of its range makes `build()` fail with a `BuildViolation` from the
     plugin that names the range.
 - Read the values back with `get_join_timeout()`, `is_self_deaf()`, `get_max_queue()`,
-  `get_idle_leave()`, `get_media_connect_timeout()` and `get_media_max_redirects()`.
+  `get_idle_leave()`, `get_media_connect_timeout()`, `get_media_max_redirects()` and
+  `get_max_bitrate()`.
 - Demux formats are cargo features of the internal voice crate, all on with `voice`:
   Ogg, Matroska/WebM, MP3, AAC/MP4, FLAC and WAV (symphonia). Opus is always
   decodable.
@@ -169,6 +172,9 @@ plugin as a move or a disconnect.
   current once, by outcome: `finished`, `skipped`, `stopped` (also a current track
   dropped with its call) or `error`. Pending tracks dropped by `clear`, `stop` or a
   leave are not counted. No metric carries guild, channel, user or track ids, or URLs.
+- The counters `noctis_voice_passthrough_frames_total{app}` and
+  `noctis_voice_encoded_frames_total{app}` count 20 ms frames sent by passthrough and
+  frames decoded for encoding (§10).
 
 ## 6. Tracks
 
@@ -197,9 +203,9 @@ let c = Track::command("yt-dlp", ["-f", "bestaudio[acodec=opus]", "-o", "-", "--
 `Track::command` passes args verbatim with no shell, but the program still parses them
 as options (a user value like `--exec=...` would be one), so put `--` before user input.
 
-Tip: Ogg/WebM Opus at 48 kHz is the cheapest input (decoding Opus is light; a
-pass-through path that skips decode and re-encode arrives later). With `yt-dlp`,
-prefer `bestaudio[acodec=opus]`.
+Tip: Ogg/WebM Opus at 48 kHz with 20 ms frames is the cheapest input: it is sent by
+passthrough, without decode or re-encode (§10). With `yt-dlp`, prefer
+`bestaudio[acodec=opus]`.
 
 ## 7. The queue
 
@@ -336,7 +342,47 @@ Discord HTTP client:
 
 Never fetch media with your own HTTP client to bypass these rules.
 
-## 10. Testing
+## 10. Passthrough and encoding
+
+Noctis parses each current track's input before the driver plays it. Then:
+
+- **Passthrough.** An Opus packet goes to the wire as it is (no decode, no encode)
+  when the track is the call's only playing track, its volume is exactly `1.0` and
+  the packet holds 20 ms (960 samples at 48 kHz). This is the normal music-bot case
+  with Ogg Opus or WebM/Matroska Opus input. It is checked every 20 ms: after
+  `set_volume(0.5)` the next frames are decoded, and passthrough resumes when the
+  volume is back at `1.0`.
+- **Fallback.** Everything else is decoded, resampled to 48 kHz, mixed (stereo,
+  soft-clipped) and encoded with libopus: any other format (MP3, AAC, FLAC, WAV),
+  any volume other than `1.0`, and Opus with 40 or 60 ms frames (Songbird passes the
+  first three such packets through, then decodes the rest of the track).
+- **Encoder bitrate.** The encoder follows the joined channel's bitrate: read from
+  the Discord cache when the bot lands in the channel (resource `CHANNEL`, cached by
+  default) and updated on that channel's `CHANNEL_UPDATE`. Without a cached channel it
+  uses 64 kbps, Discord's default. `VoiceConfig::max_bitrate(Some(96_000))` caps it.
+  Passthrough frames keep the bitrate they were encoded at.
+- **Metrics.** `noctis_voice_passthrough_frames_total{app}` counts frames sent by
+  passthrough; `noctis_voice_encoded_frames_total{app}` counts 20 ms frames decoded
+  for encoding (one track per call, so the frames the call encoded). On a music bot
+  that pre-encodes its library, the encoded counter barely moves. If it grows as fast
+  as tracks play, check the input format, the volume and the frame size.
+
+Pre-encode a library once for passthrough:
+
+```sh
+ffmpeg -i in.flac -c:a libopus -b:a 128k -ar 48000 -frame_duration 20 out.opus
+```
+
+Stream YouTube's Opus (WebM Opus at 48 kHz) without re-encoding:
+
+```rust
+let track = Track::command(
+    "yt-dlp",
+    ["-f", "bestaudio[acodec=opus]/bestaudio", "-o", "-", "--", url.as_str()],
+)?;
+```
+
+## 11. Testing
 
 `TestApp` runs on a fake gateway that has no voice server, so a `/join` there waits
 for `join_timeout` and ends in `VoiceError::Timeout`: test the replies, not the
