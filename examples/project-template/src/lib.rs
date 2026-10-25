@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! A starter Noctis bot:
 //!
 //! - `setup` — `/setup start` opens a hand-written three-step setup flow (UD-4).
@@ -88,10 +86,12 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         .voice(noctis::voice::VoiceConfig::default())
         .module(modules::voice::module());
     #[cfg(feature = "prefix")]
-    builder.intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT).plugin(
-        noctis::prefix::PrefixPlugin::new("!")
-            .command::<modules::profile::Profile>()
-            .command::<modules::profile::Badge>(),
-    );
+    builder
+        .intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT)
+        .plugin(
+            noctis::prefix::PrefixPlugin::new("!")
+                .command::<modules::profile::Profile>()
+                .command::<modules::profile::Badge>(),
+        );
     builder
 }

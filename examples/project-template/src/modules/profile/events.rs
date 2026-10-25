@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Gateway events of the profile feature (tescord's "trigger" file).
 
 use std::time::Duration;
@@ -10,9 +8,9 @@ use noctis::prelude::*;
 use super::xp_key;
 
 /// +1 XP per message, at most once a minute per member. A `MessageCreate` handler
-/// derives the GUILD_MESSAGES intent: `build()` adds it to the App (not privileged, so
+/// derives the `GUILD_MESSAGES` intent: `build()` adds it to the App (not privileged, so
 /// no `.intents(..)` call; message content and DMs are not requested) and the gateway
-/// starts parsing MESSAGE_CREATE. Concurrent (not `ordered`), never droppable.
+/// starts parsing `MESSAGE_CREATE`. Concurrent (not `ordered`), never droppable.
 #[derive(EventHandler, Debug)]
 #[event]
 pub struct AwardXp;
@@ -28,7 +26,10 @@ impl AwardXp {
         }
         let kv = ctx.kv();
         let cooldown = format!("xpcd:{guild}:{}", msg.author.id);
-        if kv.put_if_absent(&cooldown, &(), Some(Duration::from_secs(60))).await? {
+        if kv
+            .put_if_absent(&cooldown, &(), Some(Duration::from_mins(1)))
+            .await?
+        {
             kv.incr(&xp_key(guild, msg.author.id), 1, None).await?;
         }
         Ok(())

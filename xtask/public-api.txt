@@ -2149,6 +2149,7 @@ pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[handler]
 pub proc macro noctis::i18n!()
+pub use noctis::id
 pub proc macro noctis::label!()
 pub proc macro noctis::#[on_expired]
 pub proc macro noctis::#[on_rate_limited]
@@ -5494,6 +5495,7 @@ impl core::clone::Clone for noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub use noctis::prelude::Id
 pub struct noctis::prelude::InputOverrides
 pub noctis::prelude::InputOverrides::description: core::option::Option<noctis::prelude::Text>
 pub noctis::prelude::InputOverrides::label: core::option::Option<noctis::prelude::Text>

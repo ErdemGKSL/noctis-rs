@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`:
 //! `self` is the decoded Payload,
 //! validate and authorize (the Module's `guild_only` Middleware and the Route Guards run
@@ -12,6 +10,7 @@ use std::time::UNIX_EPOCH;
 
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
+use noctis::{DiscordCacheReader, Modules};
 
 use super::view::{DashData, module_name, render_dashboard};
 use super::{DashGuild, DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
@@ -45,9 +44,10 @@ impl Dashboard {
             Some(_) => DashTab::Modules,
             None => DashTab::Overview,
         };
-        let data = load(&ctx, guild, &meta).await?;
+        let data = load(ctx.cache(), &ctx.modules(), guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_dashboard(&data, &s, tab, 0, ctx.limits())).await
+        ctx.respond(render_dashboard(&data, &s, tab, 0, ctx.limits()))
+            .await
     }
 
     /// Suggests modules from the Module registry's stored per-guild state, matched against
@@ -65,10 +65,16 @@ impl Dashboard {
         Ok(ModuleKey::ALL
             .into_iter()
             .map(|m| (m, module_name(&s, m)))
-            .filter(|(m, name)| m.module_id().contains(&typed) || name.to_lowercase().contains(&typed))
+            .filter(|(m, name)| {
+                m.module_id().contains(&typed) || name.to_lowercase().contains(&typed)
+            })
             .map(|(m, name)| {
                 let on = ctx.modules().is_enabled(m.module_id(), Some(guild));
-                let state = if on { s.common.enabled() } else { s.common.disabled() };
+                let state = if on {
+                    s.common.enabled()
+                } else {
+                    s.common.disabled()
+                };
                 (m.module_id().to_owned(), format!("{name} · {state}"))
             })
             .collect())
@@ -79,9 +85,10 @@ impl OpenTab {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
-        let data = load(&ctx, self.guild, &meta).await?;
+        let data = load(ctx.cache(), &ctx.modules(), self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.update(render_dashboard(&data, &s, self.tab, 0, ctx.limits())).await
+        ctx.update(render_dashboard(&data, &s, self.tab, 0, ctx.limits()))
+            .await
     }
 }
 
@@ -90,9 +97,16 @@ impl TurnPage {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
-        let data = load(&ctx, self.guild, &meta).await?;
+        let data = load(ctx.cache(), &ctx.modules(), self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.update(render_dashboard(&data, &s, DashTab::Roles, self.page, ctx.limits())).await
+        ctx.update(render_dashboard(
+            &data,
+            &s,
+            DashTab::Roles,
+            self.page,
+            ctx.limits(),
+        ))
+        .await
     }
 }
 
@@ -101,12 +115,23 @@ impl ToggleModule {
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
         ctx.modules()
-            .set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable)
+            .set_enabled(
+                self.module.module_id(),
+                ModuleScope::Guild(self.guild),
+                self.enable,
+            )
             .await?;
         // Re-render the same tab with the new state, in place.
-        let data = load(&ctx, self.guild, &meta).await?;
+        let data = load(ctx.cache(), &ctx.modules(), self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
+        ctx.update(render_dashboard(
+            &data,
+            &s,
+            DashTab::Modules,
+            0,
+            ctx.limits(),
+        ))
+        .await
     }
 }
 
@@ -117,21 +142,37 @@ fn bot_meta(meta: Option<State<BotMeta>>) -> HandlerResult<State<BotMeta>> {
 }
 
 /// All I/O happens here, before rendering.
-async fn load(ctx: &impl Ctx, guild: Id<GuildMarker>, meta: &BotMeta) -> HandlerResult<DashData> {
+/// Takes the accessors it needs (`ctx.cache()`, `ctx.modules()`), so every context kind
+/// can call it.
+async fn load(
+    cache: DiscordCacheReader,
+    modules: &Modules,
+    guild: Id<GuildMarker>,
+    meta: &BotMeta,
+) -> HandlerResult<DashData> {
     // `None` means not cached (yet): fall back instead of failing.
-    let guild_name = ctx.cache().guild(guild).await?.map_or_else(|| guild.to_string(), |g| g.name);
-    let mut roles = ctx.cache().roles(guild).await?.unwrap_or_default();
-    roles.sort_unstable_by(|a, b| b.position.cmp(&a.position));
+    let guild_name = cache
+        .guild(guild)
+        .await?
+        .map_or_else(|| guild.to_string(), |g| g.name);
+    let mut roles = cache.roles(guild).await?.unwrap_or_default();
+    roles.sort_unstable_by_key(|r| std::cmp::Reverse(r.position));
     let modules = ModuleKey::ALL
         .into_iter()
-        .map(|m| (m, ctx.modules().is_enabled(m.module_id(), Some(guild))))
+        .map(|m| (m, modules.is_enabled(m.module_id(), Some(guild))))
         .collect();
     Ok(DashData {
         guild,
         guild_name,
-        roles: roles.into_iter().map(|r| (format!("<@&{}>", r.id), r.name)).collect(),
+        roles: roles
+            .into_iter()
+            .map(|r| (format!("<@&{}>", r.id), r.name))
+            .collect(),
         modules,
-        started_unix: meta.started_at.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+        started_unix: meta
+            .started_at
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs()),
         version: meta.version,
     })
 }

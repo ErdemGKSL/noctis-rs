@@ -80,7 +80,10 @@ fn render_env(template: &str) -> anyhow::Result<Zeroizing<String>> {
 
     let mut out = Zeroizing::new(String::with_capacity(template.len() + key.len()));
     for line in template.lines() {
-        match line.strip_prefix(PAYLOAD_KEY_VAR).and_then(|rest| rest.strip_prefix('=')) {
+        match line
+            .strip_prefix(PAYLOAD_KEY_VAR)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
             Some(value) if value.trim().is_empty() => {
                 out.push_str(PAYLOAD_KEY_VAR);
                 out.push('=');
@@ -117,7 +120,10 @@ mod tests {
         assert_eq!(lines[0], "A=1");
         let key = lines[1].strip_prefix("NOCTIS_PAYLOAD_KEY=").unwrap();
         assert_eq!(key.len(), 64);
-        assert!(key.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        assert!(
+            key.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
         assert!(noctis::codec::PayloadKey::from_hex(key).is_ok());
         assert_eq!(lines[2], "# NOCTIS_PAYLOAD_KEY=");
         assert_eq!(lines[3], "B=2");

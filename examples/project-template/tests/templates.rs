@@ -1,6 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-// The template crate builds from Story 14.2, when this snapshot joins the gate.
-
 //! Pixel snapshot of the profile card (FR-51). The first run writes
 //! `tests/snapshots/profile_card.png` (commit it); later runs compare with a small
 //! tolerance, and a mismatch writes `tests/snapshots/profile_card.new.png`.

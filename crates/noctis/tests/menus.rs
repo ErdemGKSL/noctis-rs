@@ -460,7 +460,6 @@ async fn handler_error_passes_through() {
 fn resolved_message_lookup() {
     let resolved: noctis::twilight::model::application::interaction::InteractionDataResolved =
         serde_json::from_value(json!({ "messages": { "7": message("7") } })).unwrap();
-    let found =
-        ResolvedMessage::from_resolved(&resolved, noctis::twilight::model::id::Id::new(7)).unwrap();
+    let found = ResolvedMessage::from_resolved(&resolved, Id::new(7)).unwrap();
     assert_eq!(found.message.content, "ping");
 }

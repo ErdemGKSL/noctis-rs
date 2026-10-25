@@ -2,3 +2,5 @@
 .env
 # Rejected pixel snapshot renders (assert_render_snapshot!).
 *.new.png
+# Rejected insta snapshots (`cargo insta review`).
+*.snap.new

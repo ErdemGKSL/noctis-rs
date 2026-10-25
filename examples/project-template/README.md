@@ -4,8 +4,9 @@ A ready-to-copy Discord bot built on [Noctis](https://crates.io/crates/noctis): 
 framework on twilight-rs with built-in sharding, a Components V2 UI kit and Tailwind
 image rendering.
 
-> **Status:** written against the planned Noctis API. It will compile once the `noctis`
-> crate lands; until then treat it as the reference shape of a Noctis bot.
+> **Status:** builds and passes its tests (flows, the profile card pixel snapshot, the
+> `BoundedCacheStore` conformance test) against this repository's `noctis`, with default
+> and all features. The noctis-rs CI job `template-build` gates it.
 
 ## What's inside
 
@@ -123,17 +124,48 @@ dropped from `guilds = [..]` keeps its old commands; clean such a guild with
 ## Develop
 
 ```sh
-cargo fmt
-cargo build --release
-cargo clippy --release --all-targets -- -D warnings
-cargo test --release
+cargo fmt --check
+cargo build --release --locked
+cargo clippy --release --locked --all-targets -- -D warnings
+cargo clippy --release --locked --all-targets --all-features -- -D warnings
+CI=true cargo test --release --locked
+CI=true cargo test --release --locked --all-features
 ```
+
+These are the CI gate. `--all-features` adds `prefix` and `voice` (voice builds libopus:
+a C compiler and cmake). With `CI=true` a missing or changed snapshot (insta's
+`tests/snapshots/*.snap`, the pixel snapshot `tests/snapshots/profile_card.png`) fails
+instead of being written: run without it once, review the new snapshot, and commit it.
 
 Always build, test, check and run with `--release`; never create a debug build (disk
 space in cloud sessions is limited). If the disk fills anyway, delete `target/debug/`.
 
 Coding agents: read `AGENTS.md`. They learn Noctis from `.claude/skills/noctis/` and
 never from Noctis's source.
+
+## Size (SM-1)
+
+SM-1 asks for a bot with a setup flow and a rendered profile card in at most 150 lines of
+user code. Code lines (non-blank, not a comment, up to `#[cfg(test)]`):
+
+| File | Code lines |
+| --- | ---: |
+| `src/main.rs` | 25 |
+| `src/modules/setup/mod.rs` | 112 |
+| `src/modules/setup/view.rs` | 149 |
+| `src/modules/setup/handlers.rs` | 165 |
+| `src/modules/profile/view.rs` | 82 |
+| **SM-1 files** | **533** |
+| whole `src/` | 1784 |
+
+Goal: ≤ 150. **Missed** (533): the template's setup flow does more than SM-1's minimum
+(per-step validation, Back and Cancel, a stale-panel restart, a one-shot Finish, logging
+through a stored, replaceable webhook). Reproduce the count from this directory:
+
+```sh
+for f in src/main.rs src/modules/setup/{mod,view,handlers}.rs src/modules/profile/view.rs; do
+  awk '/^[[:space:]]*#\[cfg\(test\)\]/{exit} {t=$0; sub(/^[[:space:]]+/,"",t); if (t=="" || t ~ /^\/\//) next; n++} END{print n+0, FILENAME}' "$f"; done
+```
 
 ## Scale out later
 

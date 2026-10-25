@@ -28,7 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: bash .github/scripts/check-build-config.sh
       # Checks that the template's dependency graph and the facade feature names
-      # it uses resolve, without compiling (template-build stays tracking-only).
+      # it uses resolve, without compiling (template-build compiles and tests it).
       - run: cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null
 
   fmt:
@@ -202,17 +202,29 @@ jobs:
   template-build:
     name: Project template build
     runs-on: ubuntu-latest
-    # Tracking mode until Story 14.2: the template uses API that has not landed yet.
-    continue-on-error: true
+    # Required: the template builds, lints and passes its tests (flows, the pixel
+    # snapshot, the adapter conformance test) against this repo's `noctis`. Its
+    # Cargo.lock is committed, so every step is `--locked`; GitHub sets `CI=true`, so a
+    # missing or changed insta / pixel snapshot fails instead of being written.
     steps:
       - uses: actions/checkout@v7
       # Installs the toolchain pinned in rust-toolchain.toml.
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release
+        with:
+          workspaces: examples/project-template
+      - run: cargo fmt --check
         working-directory: examples/project-template
-      # The `voice` feature (Story 17.1): libopus needs a C compiler and cmake.
-      - run: cargo build --release --features voice
+      - run: cargo build --release --locked
         working-directory: examples/project-template
-      - run: cargo test --release --features voice
+      - run: cargo clippy --release --locked --all-targets -- -D warnings
+        working-directory: examples/project-template
+      # `--all-features` adds `prefix` and `voice` (Story 17.1): libopus needs a C
+      # compiler and cmake.
+      - run: cargo clippy --release --locked --all-targets --all-features -- -D warnings
+        working-directory: examples/project-template
+      - run: cargo test --release --locked
+        working-directory: examples/project-template
+      # `--all-features`: libopus needs a C compiler and cmake (see above).
+      - run: cargo test --release --locked --all-features
         working-directory: examples/project-template

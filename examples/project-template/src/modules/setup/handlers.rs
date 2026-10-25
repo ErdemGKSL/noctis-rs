@@ -1,11 +1,9 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! The command struct and every `#[handler]` impl: `self` is the decoded Payload (done
 //! by the derive), then validate, write, and answer with `ctx.update(render_setup(..))`,
 //! which updates the clicked panel in place; a failed check answers with
 //! `ctx.reply_text(key)`, a one-line ephemeral notice.
 
-use noctis::id::marker::GuildMarker;
+use noctis::id::marker::{ChannelMarker, GuildMarker};
 use noctis::prelude::*;
 use noctis::twilight::model::channel::ChannelType;
 use noctis::webhook::{OwnedWebhook, WebhookChannel, WebhookError};
@@ -43,7 +41,8 @@ impl SetupStart {
             log_channel: None,
             mod_role: None,
         };
-        ctx.respond(render_setup(state, &Strings::of(ctx.response_locale()))).await
+        ctx.respond(render_setup(state, &Strings::of(ctx.response_locale())))
+            .await
     }
 }
 
@@ -55,7 +54,10 @@ impl SetupState {
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let missing = match self.step {
             SetupStep::Channel => None,
-            SetupStep::Role => self.log_channel.is_none().then_some(keys::SETUP_NEED_CHANNEL),
+            SetupStep::Role => self
+                .log_channel
+                .is_none()
+                .then_some(keys::SETUP_NEED_CHANNEL),
             SetupStep::Confirm => (self.log_channel.is_none() || self.mod_role.is_none())
                 .then_some(keys::SETUP_NEED_ROLE),
         };
@@ -103,7 +105,8 @@ impl PickLogChannel {
             log_channel: ctx.values().channels().first().copied(),
             mod_role: self.mod_role,
         };
-        ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+        ctx.update(render_setup(st, &Strings::of(ctx.response_locale())))
+            .await
     }
 }
 
@@ -116,14 +119,16 @@ impl PickModRole {
             log_channel: self.log_channel,
             mod_role: ctx.values().roles().first().copied(),
         };
-        ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+        ctx.update(render_setup(st, &Strings::of(ctx.response_locale())))
+            .await
     }
 }
 
 impl CancelSetup {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        ctx.update(render_setup_cancelled(&Strings::of(ctx.response_locale()))).await
+        ctx.update(render_setup_cancelled(&Strings::of(ctx.response_locale())))
+            .await
     }
 }
 
@@ -134,12 +139,12 @@ impl FinishSetup {
         let Some(guild) = ctx.guild_id() else {
             return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;
         };
-        let config = GuildConfig { log_channel: self.log_channel, mod_role: self.mod_role };
+        let config = GuildConfig::new(self.log_channel, self.mod_role);
         ctx.kv().put(&config_key(guild), &config, None).await?;
         let responded = ctx.update(render_setup_done(config, &s)).await?;
         // A side effect: a failed log never fails the setup the admin just saved. The
         // error never contains the webhook token.
-        if let Err(error) = post_log(&ctx, guild, config, &s).await {
+        if let Err(error) = post_log(&ctx, guild, self.log_channel, config, &s).await {
             tracing::warn!(%guild, %error, "setup log was not posted");
         }
         Ok(responded)
@@ -153,26 +158,30 @@ impl FinishSetup {
 async fn post_log(
     ctx: &ComponentCtx,
     guild: Id<GuildMarker>,
+    log_channel: Id<ChannelMarker>,
     config: GuildConfig,
     s: &Strings,
 ) -> HandlerResult<()> {
     let key = log_webhook_key(guild);
     let line = || render_setup_log(config, ctx.user_id(), s);
-    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await? {
-        if stored.channel == config.log_channel {
-            let hook =
-                ctx.webhooks().owned(stored.id, stored.token)?.in_channel(ChannelType::GuildText);
-            match hook.send(line()).await {
-                // Deleted in Discord: forget it and create a new one below.
-                Err(WebhookError::Rejected { status: 404, .. }) => ctx.kv().delete(&key).await?,
-                sent => {
-                    sent?;
-                    return Ok(());
-                }
+    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await?
+        && let Some((id, channel)) = stored.ids()
+        && channel == log_channel
+    {
+        let hook = ctx
+            .webhooks()
+            .owned(id, stored.token)?
+            .in_channel(ChannelType::GuildText);
+        match hook.send(line()).await {
+            // Deleted in Discord: forget it and create a new one below.
+            Err(WebhookError::Rejected { status: 404, .. }) => ctx.kv().delete(&key).await?,
+            sent => {
+                sent?;
+                return Ok(());
             }
         }
     }
-    let hook = create_log_webhook(ctx, &key, config).await?;
+    let hook = create_log_webhook(ctx, &key, log_channel).await?;
     hook.send(line()).await?;
     Ok(())
 }
@@ -181,14 +190,17 @@ async fn post_log(
 async fn create_log_webhook(
     ctx: &ComponentCtx,
     key: &str,
-    config: GuildConfig,
+    log_channel: Id<ChannelMarker>,
 ) -> HandlerResult<OwnedWebhook> {
-    let channel = WebhookChannel::new(config.log_channel, ChannelType::GuildText);
-    let hook = ctx.webhooks().create(channel, webhook_name!("Noctis log")).await?;
+    let channel = WebhookChannel::new(log_channel, ChannelType::GuildText);
+    let hook = ctx
+        .webhooks()
+        .create(channel, webhook_name!("Noctis log"))
+        .await?;
     let stored = StoredWebhook {
-        id: hook.id(),
+        id: hook.id().get(),
         token: hook.token().to_owned(),
-        channel: config.log_channel,
+        channel: log_channel.get(),
     };
     ctx.kv().put(key, &stored, None).await?;
     Ok(hook)

@@ -1,15 +1,15 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! The setup flow's render functions. Pure: no I/O, so tests snapshot them directly.
 
-use noctis::prelude::*;
 use noctis::id::marker::UserMarker;
+use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Button, ButtonStyle, Components, Container, ContainerComponent,
-    Separator, StaticComponents, StaticContainer, StaticMessage, TextDisplay, V2Message,
+    ActionRow, Button, ButtonStyle, Components, Container, ContainerComponent, Separator,
+    StaticComponents, StaticContainer, StaticMessage, TextDisplay, V2Message,
 };
 
-use super::{CancelSetup, FinishSetup, GuildConfig, PickLogChannel, PickModRole, SetupState, SetupStep};
+use super::{
+    CancelSetup, FinishSetup, GuildConfig, PickLogChannel, PickModRole, SetupState, SetupStep,
+};
 use crate::strings::Strings;
 
 const ACCENT: Rgb = rgb!(0x5865_F2);
@@ -26,7 +26,8 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
     // "Step n of m: Title", never "page 2 of 3" (UD-4).
     let progress = TextDisplay::new(format!(
         "## {}",
-        s.setup.progress(st.step.number(), SetupStep::ALL.len(), title)
+        s.setup
+            .progress(st.step.number(), SetupStep::ALL.len(), title)
     ));
 
     let body: Vec<ContainerComponent> = match st.step {
@@ -34,18 +35,24 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
             TextDisplay::new(s.setup.channel_help()).into(),
             ActionRow::select(
                 // Placeholder and channel types come from the declared defaults.
-                PickLogChannel { owner: st.owner, mod_role: st.mod_role }
-                    .build()
-                    .default_values(st.log_channel), // pre-filled with the current value
+                PickLogChannel {
+                    owner: st.owner,
+                    mod_role: st.mod_role,
+                }
+                .build()
+                .default_values(st.log_channel), // pre-filled with the current value
             )
             .into(),
         ],
         SetupStep::Role => vec![
             TextDisplay::new(s.setup.role_help()).into(),
             ActionRow::select(
-                PickModRole { owner: st.owner, log_channel: st.log_channel }
-                    .build()
-                    .default_values(st.mod_role),
+                PickModRole {
+                    owner: st.owner,
+                    log_channel: st.log_channel,
+                }
+                .build()
+                .default_values(st.mod_role),
             )
             .into(),
         ],
@@ -53,7 +60,10 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
     };
 
     let container = body.into_iter().fold(
-        Container::new().accent(ACCENT).push(progress).push(Separator::small()),
+        Container::new()
+            .accent(ACCENT)
+            .push(progress)
+            .push(Separator::small()),
         Container::push,
     );
     let container = container.push(Separator::small()).push(nav_row(st, s));
@@ -78,18 +88,24 @@ fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
         SetupStep::Channel => ActionRow::buttons([
             cancel,
             Button::from(
-                SetupState { step: SetupStep::Role, ..st }
-                    .build()
-                    .disabled(st.log_channel.is_none()),
+                SetupState {
+                    step: SetupStep::Role,
+                    ..st
+                }
+                .build()
+                .disabled(st.log_channel.is_none()),
             ),
         ]),
         SetupStep::Role => ActionRow::buttons([
             back(SetupStep::Channel),
             cancel,
             Button::from(
-                SetupState { step: SetupStep::Confirm, ..st }
-                    .build()
-                    .disabled(st.mod_role.is_none()),
+                SetupState {
+                    step: SetupStep::Confirm,
+                    ..st
+                }
+                .build()
+                .disabled(st.mod_role.is_none()),
             ),
         ]),
         SetupStep::Confirm => {
@@ -98,7 +114,14 @@ fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
                 (Some(log_channel), Some(mod_role)) => ActionRow::buttons([
                     back,
                     cancel,
-                    Button::from(FinishSetup { owner: st.owner, log_channel, mod_role }.build()),
+                    Button::from(
+                        FinishSetup {
+                            owner: st.owner,
+                            log_channel,
+                            mod_role,
+                        }
+                        .build(),
+                    ),
                 ]),
                 _ => ActionRow::buttons([back, cancel]),
             }
@@ -107,8 +130,12 @@ fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
 }
 
 fn summary(s: &Strings, st: SetupState) -> String {
-    let channel = st.log_channel.map_or_else(|| s.setup.unset(), |c| format!("<#{c}>"));
-    let role = st.mod_role.map_or_else(|| s.setup.unset(), |r| format!("<@&{r}>"));
+    let channel = st
+        .log_channel
+        .map_or_else(|| s.setup.unset().to_owned(), |c| format!("<#{c}>"));
+    let role = st
+        .mod_role
+        .map_or_else(|| s.setup.unset().to_owned(), |r| format!("<@&{r}>"));
     // Mentions render but never ping: messages default to `allowed_mentions.parse = []`.
     s.setup.summary(channel, role)
 }
@@ -119,7 +146,9 @@ pub fn render_setup_done(config: GuildConfig, s: &Strings) -> V2Message {
         format!("<#{}>", config.log_channel),
         format!("<@&{}>", config.mod_role),
     );
-    V2Message::new(Components::new().push(Container::new().accent(DONE).push(TextDisplay::new(text))))
+    V2Message::new(
+        Components::new().push(Container::new().accent(DONE).push(TextDisplay::new(text))),
+    )
 }
 
 /// The line Finish posts to the log channel through its webhook: static, so it would
@@ -131,7 +160,11 @@ pub fn render_setup_log(config: GuildConfig, by: Id<UserMarker>, s: &Strings) ->
         format!("<@&{}>", config.mod_role),
     );
     StaticMessage::new(
-        StaticComponents::new().push(StaticContainer::new().accent(DONE).push(TextDisplay::new(text))),
+        StaticComponents::new().push(
+            StaticContainer::new()
+                .accent(DONE)
+                .push(TextDisplay::new(text)),
+        ),
     )
 }
 

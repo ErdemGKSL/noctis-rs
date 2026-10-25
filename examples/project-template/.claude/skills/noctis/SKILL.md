@@ -83,7 +83,9 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
 
 Everything is imported from one crate: `use noctis::prelude::*;` plus a few modules
 (`noctis::rules`, `noctis::id`, `noctis::ui`, `noctis::image`, `noctis::ports`,
-`noctis::events`, `noctis::testkit`). Never depend on `noctis-*` sub-crates.
+`noctis::events`, `noctis::testkit`). Never depend on `noctis-*` sub-crates. Discord
+ids: `Id` is in the prelude, the markers are `noctis::id::marker::*` (the same items as
+`noctis::twilight::model::id`).
 
 ## 2. UI Doctrine (normative rules)
 

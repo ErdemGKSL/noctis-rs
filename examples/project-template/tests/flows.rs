@@ -1,6 +1,3 @@
-// NOTE: the bot code in `src/` is still written against the planned Noctis API
-// (architecture spine); this file uses the real `noctis::testkit` API (Story 8.4).
-
 //! End-to-end flows without Discord (FR-51): invoke a command, click by Route or label,
 //! assert on the rendered message, its response type and its Limit cost. Snapshots live
 //! in `tests/snapshots/` (insta); review changes with `cargo insta review`.
@@ -10,8 +7,8 @@
 //! The memory check lives in `tests/memory.rs` (its own binary, dhat allocator).
 
 use noctis::ports::memory::GuildAccess;
-use noctis::{BootFlags, Permissions};
 use noctis::prelude::*;
+use noctis::{BootFlags, Permissions};
 use std::sync::{Arc, Mutex};
 
 use noctis::testkit::fake::{FakeResponse, Method, RecordedRequest, StatusCode};
@@ -47,7 +44,12 @@ async fn app() -> anyhow::Result<TestApp> {
 async fn setup_flow_validates_then_finishes() -> anyhow::Result<()> {
     let app = app().await?;
 
-    let step1 = app.command("setup start").by(ADMIN).in_guild(GUILD).run().await?;
+    let step1 = app
+        .command("setup start")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert_eq!(step1.kind(), ResponseKind::Reply);
     assert!(step1.is_ephemeral());
     assert!(step1.text().contains("Step 1 of 3: Log channel"));
@@ -75,13 +77,21 @@ async fn setup_flow_validates_then_finishes() -> anyhow::Result<()> {
 
     let done = app.click(step3.button("Finish")?).by(ADMIN).run().await?;
     assert!(done.text().contains("Setup complete"));
-    assert!(done.components().is_empty());
+    // A Components V2 message always has components (its text is one); the done state
+    // has nothing left to click: no action row, so no button or select.
+    assert!(done.components().iter().all(|c| c.component_type() != 1));
+    assert!(done.buttons().is_empty());
     Ok(())
 }
 
 /// Runs `/setup start` to its Finish click for `ADMIN`.
 async fn finish_setup(app: &TestApp) -> anyhow::Result<Response> {
-    let step1 = app.command("setup start").by(ADMIN).in_guild(GUILD).run().await?;
+    let step1 = app
+        .command("setup start")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     let picked = app
         .select(step1.component::<PickLogChannel>()?)
         .channels([LOGS])
@@ -108,7 +118,9 @@ async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
     let record = |answer: serde_json::Value| {
         let log = Arc::clone(&log);
         move |request: &RecordedRequest| {
-            log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(request.clone());
+            log.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(request.clone());
             FakeResponse::json(StatusCode::OK, &answer)
         }
     };
@@ -128,13 +140,27 @@ async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
         assert!(finish_setup(&app).await?.text().contains("Setup complete"));
     }
 
-    let requests = log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
-    let creates = requests.iter().filter(|r| r.path.ends_with("/webhooks")).count();
-    let sends: Vec<_> = requests.iter().filter(|r| r.path.ends_with("/log-token")).collect();
+    let requests = log
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let creates = requests
+        .iter()
+        .filter(|r| r.path.ends_with("/webhooks"))
+        .count();
+    let sends: Vec<_> = requests
+        .iter()
+        .filter(|r| r.path.ends_with("/log-token"))
+        .collect();
     assert_eq!((creates, sends.len()), (1, 2), "created once, then reused");
     for send in sends {
-        assert_eq!(send.query.as_deref(), Some("wait=true&with_components=true"));
-        let body = send.json().ok_or_else(|| anyhow::anyhow!("webhook body is not JSON"))?;
+        assert_eq!(
+            send.query.as_deref(),
+            Some("wait=true&with_components=true")
+        );
+        let body = send
+            .json()
+            .ok_or_else(|| anyhow::anyhow!("webhook body is not JSON"))?;
         assert_eq!(body["flags"], 32768);
         assert!(body.get("content").is_none());
         assert_eq!(body["components"][0]["type"], 17);
@@ -145,7 +171,12 @@ async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn setup_cancel_leaves_no_components() -> anyhow::Result<()> {
     let app = app().await?;
-    let step1 = app.command("setup start").by(ADMIN).in_guild(GUILD).run().await?;
+    let step1 = app
+        .command("setup start")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     let cancelled = app.click(step1.button("Cancel")?).by(ADMIN).run().await?;
     assert_eq!(cancelled.kind(), ResponseKind::Update);
     assert!(cancelled.buttons().is_empty());
@@ -155,18 +186,61 @@ async fn setup_cancel_leaves_no_components() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn setup_rejects_other_users() -> anyhow::Result<()> {
     let app = app().await?;
-    let step1 = app.command("setup start").by(ADMIN).in_guild(GUILD).run().await?;
-    // The `owner` Route Guard answers with an ephemeral notice; the handler never runs.
-    let denied = app.click(step1.button("Cancel")?).by(MEMBER).run().await?;
+    let step1 = app
+        .command("setup start")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
+    // The setup panel is ephemeral: Discord shows it, and so its buttons, only to the
+    // admin who ran the command. The `owner` guard is shown on a public reply below.
+    let err = app
+        .click(step1.button("Cancel")?)
+        .by(MEMBER)
+        .run()
+        .await
+        .err();
+    assert!(
+        matches!(err, Some(TestError::NotVisible { user: 201 })),
+        "{err:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn profile_edit_rejects_other_users() -> anyhow::Result<()> {
+    let app = app().await?;
+    // MEMBER's own `/profile` is a public reply with their "Edit bio" button.
+    let profile = app
+        .command("profile")
+        .by(MEMBER)
+        .in_guild(GUILD)
+        .run()
+        .await?;
+    assert!(!profile.is_ephemeral());
+    // `owner = user` is a Route Guard: anyone else gets an ephemeral notice and the
+    // handler never runs (no modal opens).
+    let denied = app
+        .click(profile.component::<EditBio>()?)
+        .by(ADMIN)
+        .run()
+        .await?;
     assert!(denied.is_ephemeral());
     assert!(denied.is_guard_notice());
+    assert_ne!(denied.kind(), ResponseKind::Modal);
+    app.stop().await?;
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dashboard_roles_tab_pages_within_limits() -> anyhow::Result<()> {
     let app = app().await?;
-    let overview = app.command("dashboard").by(ADMIN).in_guild(GUILD).run().await?;
+    let overview = app
+        .command("dashboard")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert!(overview.button("Overview")?.is_disabled());
 
     // The Roles tab reads `ctx.cache().roles(..)`: every `TestGuild` seed is fed to the
@@ -193,7 +267,12 @@ async fn dashboard_roles_tab_pages_within_limits() -> anyhow::Result<()> {
 async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Result<()> {
     let app = app().await?;
     // The focused text arrives raw and partial; the method filters, Noctis sends type 8.
-    let auto = app.autocomplete("dashboard", "module", "pro").by(ADMIN).in_guild(GUILD).run().await?;
+    let auto = app
+        .autocomplete("dashboard", "module", "pro")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert_eq!(auto.kind(), ResponseKind::Autocomplete);
     let suggestions = auto.suggestions();
     assert_eq!(suggestions.len(), 1);
@@ -201,9 +280,21 @@ async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Resu
     assert!(suggestions[0].1.starts_with("Profiles and XP"));
 
     // A picked module opens the Modules tab; an unknown value falls back to Overview.
-    let modules = app.command("dashboard").option("module", "profile").by(ADMIN).in_guild(GUILD).run().await?;
+    let modules = app
+        .command("dashboard")
+        .option("module", "profile")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert!(modules.button("Modules")?.is_disabled());
-    let forged = app.command("dashboard").option("module", "nope").by(ADMIN).in_guild(GUILD).run().await?;
+    let forged = app
+        .command("dashboard")
+        .option("module", "nope")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert!(forged.button("Overview")?.is_disabled());
     Ok(())
 }
@@ -232,22 +323,41 @@ async fn edit_bio_opens_pre_filled() -> anyhow::Result<()> {
     let blank = modal_data!(opened)?;
     let inputs = &blank["components"];
     assert!(inputs[0]["component"].get("value").is_none(), "{blank}");
-    let options = inputs[1]["component"]["options"].as_array().cloned().unwrap_or_default();
+    let options = inputs[1]["component"]["options"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(!options.is_empty(), "{blank}");
-    assert!(options.iter().all(|o| o.get("default").is_none()), "{blank}");
+    assert!(
+        options.iter().all(|o| o.get("default").is_none()),
+        "{blank}"
+    );
 
-    let form = opened.modal()?.text("bio", "Hello there").radio("pronouns", "they");
+    let form = opened
+        .modal()?
+        .text("bio", "Hello there")
+        .radio("pronouns", "they");
     let saved = app.submit(form).run().await?;
     assert_eq!(saved.kind(), ResponseKind::Reply);
 
-    let edit = app.click(saved.component::<EditBio>()?).by(MEMBER).run().await?;
+    let edit = app
+        .click(saved.component::<EditBio>()?)
+        .by(MEMBER)
+        .run()
+        .await?;
     assert_eq!(edit.kind(), ResponseKind::Modal);
     let filled = modal_data!(edit)?;
     let inputs = &filled["components"];
     assert_eq!(inputs[0]["component"]["value"], "Hello there", "{filled}");
-    let options = inputs[1]["component"]["options"].as_array().cloned().unwrap_or_default();
-    let defaults: Vec<_> =
-        options.iter().filter(|o| o["default"] == true).map(|o| o["value"].clone()).collect();
+    let options = inputs[1]["component"]["options"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let defaults: Vec<_> = options
+        .iter()
+        .filter(|o| o["default"] == true)
+        .map(|o| o["value"].clone())
+        .collect();
     assert_eq!(defaults, ["they"], "{filled}");
     app.stop().await?;
     Ok(())
@@ -263,14 +373,27 @@ async fn badges_follow_the_boot_flags() -> anyhow::Result<()> {
         .await?
         .guild(TestGuild::new(GUILD, "Test Guild"))
         .user(TestUser::new(MEMBER));
-    let missing =
-        pruned.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await;
-    assert!(matches!(missing, Err(TestError::UnknownCommand { .. })), "{missing:?}");
+    let missing = pruned
+        .command("badge")
+        .option("name", "Helper")
+        .by(MEMBER)
+        .in_guild(GUILD)
+        .run()
+        .await;
+    assert!(
+        matches!(missing, Err(TestError::UnknownCommand { .. })),
+        "{missing:?}"
+    );
     pruned.stop().await?;
 
     let app = app().await?;
-    let badge =
-        app.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await?;
+    let badge = app
+        .command("badge")
+        .option("name", "Helper")
+        .by(MEMBER)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert_eq!(badge.kind(), ResponseKind::Reply);
     app.stop().await?;
     Ok(())
@@ -284,19 +407,49 @@ async fn badges_follow_the_boot_flags() -> anyhow::Result<()> {
 async fn white_label_app_serves_only_its_guild() -> anyhow::Result<()> {
     let guild = || TestGuild::new(GUILD, "Test Guild");
     let mut builder = App::builder();
-    configure(&mut builder).app_id("acme").guild_access(GuildAccess::allow([GUILD]));
-    let acme = TestApp::build(&mut builder).await?.guild(guild()).user(TestUser::new(ADMIN));
-    let setup = acme.command("setup start").by(ADMIN).in_guild(GUILD).run().await;
-    assert!(matches!(setup, Err(TestError::UnknownCommand { .. })), "{setup:?}");
-    let profile = acme.command("profile").by(ADMIN).in_guild(GUILD).run().await?;
+    configure(&mut builder)
+        .app_id("acme")
+        .guild_access(GuildAccess::allow([GUILD]));
+    let acme = TestApp::build(&mut builder)
+        .await?
+        .guild(guild())
+        .user(TestUser::new(ADMIN));
+    let setup = acme
+        .command("setup start")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await;
+    assert!(
+        matches!(setup, Err(TestError::UnknownCommand { .. })),
+        "{setup:?}"
+    );
+    let profile = acme
+        .command("profile")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert_eq!(profile.kind(), ResponseKind::Reply);
-    assert!(!profile.text().contains("disabled here"), "{}", profile.text());
+    assert!(
+        !profile.text().contains("disabled here"),
+        "{}",
+        profile.text()
+    );
     acme.stop().await?;
 
     let mut builder = App::builder();
     configure(&mut builder).guild_access(GuildAccess::deny([GUILD]));
-    let main = TestApp::build(&mut builder).await?.guild(guild()).user(TestUser::new(ADMIN));
-    let skipped = main.command("profile").by(ADMIN).in_guild(GUILD).run().await?;
+    let main = TestApp::build(&mut builder)
+        .await?
+        .guild(guild())
+        .user(TestUser::new(ADMIN));
+    let skipped = main
+        .command("profile")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
     assert_eq!(skipped.kind(), ResponseKind::Reply);
     assert!(skipped.is_ephemeral());
     assert_eq!(skipped.text(), "This feature is disabled here.");

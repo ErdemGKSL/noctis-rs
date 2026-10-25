@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Operations: Lifecycle Hooks that log the App's own lifecycle (FR-54). A hook is a
 //! unit struct with `#[derive(Hook)]` whose `#[handler]` takes the event it reacts to
 //! (a `noctis::lifecycle` type). Hooks run on one ordered queue while the App runs, one

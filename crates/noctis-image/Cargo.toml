@@ -16,6 +16,7 @@ default = []
 render = [
   "dep:takumi",
   "dep:takumi-core",
+  "dep:takumi-raster",
   "dep:noctis-ports",
   "dep:noctis-core",
   "dep:tracing",
@@ -92,6 +93,9 @@ takumi = { workspace = true, optional = true, features = [
   "webp",
 ] }
 takumi-core = { workspace = true, optional = true }
+# `render`: never used directly; pins takumi's raster backend to the version
+# its `takumi-core` matches (see the workspace `Cargo.toml`).
+takumi-raster = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["sync", "rt", "time"] }
 tracing = { workspace = true, optional = true }

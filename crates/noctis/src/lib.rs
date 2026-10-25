@@ -2015,6 +2015,19 @@ pub mod webhook {
     };
 }
 
+/// Discord ids and their markers: [`Id`](id::Id) and
+/// [`id::marker`] (e.g. `noctis::id::marker::GuildMarker`), the same items
+/// as `noctis::twilight::model::id`. [`prelude`] also exports `Id`.
+///
+/// ```
+/// use noctis::id::{Id, marker::GuildMarker};
+///
+/// let guild: Id<GuildMarker> = Id::new(1);
+/// let same: noctis::twilight::model::id::Id<GuildMarker> = guild;
+/// assert_eq!(same.get(), 1);
+/// ```
+pub use twilight_model::id;
+
 pub mod twilight {
     //! The twilight crates Noctis builds on, for the Discord endpoints and
     //! models Noctis does not wrap.
@@ -2594,6 +2607,7 @@ pub mod prelude {
     //!   Module (globally or in one guild).
     //! - [`RawHttp`]: `.raw(method, path)` on `ctx.http()` and `app.http()`
     //!   ([`http`](crate::http)).
+    //! - [`Id`]: a Discord id; its markers are in [`id::marker`](crate::id::marker).
     //! - With the `image` feature, `AppBuilderImageExt`: `.theme(..)` and
     //!   `.image(..)` on the [`AppBuilder`], which install the Renderer
     //!   behind `ctx.render`.
@@ -2635,6 +2649,8 @@ pub mod prelude {
         MentionableSelectOverrides, ModalForm, Rgb, RoleSelectOverrides, StringSelectOverrides,
         Text, UserSelectOverrides,
     };
+    /// A Discord id ([`crate::id`]); the markers are in [`crate::id::marker`].
+    pub use twilight_model::id::Id;
 }
 
 /// Typed content strings from YAML locale files (FR-42; LOC-01, LOC-04):

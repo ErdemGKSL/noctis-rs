@@ -18,6 +18,15 @@ run(){
 run fmt cargo fmt --all --check
 run clippy cargo clippy --release --workspace --all-targets --all-features -- -D warnings
 run test cargo test --release --workspace --all-features
+# The project template: a standalone workspace with a committed Cargo.lock (Story 14.2). `CI=true` makes a missing
+# or changed insta / pixel snapshot fail instead of being written; `--all-features` adds prefix and voice (libopus).
+T=(--manifest-path examples/project-template/Cargo.toml)
+run template-fmt cargo fmt "${T[@]}" --check
+run template-build cargo build --release --locked "${T[@]}"
+run template-clippy cargo clippy --release --locked "${T[@]}" --all-targets -- -D warnings
+run template-clippy-all cargo clippy --release --locked "${T[@]}" --all-targets --all-features -- -D warnings
+run template-test env CI=true cargo test --release --locked "${T[@]}"
+run template-test-all env CI=true cargo test --release --locked "${T[@]}" --all-features
 # After a finished lane story is rebased onto main (a "mark done" commit is not yet in origin/main), both sides
 # already passed every gate; the slow per-feature and MSRV builds are left to the next story's full gates on main.
 # NOCTIS_GATES_LIGHT=1 (the story loop's gates between implementation and review rounds) skips them too; the loop

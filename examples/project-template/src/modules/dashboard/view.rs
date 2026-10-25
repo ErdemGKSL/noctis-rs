@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! The dashboard's render function: the single source of truth for the message. The
 //! Command and every handler load [`DashData`] and call [`render_dashboard`]; nothing
 //! else builds this message. It is pure (no I/O), so tests snapshot it directly.
@@ -8,8 +6,8 @@ use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
 use noctis::rules::Limits;
 use noctis::ui::{
-    ActionRow, Budget, ButtonStyle, Components, Container, ContainerComponent, Section,
-    Separator, TextDisplay, V2Message, escape_markdown,
+    ActionRow, Budget, ButtonStyle, Components, Container, ContainerComponent, Section, Separator,
+    TextDisplay, V2Message, escape_markdown,
 };
 
 use super::{DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
@@ -46,15 +44,22 @@ pub fn render_dashboard(
 
     // The tab row: one Route button per tab, the active one disabled (UD-5).
     let tabs = ActionRow::buttons(DashTab::ALL.map(|t| {
-        OpenTab { guild: data.guild, tab: t }
-            .build()
-            .label(match t {
-                DashTab::Overview => s.dashboard.tab.overview(),
-                DashTab::Roles => s.dashboard.tab.roles(),
-                DashTab::Modules => s.dashboard.tab.modules(),
-            })
-            .style(if t == tab { ButtonStyle::Primary } else { ButtonStyle::Secondary })
-            .disabled(t == tab)
+        OpenTab {
+            guild: data.guild,
+            tab: t,
+        }
+        .build()
+        .label(match t {
+            DashTab::Overview => s.dashboard.tab.overview(),
+            DashTab::Roles => s.dashboard.tab.roles(),
+            DashTab::Modules => s.dashboard.tab.modules(),
+        })
+        .style(if t == tab {
+            ButtonStyle::Primary
+        } else {
+            ButtonStyle::Secondary
+        })
+        .disabled(t == tab)
     }));
 
     // The section is chosen by a plain `match` on the tab from the Payload.
@@ -112,7 +117,10 @@ fn roles_page(
     let fixed = frame(
         header.clone(),
         tabs.clone(),
-        vec![page_line(s, u16::MAX - 1, u16::MAX).into(), pager(data, s, 0, 1).into()],
+        vec![
+            page_line(s, u16::MAX - 1, u16::MAX).into(),
+            pager(data, s, 0, 1).into(),
+        ],
     );
     let per_page = Budget::of(&fixed, limits)
         .fits(&TextDisplay::new("x".repeat(ROLE_ROW_MAX_CHARS)))
@@ -129,8 +137,11 @@ fn roles_page(
 
     let page = u16::try_from(page).unwrap_or(u16::MAX);
     let pages = u16::try_from(pages).unwrap_or(u16::MAX);
-    rows.chain([page_line(s, page, pages).into(), pager(data, s, page, pages).into()])
-        .collect()
+    rows.chain([
+        page_line(s, page, pages).into(),
+        pager(data, s, page, pages).into(),
+    ])
+    .collect()
 }
 
 /// "-# Page n of m" under the list.
@@ -141,23 +152,52 @@ fn page_line(s: &Strings, page: u16, pages: u16) -> TextDisplay {
 /// Prev and next. Prev is disabled on the first page and next on the last;
 /// their target pages differ, so their ids are unique in the message (CID-02).
 fn pager(data: &DashData, s: &Strings, page: u16, pages: u16) -> ActionRow {
-    let prev = TurnPage { guild: data.guild, page: page.saturating_sub(1) }
-        .build()
-        .label(s.common.previous())
-        .disabled(page == 0);
-    let next = TurnPage { guild: data.guild, page: page + 1 }.build().disabled(page + 1 >= pages);
+    let prev = TurnPage {
+        guild: data.guild,
+        page: page.saturating_sub(1),
+    }
+    .build()
+    .label(s.common.previous())
+    .disabled(page == 0);
+    let next = TurnPage {
+        guild: data.guild,
+        page: page + 1,
+    }
+    .build()
+    .disabled(page + 1 >= pages);
     ActionRow::buttons([prev, next])
 }
 
 /// A settings row: the state as text, the action as the accessory. The style encodes the
 /// action (Success to enable, Danger to disable).
-fn module_row(data: &DashData, s: &Strings, module: ModuleKey, enabled: bool) -> ContainerComponent {
+fn module_row(
+    data: &DashData,
+    s: &Strings,
+    module: ModuleKey,
+    enabled: bool,
+) -> ContainerComponent {
     let name = module_name(s, module);
-    let state = if enabled { s.common.enabled() } else { s.common.disabled() };
-    let toggle = ToggleModule { guild: data.guild, module, enable: !enabled }
-        .build()
-        .label(if enabled { s.common.disable() } else { s.common.enable() })
-        .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
+    let state = if enabled {
+        s.common.enabled()
+    } else {
+        s.common.disabled()
+    };
+    let toggle = ToggleModule {
+        guild: data.guild,
+        module,
+        enable: !enabled,
+    }
+    .build()
+    .label(if enabled {
+        s.common.disable()
+    } else {
+        s.common.enable()
+    })
+    .style(if enabled {
+        ButtonStyle::Danger
+    } else {
+        ButtonStyle::Success
+    });
     Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle).into()
 }
 

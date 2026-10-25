@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! `/dashboard`: a tabbed server dashboard (UD-5) whose Roles tab is paginated by hand
 //! (UD-6), and whose Modules tab is a settings screen of enable/disable toggles.
 //!
@@ -21,7 +19,11 @@ pub fn module() -> Module {
         // Runs before every dashboard interaction (not events): outside a server it
         // stops with the `common.guild_only` notice, else hands the guild to the handlers
         // as `Ext<DashGuild>` (the build checks that a handler's `Ext<T>` is provided).
-        .before(Middleware::before(guild_only).skip_events().provides::<DashGuild>())
+        .before(
+            Middleware::before(guild_only)
+                .skip_events()
+                .provides::<DashGuild>(),
+        )
         .add::<handlers::Dashboard>()
         .add::<OpenTab>()
         .add::<TurnPage>()

@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Typed strings compiled from `locales/*.yaml` (AD-16, FR-42).
 //!
 //! `i18n!` generates, inside this module:

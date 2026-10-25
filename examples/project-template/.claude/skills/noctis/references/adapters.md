@@ -338,9 +338,11 @@ pub trait DiscordCache: Send + Sync + 'static {
   `member_ids` return ids only (`None` = guild not cached), so a large guild is never
   cloned per call.
 - `Id`, the `*Marker` types, `Event` and the cached resource types come from the
-  `twilight-model` crate; `noctis` does not re-export it yet [planned]. Until it does,
-  add `twilight-model = "0.17"` to your bot's `Cargo.toml` (the same version noctis
-  uses), or your `GuildAccessList`/`DiscordCache` impl will not type-check.
+  `twilight-model` crate, which `noctis` re-exports: `Id` and its markers as
+  `noctis::id` (`noctis::id::Id`, `noctis::id::marker::GuildMarker`; `Id` is also in
+  `noctis::prelude`), the rest under `noctis::twilight::model` (e.g.
+  `noctis::twilight::model::gateway::event::Event`). No `twilight-model` dependency
+  is needed.
 
 ### 2.4 Errors
 
@@ -576,6 +578,22 @@ value that happens to encode to 8 bytes reads as a meaningless `u64`. The
 futures are `Send` for any `T` (the value is encoded before the store call). A
 detached test context (no App) answers every op with `PortError::Unavailable`.
 `PortError` converts into `HandlerError`, so `?` works in handlers.
+
+Discord ids do not round-trip through `Kv`: postcard is not self-describing, and
+twilight's `Id` deserializes with `deserialize_any`, so a stored struct with an
+`Id<_>` field reads back as `PortError::Value(ValueError::Malformed)`. Store
+`id.get()` (a `u64`) and rebuild with `Id::new_checked(n)`, treating `None` (a `0`)
+as no stored value; never `Id::new` or `unwrap` on stored data:
+
+```rust
+#[derive(Serialize, Deserialize)]
+struct StoredWebhook { id: u64, token: String, channel: u64 }   // not Id<WebhookMarker>
+
+ctx.kv().put(&key, &StoredWebhook { id: hook.id().get(), token, channel: ch.get() }, None).await?;
+if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await?
+    && let Some(id) = Id::<WebhookMarker>::new_checked(stored.id)
+{ /* use id */ }
+```
 
 Discord resources come from `ctx.cache()` (§1.2):
 

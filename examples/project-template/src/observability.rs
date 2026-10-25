@@ -29,7 +29,7 @@ impl ErrorSink for AlertSink {
             origin = %report.origin,
             what,
             shard = report.shard,
-            guild_id = report.guild_id.map(noctis::twilight::model::id::Id::get),
+            guild_id = report.guild_id.map(Id::get),
             module = report.module,
             handler = report.handler,
             event_type = report.event_type,

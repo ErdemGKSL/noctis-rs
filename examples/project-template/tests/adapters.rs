@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Our custom Adapter must pass the same conformance suite as Noctis's memory default
 //! (FR-39): missing keys, verbatim keys and values, overwrite, delete, counters, App
 //! namespacing, races of 32 concurrent callers (one `put_if_absent` winner, no lost
@@ -49,7 +47,10 @@ async fn fixed_renderer_renders_a_profile_card_job() -> anyhow::Result<()> {
 async fn fixed_renderer_replaces_the_image_plugin() -> anyhow::Result<()> {
     let app = App::builder()
         .module(modules::profile::module())
-        .renderer(FixedRenderer::new(Bytes::from_static(b"\x89PNG"), OutputFormat::Png))
+        .renderer(FixedRenderer::new(
+            Bytes::from_static(b"\x89PNG"),
+            OutputFormat::Png,
+        ))
         .build()?;
     assert!(app.has_renderer());
     Ok(())

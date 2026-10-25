@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Commands and handlers. Each struct is the interaction (id + typed data); its
 //! `#[handler]` method loads the data, renders the card, and answers with
 //! `ctx.respond(render_profile(..))` (a new message) from a Command, or with
@@ -9,11 +7,14 @@
 use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::RemoteImage;
 use noctis::prelude::*;
-use noctis::ResponderError;
-use noctis::ui::{Components, ResolvedUser, TextDisplay, V2Message, escape_markdown};
+use noctis::rules::Locale;
+use noctis::ui::{Attachment, Components, ResolvedUser, TextDisplay, V2Message, escape_markdown};
+use noctis::{DiscordCacheReader, Kv, ResponderError};
 
 use super::view::{ProfileCard, ProfileData, render_profile};
-use super::{BioForm, BioFormOverrides, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key};
+use super::{
+    BioForm, BioFormOverrides, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key,
+};
 use crate::strings::{Strings, keys};
 
 const XP_PER_LEVEL: u64 = 100;
@@ -37,9 +38,12 @@ impl Profile {
     #[handler]
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
         let target = self.user.map_or_else(|| ctx.user_id(), |u| u.user.id);
-        let data = load(&ctx, target).await?;
+        let guild = guild_of(ctx.guild_id())?;
+        let (card, p) = load(ctx.kv(), ctx.cache(), ctx.response_locale(), guild, target).await?;
+        let data = p.with_card(ctx.render(card).await?);
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_profile(&data, &s, ctx.user_id() == target)).await
+        ctx.respond(render_profile(&data, &s, ctx.user_id() == target))
+            .await
     }
 }
 
@@ -52,11 +56,17 @@ pub struct Bio;
 
 impl Bio {
     #[handler]
-    async fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+    async fn handle(
+        self,
+        ctx: CommandCtx,
+        r: CommandResponder<Manual>,
+    ) -> HandlerResult<Responded> {
         // A fresh form: the Payload says whose bio, the inputs start empty (`blank` takes
         // the Payload fields). After a modal there is no original message to edit: end
         // with `done()`.
-        Ok(r.show_modal(bio_modal(BioForm::blank(ctx.user_id()))).await?.done())
+        Ok(r.show_modal(bio_modal(BioForm::blank(ctx.user_id())))
+            .await?
+            .done())
     }
 }
 
@@ -70,13 +80,22 @@ fn bio_modal(form: BioForm) -> noctis::ui::ModalBuilder<BioForm> {
             placeholder: Some(keys::PROFILE_BIO_MODAL_BIO_HINT.into()),
             ..Default::default()
         },
-        pronouns: InputOverrides { label: Some(keys::PROFILE_BIO_MODAL_PRONOUNS.into()), ..Default::default() },
+        pronouns: InputOverrides {
+            label: Some(keys::PROFILE_BIO_MODAL_PRONOUNS.into()),
+            ..Default::default()
+        },
         ..Default::default()
     })
 }
 
 /// The badges `/badge` knows.
-const BADGES: &[&str] = &["Early supporter", "Helper", "Night owl", "Artist", "Bug hunter"];
+const BADGES: &[&str] = &[
+    "Early supporter",
+    "Helper",
+    "Night owl",
+    "Artist",
+    "Bug hunter",
+];
 
 /// `/badge <name>`: `name` is suggested while typing by the paired
 /// `#[autocomplete(name)]` method. The command re-checks the value, because Discord
@@ -97,7 +116,8 @@ impl Badge {
         };
         let s = Strings::of(ctx.response_locale());
         let text = TextDisplay::new(s.profile.badge(escape_markdown(name)));
-        ctx.respond(V2Message::new(Components::new().push(text))).await
+        ctx.respond(V2Message::new(Components::new().push(text)))
+            .await
     }
 
     /// Suggests badges matching the raw (possibly partial) `typed` text. Noctis sends the
@@ -131,16 +151,35 @@ pub struct ShowProfile;
 impl ShowProfile {
     #[handler]
     async fn handle(self, ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Responded> {
-        let data = load(&ctx, target.user.id).await?;
+        let guild = guild_of(ctx.guild_id())?;
+        let (card, p) = load(
+            ctx.kv(),
+            ctx.cache(),
+            ctx.response_locale(),
+            guild,
+            target.user.id,
+        )
+        .await?;
+        let data = p.with_card(ctx.render(card).await?);
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_profile(&data, &s, ctx.user_id() == target.user.id)).await
+        ctx.respond(render_profile(&data, &s, ctx.user_id() == target.user.id))
+            .await
     }
 }
 
 impl RefreshProfile {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        let data = load(&ctx, self.user).await?;
+        let guild = guild_of(ctx.guild_id())?;
+        let (card, p) = load(
+            ctx.kv(),
+            ctx.cache(),
+            ctx.response_locale(),
+            guild,
+            self.user,
+        )
+        .await?;
+        let data = p.with_card(ctx.render(card).await?);
         let s = Strings::of(ctx.response_locale());
         ctx.update(render_profile(&data, &s, self.editable)).await
     }
@@ -153,15 +192,26 @@ impl EditBio {
     /// that opens a modal is `auto_defer = false` (on its `#[button]`) and takes
     /// `ComponentResponder<Manual>` (INT-05).
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, responder: ComponentResponder<Manual>) -> HandlerResult<Responded> {
-        let guild = guild_of(&ctx)?;
-        let stored: StoredProfile =
-            ctx.kv().get(&profile_key(guild, self.user)).await?.unwrap_or_default();
+    async fn handle(
+        self,
+        ctx: ComponentCtx,
+        responder: ComponentResponder<Manual>,
+    ) -> HandlerResult<Responded> {
+        let guild = guild_of(ctx.guild_id())?;
+        let stored: StoredProfile = ctx
+            .kv()
+            .get(&profile_key(guild, self.user))
+            .await?
+            .unwrap_or_default();
         // Every BioForm input has an empty value, so `blank` returns a `BioForm` and the
         // struct update fills in the rest. `.build()` is a `ModalBuilder` that also takes
         // `.title(..)`, `.value(BioForm::BIO, ..)` and `.overrides(BioFormOverrides { .. })`;
         // `bio_modal` localizes the input texts with the latter.
-        let form = BioForm { bio: stored.bio, pronouns: stored.pronouns, ..BioForm::blank(self.user) };
+        let form = BioForm {
+            bio: stored.bio,
+            pronouns: stored.pronouns,
+            ..BioForm::blank(self.user)
+        };
         Ok(responder.show_modal(bio_modal(form)).await?.done())
     }
 }
@@ -174,15 +224,25 @@ impl BioForm {
     /// message), so that submit answers with the card as a new message (`ctx.respond`).
     #[handler]
     async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
-        let guild = guild_of(&ctx)?;
+        let guild = guild_of(ctx.guild_id())?;
         let stored = StoredProfile {
             bio: self.bio.filter(|b| !b.trim().is_empty()),
             pronouns: self.pronouns,
         };
-        ctx.kv().put(&profile_key(guild, self.user), &stored, None).await?;
+        ctx.kv()
+            .put(&profile_key(guild, self.user), &stored, None)
+            .await?;
         // The `manual` limit counts only saves that happened: one per user per minute.
         ctx.rate_limits().hit(RateScope::User).await?;
-        let data = load(&ctx, self.user).await?;
+        let (card, p) = load(
+            ctx.kv(),
+            ctx.cache(),
+            ctx.response_locale(),
+            guild,
+            self.user,
+        )
+        .await?;
+        let data = p.with_card(ctx.render(card).await?);
         let s = Strings::of(ctx.response_locale());
         let card = render_profile(&data, &s, true);
         match ctx.update(card.clone()).await {
@@ -194,21 +254,51 @@ impl BioForm {
 
 /// Whether `ctx.update` found no message to update (a modal opened from a slash command).
 fn is_update_unavailable(err: &HandlerError) -> bool {
-    matches!(err.as_error().downcast_ref(), Some(ResponderError::UpdateUnavailable))
+    matches!(
+        err.as_error().downcast_ref(),
+        Some(ResponderError::UpdateUnavailable)
+    )
 }
 
-/// Loads the profile and renders the card. Rendering is awaited here, inside the
-/// handler, so the auto-defer covers a slow render (AD-22, FR-34).
-async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileData> {
-    let guild = guild_of(ctx)?;
+/// The message text `load` read; the card joins it once the handler rendered it.
+struct Loaded {
+    user: Id<UserMarker>,
+    name: String,
+    bio: Option<String>,
+}
+
+impl Loaded {
+    fn with_card(self, card: Attachment) -> ProfileData {
+        ProfileData {
+            user: self.user,
+            name: self.name,
+            bio: self.bio,
+            card,
+        }
+    }
+}
+
+/// Loads the profile and returns the card to render with the rest of the message. All
+/// I/O happens here; the handler then awaits `ctx.render(card)` itself, so the
+/// auto-defer covers a slow render (AD-22, FR-34). It takes the accessors it needs
+/// (`ctx.kv()`, `ctx.cache()`, `ctx.response_locale()`), so every context kind can call
+/// it.
+async fn load(
+    kv: Kv,
+    cache: DiscordCacheReader,
+    locale: Locale,
+    guild: Id<GuildMarker>,
+    user_id: Id<UserMarker>,
+) -> HandlerResult<(ProfileCard, Loaded)> {
     // `Option<User>`: a user the cache has not seen yet (USER is filled from interactions).
-    let user = ctx.cache().user(user_id).await?;
-    let stored: StoredProfile =
-        ctx.kv().get(&profile_key(guild, user_id)).await?.unwrap_or_default();
-    let xp = ctx.kv().counter(&xp_key(guild, user_id)).await?;
+    let user = cache.user(user_id).await?;
+    let stored: StoredProfile = kv
+        .get(&profile_key(guild, user_id))
+        .await?
+        .unwrap_or_default();
+    let xp = kv.counter(&xp_key(guild, user_id)).await?;
 
     // The card's text follows the response's locale (FR-43).
-    let locale = ctx.response_locale();
     let s = Strings::of(locale);
     #[expect(clippy::cast_precision_loss, reason = "remainder is < 100")]
     let progress = (xp % XP_PER_LEVEL) as f32 / XP_PER_LEVEL as f32;
@@ -216,22 +306,30 @@ async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileD
         || user_id.to_string(),
         |u| u.global_name.clone().unwrap_or_else(|| u.name.clone()),
     );
-
-    let card = ctx
-        .render(ProfileCard {
-            name: name.clone(),
-            subtitle: stored.pronouns.map(|p| p.label(locale)).unwrap_or_default(),
-            level_label: s.profile.card.level(xp / XP_PER_LEVEL),
-            xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
-            progress,
-            avatar: user
-                .as_ref()
-                .map_or_else(RemoteImage::placeholder, |u| RemoteImage::avatar(u, 256)),
-        })
-        .await?;
-    Ok(ProfileData { user: user_id, name, bio: stored.bio, card })
+    let card = ProfileCard {
+        name: name.clone(),
+        subtitle: stored
+            .pronouns
+            .map(|p| p.label().to_owned())
+            .unwrap_or_default(),
+        level_label: s.profile.card.level(xp / XP_PER_LEVEL),
+        xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
+        progress,
+        avatar: user
+            .as_ref()
+            .map_or_else(RemoteImage::placeholder, |u| RemoteImage::avatar(u, 256)),
+    };
+    Ok((
+        card,
+        Loaded {
+            user: user_id,
+            name,
+            bio: stored.bio,
+        },
+    ))
 }
 
-fn guild_of(ctx: &impl Ctx) -> HandlerResult<Id<GuildMarker>> {
-    ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))
+/// The guild of a guild-only interaction; outside a guild, the `common.guild_only` notice.
+fn guild_of(guild: Option<Id<GuildMarker>>) -> HandlerResult<Id<GuildMarker>> {
+    guild.ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))
 }

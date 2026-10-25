@@ -2719,6 +2719,7 @@ dependencies = [
  "serde",
  "takumi",
  "takumi-core",
+ "takumi-raster",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

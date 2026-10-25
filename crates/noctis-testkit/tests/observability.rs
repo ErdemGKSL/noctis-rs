@@ -289,7 +289,7 @@ impl ErrorSink for Recording {
         self.0.lock().unwrap().push(Seen {
             kind: kind.to_owned(),
             shard: report.shard,
-            guild_id: report.guild_id.map(noctis::twilight::model::id::Id::get),
+            guild_id: report.guild_id.map(Id::get),
             event_type: report.event_type.map(str::to_owned),
         });
     }
@@ -657,7 +657,7 @@ async fn send_scopeless_429(fake: &FakeDiscordHttp, app: &App) {
         "/channels/1",
         FakeResponse::new(StatusCode::TOO_MANY_REQUESTS, "error code: 1015"),
     );
-    let _ = app.http().channel(twilight_model::id::Id::new(1)).await;
+    let _ = app.http().channel(Id::new(1)).await;
 }
 
 /// Story 5.9 Matrix 49: the HTTP edge records only catalog metrics with

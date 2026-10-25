@@ -1,11 +1,9 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! The profile card Template (an image) and `render_profile` (the message around it).
 //! The card is read-only: every action lives in buttons next to it, never in the image.
 
 use noctis::id::marker::UserMarker;
-use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
 use noctis::image::RemoteImage;
+use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::{
     ActionRow, Attachment, AttachmentSet, Button, Components, Container, MediaGallery, MediaItem,
@@ -44,7 +42,11 @@ pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message
 
     // A row takes a fixed-size array: one branch per shape; mixed kinds convert to `Button`.
     // `.build()` uses each Route's declared defaults (label, style); no overrides needed.
-    let refresh = RefreshProfile { user: p.user, editable }.build();
+    let refresh = RefreshProfile {
+        user: p.user,
+        editable,
+    }
+    .build();
     let footer = if editable {
         let edit = EditBio { user: p.user }.build();
         ActionRow::buttons([Button::from(edit), Button::from(refresh)])
@@ -55,7 +57,9 @@ pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message
     let container = Container::new()
         .accent(ACCENT)
         .push(TextDisplay::new(format!("## {}", s.profile.title(&name))))
-        .push(MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&name))]))
+        .push(MediaGallery::new([
+            MediaItem::new(card).alt(s.profile.card_alt(&name))
+        ]))
         .push(TextDisplay::new(bio))
         .push(Separator::small())
         .push(footer);

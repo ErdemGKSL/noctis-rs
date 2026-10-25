@@ -1,5 +1,3 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-
 //! Profiles: a rendered card in a Media Gallery (UD-2), a button → modal → re-render
 //! chain to edit the bio (FR-29, FR-63), a user context-menu command (FR-12), a badge
 //! lookup with autocomplete (FR-10) and an XP event handler (FR-6).
@@ -18,14 +16,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::strings::keys;
 
-pub use view::ProfileCard;
 /// The `/profile` and `/badge` Commands; `configure` also opts them into prefix
 /// commands with the `prefix` feature.
 pub use handlers::{Badge, Profile};
+pub use view::ProfileCard;
 
 pub fn module() -> Module {
     Module::new("profile")
-        .add::<handlers::Profile>()
+        .add::<Profile>()
         .add::<handlers::Bio>()
         .add::<handlers::ShowProfile>()
         .add::<RefreshProfile>()
@@ -39,7 +37,9 @@ pub fn module() -> Module {
             // Boot Flag `badges`: the Module exists only when the selection is `all` (the
             // default) or holds `badges` (`--features badges`, `NOCTIS_FEATURES=badges`).
             // Registers `/badge` and its `#[autocomplete(name)]` method together.
-            Module::new("profile/badges").flags(["badges"]).add::<handlers::Badge>(),
+            Module::new("profile/badges")
+                .flags(["badges"])
+                .add::<Badge>(),
         )
 }
 
@@ -77,7 +77,7 @@ pub struct EditBio {
 
 /// The pronoun choices: a Radio Group option set (MOD-07: 2-10 options, each text
 /// 1-100). The variant name is the submitted value unless `value = "…"` is given.
-// Choices labels are literal text [planned].
+// Choices labels are literal text: `label()` returns the `#[choice(..)]` text as is.
 #[derive(Choices, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Pronouns {
     #[choice("he/him", value = "he")]
