@@ -99,7 +99,7 @@ fn u1_real_file_parses() {
 
 #[test]
 fn u2_other_top_level_tables_are_ignored() {
-    let text = format!("{}\n[reference_card]\nmax_ms = 5\n", real_text());
+    let text = format!("{}\n[other_bench]\nmax_ms = 5\n", real_text());
     assert!(parse(&text).is_ok());
 }
 
