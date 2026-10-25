@@ -37,5 +37,6 @@ Make the path from a shard's parsed `Inbound` to a handler start scale with core
 
 - 16.1 creates `crates/noctis-core/benches/pipeline.rs`, `benches/PIPELINE.md` (baseline) and `tests/pipeline_alloc.rs`; 16.2 and 16.3 compare against and update them. Story 14.3 later extends these benches instead of creating them.
 - 16.2 must reach >= 2x saturation throughput at P = 16, push cost at P = 16 <= 1.5x P = 1, interaction p99 under flood no worse than baseline, guild isolation in the ordered scenario.
+- Bench injection seam (hidden, no public API change): `noctis_core::__testing::tap_lanes` plus `#[doc(hidden)] TestApp::lane_sender()`. Recorded dhat baseline block counts: unhandled 0, one concurrent 7, two concurrent 12, ordered 4.
 - 16.3 measures scenario (b) against the end-of-16.2 numbers (>= 1.3x) and lowers the recorded dhat counts.
 - Touches the same drain/dispatch code as Stories 12.5, 13.3 and 13.5, which must already be in place.
