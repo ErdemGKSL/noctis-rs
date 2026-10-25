@@ -2,7 +2,8 @@
 title: 'Story 14.2: Project Template builds, runs and gates CI'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'cefed1f2d569f993d13310a92ee3887345fe0dfc'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
