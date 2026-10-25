@@ -447,7 +447,8 @@ fn unbound_label_is_a_noop() {
     assert!(snapshotter.snapshot().into_vec().is_empty());
 }
 
-/// The wrappers delegate; a seek drops the packet read before it.
+/// The wrappers delegate; a seek settles the packet read before it as
+/// sent.
 #[cfg(feature = "ogg")]
 #[test]
 fn wrappers_delegate() {
@@ -510,7 +511,11 @@ fn wrappers_delegate() {
         (1, 0),
         "a read, undecoded packet passed through"
     );
-    assert_eq!(seen(true), (0, 0), "a seek drops the read packet");
+    assert_eq!(
+        seen(true),
+        (1, 0),
+        "a seek settles the read packet as passed through"
+    );
 }
 
 /// The wrappers are never built by symphonia; `instrument` refuses an
@@ -565,6 +570,20 @@ fn effective_bitrate_rows() {
             want,
             "{channel:?} / {max:?}"
         );
+    }
+}
+
+/// Both counter names have a `METRICS` row: a counter labelled `app` only.
+#[test]
+fn counters_match_the_metrics_catalog() {
+    use noctis_core::observe::{METRICS, MetricType};
+    for name in [PASSTHROUGH_FRAMES, ENCODED_FRAMES] {
+        let row = METRICS
+            .iter()
+            .find(|m| m.name == name)
+            .unwrap_or_else(|| panic!("{name} has a METRICS row"));
+        assert_eq!(row.metric_type, MetricType::Counter, "{name}");
+        assert_eq!(row.labels, ["app"], "{name}");
     }
 }
 

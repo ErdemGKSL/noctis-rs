@@ -2,17 +2,24 @@
 title: 'Story 17.3: Optimized Opus path: passthrough, encoder tuning and the voice bench'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7836d36323d6295ded8ef541a903eb22d20b7857'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-17-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-17-2-track-playback-inputs-and-the-per-guild-queue.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Track input preparation (`make_playable_async` in `play_prepared`) has no time limit and cannot be cancelled by stop/skip, so a stalled URL body or a silent `Track::command` child leaves the current track unstarted and the queue stalled.
+    evidence: |-
+      Pre-existing: in Story 17.2 Songbird readied the same lazy input on its thread pool with no timeout, and a stalled input fired neither Playable nor End. Story 17.3 moved preparation into Noctis's play task but kept the unbounded behaviour (review 17.3 pass 1: blind, edge findings). A fix needs a preparation timeout reporting TrackError plus a stalling MediaServer test.
+    location: >-
+      crates/noctis-voice/src/player.rs play_prepared
+    severity: medium
 ---
 
 <intent-contract>
@@ -195,6 +202,46 @@ Allocation (`tests/passthrough_alloc.rs`, harness-less dhat). Each case runs 50 
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 36 findings — high 0, medium 8, low 17, false 11, maybe-false 0
+- findings:
+  - `[low]` `[reject]` blind: bitrate recomputed on every own same-channel VOICE_STATE_UPDATE, resetting a CHANNEL_UPDATE-learned value to 64 kbps — real only with the channel cache off or the channel uncached (with the default cache, CHANNEL_UPDATE refreshes the cached bitrate); rare, and the fix adds a channel-changed branch to `moved`.
+  - `[low]` `[reject]` blind: cache read in `on_voice_state` can race a CHANNEL_UPDATE; cache `Err` dropped silently — needs a channel bitrate change concurrent with the bot's own move; spec maps every non-`Ok(Some)` to `None`; fix needs ordering state.
+  - `[medium]` `[patch]` blind: bitrate tests never check that Songbird's driver got the bitrate — same root as vgap #1; patch: test-only record of the value passed to `Call::set_bitrate`, asserted in the bitrate tests, plus an out-of-order unit test.
+  - `[low]` `[patch]` blind: `CountingFormat::seek` clears pending without counting — verified in songbird-0.6.1 `mix_logic.rs` L59-91 (a passthrough packet is written and returned in the tick it is read) and `pool.rs` L111-140 (seek runs between ticks); patch: `settle(false)` instead of `store(false)`, comment and `wrappers_delegate` fixed.
+  - `[low]` `[reject]` blind: `CountingDecoder::reset` does not reset `acc` — Noctis exposes no seek or loop (no `seek`/`loop` in `src/` outside frames), and the passthrough-resume reset happens with `acc` 0 for 20 ms Opus; the correct accounting on reset is not a direct correction.
+  - `[low]` `[reject]` blind: passthrough counter counts packets, so a 40/60 ms strike packet counts 1 "20 ms frame" — at most 3 packets per such track (strike limit), negligible; fix needs TOC parsing or catalog/doc rewording in many files.
+  - `[low]` `[reject]` blind: `Decoded::drop` counts a trailing partial frame also on stop/skip — off by at most one or two frames per interrupted resampled track out of thousands; fix needs an end-of-stream flag.
+  - `[medium]` `[defer]` blind: `make_playable_async` has no time limit, a stalled URL body or silent child stalls the queue — pre-existing: in 17.2 Songbird readied the same lazy input on its pool with no timeout and a stalled input never fired `Playable`/`End` either; deferred.
+  - `[false]` `[reject]` blind: `Playable` registration may double-fire `TrackStart` — `queue.rs` `started` flag makes `on_playable` fire once; spec explicitly allows keeping the registration.
+  - `[false]` `[reject]` blind: `pub mod __testing` ships in production builds — spec mandates `#[doc(hidden)] pub mod __testing` (precedent `noctis_core::__testing`), never re-exported by the facade.
+  - `[false]` `[reject]` blind: exact dhat constants break on a symphonia/songbird patch bump — spec deliberately records constants so an added allocation fails; versions are pinned by the committed lockfile and Songbird is pinned `=0.6.1`.
+  - `[low]` `[reject]` blind: harness-less `passthrough_alloc` ignores libtest args (`--list`, filters) — same pattern as `noctis-core/tests/pipeline_alloc.rs`; only slows a manual filtered run; fix adds arg parsing.
+  - `[low]` `[reject]` blind: `VOICE.md` names base `27a3411` plus 17.3 changes, not the measured commit; bench at 128 kbps — the measuring commit did not exist when measured; 128 kbps mock default is what the spec requires `VOICE.md` to record.
+  - `[low]` `[patch]` blind: facade voice docs say 40/60 ms Opus "are decoded", contradicting the guide and skill — verified at `crates/noctis/src/lib.rs` L2879; patch: reword to the guide's three-packet wording.
+  - `[low]` `[reject]` blind: missing tests (seek, CHANNEL_UPDATE with `bitrate: None`, max_bitrate + no cache e2e, unbound label) — seek is not exposed; `None` handling is the unit-tested `effective_bitrate`; the label-binding wiring is covered by the vgap #2 patch.
+  - `[medium]` `[defer]` edge: no preparation timeout for a never-probeable command/URL input — same root and pre-existing status as blind "no time limit"; deferred with it.
+  - `[medium]` `[defer]` edge: stop/skip cannot cancel a slow probe, the child runs until probing ends — same root (unbounded preparation), pre-existing with Songbird's own lazy readying in 17.2; deferred with it.
+  - `[low]` `[reject]` edge: trailing partial frame overcounted on stop/skip — same as blind `Decoded::drop`; rejected likewise.
+  - `[low]` `[reject]` edge: 60 ms strike packets counted as one 20 ms frame — same as blind packets-vs-frames; rejected likewise.
+  - `[low]` `[patch]` edge: seek drops a passthrough packet already sent — same root as blind seek finding; patched with it.
+  - `[false]` `[reject]` edge: `set_bitrate` without a tokio runtime records but never applies — callers are `on_voice_state`/`on_channel_update`, event handlers that always run on the App's tokio runtime.
+  - `[low]` `[reject]` edge: CHANNEL_UPDATE racing the voice-state cache read — same as blind race; rejected likewise.
+  - `[low]` `[patch]` edge: facade docs claim 40/60 ms Opus is decoded — same as blind docs finding; patched with it.
+  - `[medium]` `[patch]` vgap: encoder bitrate verified only in Noctis bookkeeping, never on the driver (pre-verified) — patch: test-only applied-bitrate record asserted in the three bitrate tests plus an out-of-order unit test.
+  - `[medium]` `[patch]` vgap: app-labelled frame counters never observed through the real play path (pre-verified) — patch: player test with a bound `app` label asserting a frame counter moves.
+  - `[low]` `[patch]` vgap: frame-counter names not cross-checked against `METRICS` (pre-verified) — patch: assert each name has a counter row labelled `["app"]`.
+  - `[false]` `[reject]` intent 1: passthrough inferred, and `Pending::drop` counts a read-but-unsent packet — in songbird-0.6.1 `mix_symph_indiv` a packet read with an open passthrough slot is written and returned in the same tick, so a read packet never decoded was sent; the inference is the spec's deliberate design.
+  - `[false]` `[reject]` intent 2: signal type music not implemented — spec Design Notes and the memlog decide it: `OPUS_SET_SIGNAL` is unreachable without forking Songbird, which the spec forbids.
+  - `[false]` `[reject]` intent 3: mixer buffer reuse asserted only by config — the dhat test pins whole-driver per-100-tick block counts, so an added per-frame mixer allocation fails it; spec settled this shape.
+  - `[medium]` `[patch]` intent 4: bitrate tests check bookkeeping, not the encoder — same root as vgap #1; patched with it.
+  - `[false]` `[reject]` intent 5: alloc test and bench run without a recorder — spec mandates "no recorder"; counters are handles resolved once per track, and `increment` on a resolved handle does not resolve or allocate in Noctis code.
+  - `[medium]` `[patch]` intent 6: no App/player-level counter test — same root as vgap #2; patched with it.
+  - `[false]` `[reject]` intent 7: 60 ms Opus yields 3 passthrough packets, not the matrix's 0 — the code pins Songbird 0.6.1's real strike behaviour (`OPUS_PASSTHROUGH_STRIKE_LIMIT`), logged as a decision; the only "fix" would edit this spec.
+  - `[low]` `[reject]` intent 8: `VOICE.md` does not name the measured commit — same as blind `VOICE.md`; rejected likewise.
+  - `[false]` `[reject]` intent 9: bench times `mix_and_build_packet`, narrower than the driver — the spec's Tasks mandate exactly this method, and `VOICE.md` states it.
+  - `[false]` `[reject]` intent 10: soft clipping "only while mixing" relies on Songbird — spec Design Notes settle it: Songbird soft-clips mixed PCM only (`prep_packet` passes passthrough payloads untouched).
+
 ## Design Notes
 
 **Counting by wrapping the parsed input (decision).** Songbird decides between passthrough and encoding inside its private mixer and reports neither. Its codec registry is `&'static` (so it cannot carry an `app` label), and an already-parsed input skips the driver's probe. Noctis therefore prepares the input itself and wraps `Parsed.format`/`Parsed.decoder` (both `pub Box<dyn ..>`).
@@ -249,3 +296,12 @@ while ticks < 1000 && !ended { mixer.mix_and_build_packet(&mut buf).unwrap(); }
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `api-snapshot` -- ok; the printed hash goes into `SKILL.md`
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run only by the gate script.
+
+## Auto Run Result
+
+- **Summary:** Optimized Opus path in `noctis-voice`: Noctis prepares inputs itself (`frames::prepare`/`instrument`) and wraps the parsed format/decoder to count passthrough vs encoded 20 ms frames per `app` label; encoder bitrate follows the channel bitrate (capped by `max_bitrate`, applied via `Call::set_bitrate` on voice-state/CHANNEL_UPDATE); a dhat allocation test pins per-tick blocks for the passthrough path; a criterion voice bench (`benches/voice.rs`, results in `benches/VOICE.md`); guide `docs/guides/voice.md`, facade docs, project-template skill and public-API snapshot updated.
+- **Files changed:** `crates/noctis-voice/src/{frames.rs,frames/tests.rs}` (frame-counting wrappers); `call.rs`, `config.rs`, `player.rs`, `plugin.rs`, `queue.rs`, `lib.rs`, `tests.rs`, `player/tests.rs` (bitrate, preparation, counters); `tests/passthrough_alloc.rs` + `tests/fixtures/*` (alloc test, Opus/WebM/MP3 fixtures); `benches/voice.rs`, `benches/VOICE.md` (bench); `crates/noctis-core/src/observe.rs` (frame metric rows); `crates/noctis/src/lib.rs` (facade docs); `docs/guides/voice.md`; `examples/project-template/**` (skill, AGENTS.md, voice module); `xtask/public-api.txt`, `xtask/src/deps_check.rs`; architecture spine, memlog, maintainer-decisions.
+- **Review findings (pass 1, 36):** high 0, medium 8, low 17, false 11. Patched: 4 medium (driver-applied bitrate record asserted in bitrate tests + out-of-order unit test; player test with bound `app` label asserting a frame counter moves — duplicates merged) and 3 low (`CountingFormat::seek` settles pending instead of dropping; facade docs 40/60 ms Opus wording; frame-counter names cross-checked against `METRICS`). Deferred: 3 medium of one root — unbounded, uncancellable input preparation (`make_playable_async`), pre-existing from 17.2. Rejected: low ones as rare/negligible or covered (bitrate reset without channel cache, cache race, decoder reset `acc`, packets-vs-frames for 40/60 ms strikes, trailing partial frame on stop, libtest args, VOICE.md commit naming, missing seek tests); false ones contradicted by spec/Songbird 0.6.1 source (double TrackStart, `__testing` module, dhat constants, signal type, mixer reuse, recorder-less tests, 60 ms strike behaviour, bench scope, soft clipping).
+- **Follow-up review recommended: true** (first pass, 4 medium patched ≥ 2; patched counts: high 0, medium 4, low 3). Named risk: the new test-only applied-bitrate record in `Call::set_bitrate` and the bound-label player counter test were added in review and not independently re-reviewed for leaking into production paths or flakiness.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV); CI paused by maintainer.
+- **Residual risks:** a stalled URL body or silent command child stalls the guild queue (deferred, needs preparation timeout); dhat block constants are tied to pinned songbird =0.6.1 / symphonia lockfile versions; frame counters approximate (40/60 ms strike packets count as one frame, partial frame on interrupted tracks).

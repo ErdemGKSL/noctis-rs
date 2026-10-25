@@ -2881,10 +2881,11 @@ pub mod voice {
     //!   `d`.
     //! - **Passthrough.** Pre-encoded Opus (Ogg Opus or WebM/Matroska Opus,
     //!   48 kHz, 20 ms frames) goes to the wire without decode or re-encode
-    //!   while it is the call's only track at volume 1.0. Any other volume,
-    //!   another format, or 40/60 ms Opus frames are decoded, mixed and
-    //!   encoded (soft-clipped, stereo); passthrough resumes when the
-    //!   volume returns to 1.0. Pre-encode a library with
+    //!   while it is the call's only track at volume 1.0. Any other volume
+    //!   or another format is decoded, mixed and encoded (soft-clipped,
+    //!   stereo); with 40 or 60 ms Opus frames Songbird passes the first
+    //!   three such packets through, then decodes the rest of the track.
+    //!   Passthrough resumes when the volume returns to 1.0. Pre-encode a library with
     //!   `ffmpeg -i in -c:a libopus -b:a 128k -ar 48000 -frame_duration 20 out.opus`.
     //! - **Encoder bitrate.** The encoder follows the joined channel's
     //!   bitrate (from the Discord cache and `CHANNEL_UPDATE`; 64 kbps when

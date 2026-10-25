@@ -44,6 +44,9 @@ pub(crate) struct Entry {
     /// The encoder bitrate applied to the call: the channel's, capped by
     /// `VoiceConfig::max_bitrate`.
     pub(crate) bitrate: u32,
+    /// The last bitrate actually passed to `Call::set_bitrate` (tests).
+    #[cfg(test)]
+    pub(crate) applied: Arc<std::sync::atomic::AtomicU32>,
 }
 
 /// What a join works with, cloned out of its entry.
@@ -142,6 +145,8 @@ impl VoiceShared {
         // names the channel.
         let bitrate = effective_bitrate(None, self.config.get_max_bitrate());
         call.set_bitrate(bits(bitrate));
+        #[cfg(test)]
+        let applied = Arc::new(std::sync::atomic::AtomicU32::new(bitrate));
         let call = Arc::new(tokio::sync::Mutex::new(call));
         let generation = self.next();
         let queue = self.new_queue(guild, generation, &call);
@@ -153,6 +158,8 @@ impl VoiceShared {
             shard: Arc::clone(&shard),
             queue,
             bitrate,
+            #[cfg(test)]
+            applied,
         };
         calls.insert(guild, entry);
         let len = calls.len();
@@ -259,6 +266,12 @@ impl VoiceShared {
             });
             if let Some(latest) = latest {
                 driver.set_bitrate(bits(latest));
+                #[cfg(test)]
+                if let Some(inner) = inner.upgrade()
+                    && let Some(entry) = inner.calls().get(&guild)
+                {
+                    entry.applied.store(latest, Ordering::Relaxed);
+                }
             }
         });
     }
@@ -318,6 +331,14 @@ impl VoiceInner {
     #[cfg(test)]
     pub(crate) fn bitrate(&self, guild: Id<GuildMarker>) -> Option<u32> {
         self.calls().get(&guild).map(|entry| entry.bitrate)
+    }
+
+    /// The last bitrate applied on `guild`'s Songbird call.
+    #[cfg(test)]
+    pub(crate) fn applied_bitrate(&self, guild: Id<GuildMarker>) -> Option<u32> {
+        self.calls()
+            .get(&guild)
+            .map(|entry| entry.applied.load(Ordering::Relaxed))
     }
 
     /// The call of `guild`'s entry.

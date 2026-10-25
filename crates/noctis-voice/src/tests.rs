@@ -647,6 +647,7 @@ fn channel_update(running: &Running, guild: Id<GuildMarker>, channel: u64, bitra
 async fn bitrate_is(running: &Running, want: u32) {
     until(&format!("bitrate {want}"), || {
         running.shared.bitrate(guild()) == Some(want)
+            && running.shared.applied_bitrate(guild()) == Some(want)
     })
     .await;
 }
@@ -664,6 +665,7 @@ async fn bitrate_follows_the_channel() {
     seed_cache(&running);
     let _call = running.pending_call().await;
     assert_eq!(running.shared.bitrate(guild()), Some(64_000), "unknown yet");
+    assert_eq!(running.shared.applied_bitrate(guild()), Some(64_000));
     // Another member's voice state in V: ignored.
     running.gw.dispatch(
         "VOICE_STATE_UPDATE",
@@ -683,6 +685,7 @@ async fn bitrate_follows_the_channel() {
     channel_update(&running, Id::new(7), 70, 8_000);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(running.shared.bitrate(guild()), Some(128_000));
+    assert_eq!(running.shared.applied_bitrate(guild()), Some(128_000));
     assert_eq!(running.shared.bitrate(Id::new(7)), None);
     // A move to V2 (cached), then to an uncached channel.
     bot_voice_state(&running, 11);
@@ -729,7 +732,36 @@ async fn bitrate_without_a_cache() {
     until("the move", || call.channel() == Some(Id::new(11))).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(running.shared.bitrate(guild()), Some(64_000));
+    assert_eq!(running.shared.applied_bitrate(guild()), Some(64_000));
     channel_update(&running, guild(), 11, 128_000);
     bitrate_is(&running, 128_000).await;
+    running.stop().await;
+}
+
+/// Two quick bitrate changes leave the newest one applied on the call.
+#[tokio::test(flavor = "multi_thread")]
+async fn quick_bitrate_changes_apply_the_newest() {
+    let running = Running::start(
+        "voice-bitrate-quick",
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+    )
+    .await;
+    let call = running.pending_call().await;
+    let driver = running
+        .shared
+        .call(guild())
+        .unwrap_or_else(|| panic!("a call"));
+    // Both tasks wait on the Call lock until the second change is made.
+    let held = driver.lock().await;
+    running
+        .shared
+        .set_bitrate(guild(), Id::new(10), Some(96_000));
+    running
+        .shared
+        .set_bitrate(guild(), Id::new(10), Some(128_000));
+    assert_eq!(running.shared.applied_bitrate(guild()), Some(64_000));
+    drop(held);
+    bitrate_is(&running, 128_000).await;
+    drop(call);
     running.stop().await;
 }

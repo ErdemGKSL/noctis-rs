@@ -188,3 +188,39 @@ async fn stale_preparation_after_skip() {
     assert_eq!(slot.token, 2);
     assert!(slot.handle.is_some());
 }
+
+/// A player whose `Binding` carries the `app` label resolves both frame
+/// counters with that label in `play`. A standalone `Call` never mixes
+/// (Songbird demotes a mixer without a connection), so the counters stay
+/// at zero here; `frames::tests` drives them on Songbird's mock mixer.
+#[cfg(feature = "ogg")]
+#[tokio::test(flavor = "multi_thread")]
+async fn bound_player_labels_its_frame_counters() {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let binding = Arc::new(Binding::default());
+    let _ = binding.app.set(Arc::from("player-app"));
+    let player = SongbirdPlayer::new(call(), media(), Weak::new(), binding);
+    metrics::with_local_recorder(&recorder, || player.play(1, &info(good(), 1), 1.0));
+    until("the handle", || player.slot().handle.is_some()).await;
+    let mut names: Vec<_> = snapshotter
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .map(|(key, _, _, value)| {
+            let key = key.key();
+            let labels: Vec<_> = key
+                .labels()
+                .map(|l| (l.key().to_owned(), l.value().to_owned()))
+                .collect();
+            assert_eq!(labels, [("app".to_owned(), "player-app".to_owned())]);
+            assert!(matches!(value, DebugValue::Counter(_)), "{}", key.name());
+            key.name().to_owned()
+        })
+        .collect();
+    names.sort();
+    assert_eq!(names, [frames::ENCODED_FRAMES, frames::PASSTHROUGH_FRAMES]);
+    player.stop(1);
+}

@@ -208,8 +208,9 @@ impl FormatReader for CountingFormat {
     }
 
     fn seek(&mut self, mode: SeekMode, to: SeekTo) -> SymphResult<SeekedTo> {
-        // A packet read before a seek was dropped, not sent.
-        self.pending.flag.store(false, Ordering::Relaxed);
+        // Songbird sends a passthrough packet in the tick that reads it and
+        // seeks only between ticks, so a packet read before a seek was sent.
+        self.pending.settle(false);
         self.inner.seek(mode, to)
     }
 
