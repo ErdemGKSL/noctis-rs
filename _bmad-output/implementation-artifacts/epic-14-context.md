@@ -35,6 +35,8 @@ Make Noctis releasable as v1 (0.1.0). Third-party adapters get reusable conforma
 - Benches live in `noctis-core/benches` (the render bench is in `noctis-image/benches`). In `budgets.toml`, each bench has a table with `nfr`, `guilds` and `gate`, and each metric has a `max` and a `note`. Story 14.3 turns `gate` on.
 - CI is paused in `.github/workflows-disabled/`. Before the launch stories, move the workflows back to `.github/workflows/` and fix every failure. A story is done when all local gates pass.
 - Toolchain 1.97.0, MSRV 1.91, `resolver = "3"`. The `deny.toml` license allow-list is fixed, and a new license needs the maintainer's approval.
+- Template Kv values store twilight ids as `u64` (postcard rejects `Id`'s `deserialize_any`); a framework-level guard is left to 14.4/14.5. `noctis::id` and prelude `Id` exist. There is no shared `Ctx` trait: helpers take the accessors they need.
+- The template gate (fmt, build, clippy, `CI=true` test; default and `--all-features`; `--locked`) runs in `ci.yml`'s `template-build` and in `tools/story-loop/gates.sh`. SM-1 is reported in the template README, not enforced.
 - Epic 14's template, skill and docs stories cover the `voice` feature once Epic 17 has merged.
 
 ## Cross-Story Dependencies
