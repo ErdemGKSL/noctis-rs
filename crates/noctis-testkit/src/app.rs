@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use noctis_core::__testing::AppProbe;
+use noctis_core::__testing::{AppProbe, LaneSender};
 use noctis_core::{AppBuilder, Runtime, Token};
 use noctis_ports::Renderer;
 use serde_json::{Value, json};
@@ -94,6 +94,8 @@ pub struct TestApp {
     timeout: Duration,
     /// The App's Renderer, captured before `run_until` moves the App.
     renderer: Option<Arc<dyn Renderer>>,
+    /// The lane sender of the App's current run (`lane_sender`).
+    lanes: Arc<Mutex<Option<LaneSender>>>,
 }
 
 impl fmt::Debug for TestApp {
@@ -183,6 +185,14 @@ impl TestApp {
                 }
             }),
         );
+        let lanes: Arc<Mutex<Option<LaneSender>>> = Arc::default();
+        let tapped = Arc::clone(&lanes);
+        noctis_core::__testing::tap_lanes(
+            builder,
+            Arc::new(move |sender| {
+                *lock(&tapped) = Some(sender);
+            }),
+        );
         let app = builder.build().map_err(TestError::Build)?;
         let renderer = app.renderer().cloned();
         let probe = AppProbe::of(&app);
@@ -210,6 +220,7 @@ impl TestApp {
             fed: Mutex::new(HashSet::new()),
             timeout: DEFAULT_TIMEOUT,
             renderer,
+            lanes,
         };
         test_app.wait_ready().await?;
         Ok(test_app)
@@ -354,6 +365,17 @@ impl TestApp {
     /// [`assert_render_snapshot!`](crate::assert_render_snapshot).
     pub fn renderer(&self) -> Option<&Arc<dyn Renderer>> {
         self.renderer.as_ref()
+    }
+
+    /// The lane sender the App's shard tasks push into (the AD-10
+    /// injection path): an `Inbound` pushed on it reaches the App's handlers
+    /// without a gateway frame or JSON parse. `Some` once
+    /// [`build`](Self::build) has returned; after [`stop`](Self::stop) a
+    /// push on a retained sender is discarded. Benches and pipeline tests
+    /// only.
+    #[doc(hidden)]
+    pub fn lane_sender(&self) -> Option<LaneSender> {
+        lock(&self.lanes).clone()
     }
 
     /// The gateway fake the App's shard is connected to.

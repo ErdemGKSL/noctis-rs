@@ -255,6 +255,11 @@ pub(crate) struct AppShared {
     /// ends (the testkit's hidden seam, `__testing::observe_runs`); `None`
     /// in production. It only observes.
     pub(crate) run_observer: Option<RunObserver>,
+    /// Called once per run with a clone of the run's lane sender, right
+    /// after the lanes are created and before the shards start (the
+    /// testkit's hidden seam, `__testing::tap_lanes`); `None` in
+    /// production. It only observes.
+    pub(crate) lane_tap: Option<LaneTap>,
     /// The App's `GuildAccessList` (never namespaced): AD-23 stage 3 asks
     /// it whether a guild is served (FR-47).
     pub(crate) guild_access: Arc<dyn noctis_ports::GuildAccessList>,
@@ -268,6 +273,9 @@ pub(crate) struct AppShared {
 
 /// The hidden run-end observer of [`AppShared::run_observer`].
 pub(crate) type RunObserver = Arc<dyn Fn(Id<InteractionMarker>) + Send + Sync>;
+
+/// The hidden lane tap of [`AppShared::lane_tap`].
+pub(crate) type LaneTap = Arc<dyn Fn(noctis_gateway::LaneSender) + Send + Sync>;
 
 /// The context an event handler receives: the shard, the guild, the
 /// handler's Module, the resolved Guild Locale, the App's typed state, its

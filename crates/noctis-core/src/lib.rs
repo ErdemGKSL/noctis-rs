@@ -402,6 +402,20 @@ pub mod __testing {
         builder.set_run_observer(observer);
     }
 
+    pub use noctis_gateway::{Inbound, InboundKind, InboundSink, LaneSender, RawJson};
+
+    /// Installs `tap` as the App's lane tap: each run calls it once with a
+    /// clone of the [`LaneSender`] its shard tasks push into, after the
+    /// lanes are created and before the shards start, so a test can push
+    /// pre-parsed [`Inbound`] values into the same lanes. It only observes
+    /// and changes no dispatch behaviour; the last call wins.
+    pub fn tap_lanes(
+        builder: &mut crate::AppBuilder,
+        tap: std::sync::Arc<dyn Fn(LaneSender) + Send + Sync>,
+    ) {
+        builder.set_lane_tap(tap);
+    }
+
     /// A read-only view of a built App for the testkit: its command
     /// definitions, its built-in notice texts, and the codec's `custom_id`
     /// masking and Route lookup. It only reads.

@@ -1092,6 +1092,11 @@ impl App {
         let options = self.gateway_options(token, &plan);
         describe_metrics();
         let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
+        // The testkit's injection point (AD-10): it observes a clone of the
+        // shard tasks' sender; production Apps install no tap.
+        if let Some(tap) = &self.shared.lane_tap {
+            tap(sender.clone());
+        }
         let mut drain = AbortOnDrop(tokio::spawn(drain(
             receiver,
             self.workers(controls.clone()),
@@ -1820,6 +1825,8 @@ pub struct AppBuilder {
     locale_resolver: Option<Arc<dyn crate::LocaleResolver>>,
     /// The hidden run-end observer (`__testing::observe_runs`).
     run_observer: Option<crate::handler::RunObserver>,
+    /// The hidden lane tap (`__testing::tap_lanes`).
+    lane_tap: Option<crate::handler::LaneTap>,
     /// The locale catalogs, in registration order (`locales`).
     catalogs: Vec<noctis_i18n::Catalog>,
     /// Plugins waiting for `install`.
@@ -1929,6 +1936,7 @@ impl AppBuilder {
             rate_limited: None,
             locale_resolver: None,
             run_observer: None,
+            lane_tap: None,
             catalogs: Vec::new(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
@@ -3161,6 +3169,7 @@ impl AppBuilder {
                 rate_limits,
                 rate_limited: config.rate_limited,
                 run_observer: config.run_observer,
+                lane_tap: config.lane_tap,
                 gateway: GatewayHandle::detached(),
                 guild_access: Arc::clone(&ports.guild_access),
                 lifecycle: Lifecycle::with_hooks(Arc::clone(registry.hooks())),
@@ -3217,6 +3226,11 @@ impl AppBuilder {
     /// Sets the hidden run-end observer (`__testing::observe_runs`).
     pub(crate) fn set_run_observer(&mut self, observer: crate::handler::RunObserver) {
         self.run_observer = Some(observer);
+    }
+
+    /// Sets the hidden lane tap (`__testing::tap_lanes`).
+    pub(crate) fn set_lane_tap(&mut self, tap: crate::handler::LaneTap) {
+        self.lane_tap = Some(tap);
     }
 
     /// Records one violation per out-of-range [`HttpConfig`] field, then

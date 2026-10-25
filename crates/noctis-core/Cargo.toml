@@ -40,6 +40,7 @@ twilight-http.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["cargo_bench_support"] }
 metrics-util = { workspace = true, features = ["debugging"] }
 noctis = { workspace = true, features = ["testkit"] }
 rcgen = { workspace = true, features = ["crypto", "ring"] }
@@ -50,6 +51,16 @@ tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 [[bench]]
 name = "memory_per_guild"
 path = "benches/memory_per_guild/main.rs"
+harness = false
+
+[[bench]]
+name = "pipeline"
+path = "benches/pipeline.rs"
+harness = false
+
+[[test]]
+name = "pipeline_alloc"
+path = "tests/pipeline_alloc.rs"
 harness = false
 
 [lints]

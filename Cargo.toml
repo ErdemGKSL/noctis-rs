@@ -97,7 +97,7 @@ rcgen = { version = "0.14.10", default-features = false }
 tokio-websockets = "0.13"
 yaml-rust2 = { version = "0.13", default-features = false }
 cssparser = "0.38"
-criterion = "0.8"
+criterion = { version = "0.8.2", default-features = false }
 dhat = "0.3"
 png = "0.18"
 toml = "1.1"
