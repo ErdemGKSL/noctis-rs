@@ -2,7 +2,8 @@
 title: 'Story 14.5: Usage Skill completeness and agent trial'
 type: 'chore'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '78b5c6eff1a22524db387d7df6e3873a653958ce'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
