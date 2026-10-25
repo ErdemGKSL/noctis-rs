@@ -191,5 +191,5 @@ development_status:
   17-1-voice-connections-through-noctis-gateway: done
   17-2-track-playback-inputs-and-the-per-guild-queue: done
   17-3-optimized-opus-path-passthrough-encoder-tuning-and-voice-bench: done
-  17-4-music-bot-example-testkit-support-and-voice-documentation: backlog
+  17-4-music-bot-example-testkit-support-and-voice-documentation: in-progress
   epic-17-retrospective: optional

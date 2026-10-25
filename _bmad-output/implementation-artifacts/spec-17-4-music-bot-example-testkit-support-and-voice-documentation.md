@@ -2,7 +2,8 @@
 title: 'Story 17.4: Music-bot example, testkit support and voice documentation'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'e66a25e56da9771f572b7f3abfc0ae3ce7a2e216'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
