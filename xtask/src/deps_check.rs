@@ -33,7 +33,10 @@
 //! The `asset-http` rule (AD-15) keeps the `AssetFetcher` the only
 //! non-Discord HTTP client of the workspace: no member depends, in any kind,
 //! on another HTTP client crate (`reqwest`, `ureq`, `isahc`, `surf`,
-//! `attohttpc`, `curl`, `awc`, `minreq`, `hyper-tls`); only `noctis-image`
+//! `attohttpc`, `curl`, `awc`, `minreq`, `hyper-tls`), except that
+//! `noctis-voice` depends on `reqwest` as a normal dependency, the media
+//! client Songbird's `HttpRequest` input takes (AD-24 amended, AD-30 media
+//! inputs; its dev-dependencies may not); only `noctis-image`
 //! depends on `hyper-rustls`, as an optional normal dependency that only the
 //! `render` feature turns on; and among the `noctis-image` sources
 //! (`src/**/*.rs`, test files exempt) only `src/remote/fetch.rs` names the
@@ -97,7 +100,8 @@ const CLIENT_CONSTRUCTORS: [&str; 3] = ["Client::new(", "Client::builder(", "Cli
 /// The TLS connector of the `AssetFetcher` (AD-15).
 const HYPER_RUSTLS: &str = "hyper-rustls";
 /// HTTP client crates no member may depend on: the `AssetFetcher` is the
-/// only non-Discord HTTP (AD-15).
+/// only non-Discord HTTP (AD-15), besides `noctis-voice`'s media `reqwest`
+/// (AD-30).
 const BANNED_HTTP: [&str; 9] = [
     "reqwest",
     "ureq",
@@ -114,6 +118,9 @@ const ASSET_FETCHER: &str = "src/remote/fetch.rs";
 /// The hyper-util legacy client, split so this file never holds the
 /// whole name.
 const LEGACY_CLIENT: [&str; 2] = ["legacy::", "Client"];
+
+/// The media HTTP client of `noctis-voice` (AD-30 media inputs).
+const REQWEST: &str = "reqwest";
 
 /// Whether `name` is a crate the `asset-http` rule tracks.
 fn is_asset_http(name: &str) -> bool {
@@ -757,14 +764,29 @@ fn check_asset_http(ws: &Workspace, out: &mut BTreeSet<Violation>) {
             .iter()
             .filter(|d| BANNED_HTTP.contains(&d.name.as_str()))
         {
+            let reason = if dep.name != REQWEST {
+                "is another HTTP client; the AssetFetcher (hyper-util + hyper-rustls in \
+                 noctis-image) is the only non-Discord HTTP (AD-15)"
+                    .to_owned()
+            } else if member.name != VOICE {
+                format!(
+                    "only `{VOICE}` may depend on {REQWEST}, for its media inputs (AD-30); \
+                     the AssetFetcher is the only other non-Discord HTTP (AD-15)"
+                )
+            } else if dep.kind != Kind::Normal {
+                format!(
+                    "`{VOICE}` must depend on {REQWEST} as a normal dependency, for its media \
+                     inputs (AD-30)"
+                )
+            } else {
+                continue;
+            };
             out.insert(Violation::edge(
                 Rule::AssetHttp,
                 &member.name,
                 &dep.name,
                 dep.kind,
-                "is another HTTP client; the AssetFetcher (hyper-util + hyper-rustls in \
-                 noctis-image) is the only non-Discord HTTP (AD-15)"
-                    .to_owned(),
+                reason,
             ));
         }
         for dep in member.deps.iter().filter(|d| d.name == HYPER_RUSTLS) {
@@ -1711,12 +1733,59 @@ mod tests {
         assert_eq!(
             asset_http_rule(vec![reqwest], Vec::new()),
             [
-                "deps-check: noctis-ui -> reqwest (normal): is another HTTP client; the \
-                 AssetFetcher (hyper-util + hyper-rustls in noctis-image) is the only \
+                "deps-check: noctis-ui -> reqwest (normal): only `noctis-voice` may depend on \
+                 reqwest, for its media inputs (AD-30); the AssetFetcher is the only other \
                  non-Discord HTTP (AD-15) [asset-http]",
                 "deps-check: noctis-ui -> ureq (dev): is another HTTP client; the AssetFetcher \
                  (hyper-util + hyper-rustls in noctis-image) is the only non-Discord HTTP \
                  (AD-15) [asset-http]",
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_http_reqwest_only_on_voice_as_normal() {
+        let voice = Member {
+            name: VOICE.to_owned(),
+            deps: vec![Dep {
+                optional: false,
+                ..dep(REQWEST)
+            }],
+            ..member(&[])
+        };
+        assert_eq!(
+            asset_http_rule(vec![voice], Vec::new()),
+            Vec::<String>::new()
+        );
+        let dev = Member {
+            name: VOICE.to_owned(),
+            deps: vec![Dep {
+                kind: Kind::Dev,
+                ..dep(REQWEST)
+            }],
+            ..member(&[])
+        };
+        let other = Member {
+            name: "noctis-core".to_owned(),
+            deps: vec![dep(REQWEST)],
+            ..member(&[])
+        };
+        let ureq = Member {
+            name: VOICE.to_owned(),
+            deps: vec![dep("ureq")],
+            ..member(&[])
+        };
+        assert_eq!(
+            asset_http_rule(vec![other, dev, ureq], Vec::new()),
+            [
+                "deps-check: noctis-core -> reqwest (normal): only `noctis-voice` may depend \
+                 on reqwest, for its media inputs (AD-30); the AssetFetcher is the only other \
+                 non-Discord HTTP (AD-15) [asset-http]",
+                "deps-check: noctis-voice -> reqwest (dev): `noctis-voice` must depend on \
+                 reqwest as a normal dependency, for its media inputs (AD-30) [asset-http]",
+                "deps-check: noctis-voice -> ureq (normal): is another HTTP client; the \
+                 AssetFetcher (hyper-util + hyper-rustls in noctis-image) is the only \
+                 non-Discord HTTP (AD-15) [asset-http]",
             ]
         );
     }

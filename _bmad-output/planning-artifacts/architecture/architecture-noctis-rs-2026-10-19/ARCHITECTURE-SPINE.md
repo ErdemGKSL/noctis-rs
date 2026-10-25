@@ -1037,6 +1037,11 @@ list in CI.
     ports. A task still running at its budget is dropped and named in one warning.
     Voice State Update (op 4, VC-01) is a gateway command in the same GW-04 window as
     presence and Request Guild Members.
+  - Amended (2026-10-25, Story 17.2): plugin events (`ExtensionEvent`, fired with an
+    `Emitter`) go into the same ordered hook queue as the lifecycle events, never into
+    the gateway lanes, so a slow track hook never delays gateway events; outside a
+    run, or without a hook for the type, they are dropped. They drain and are cut at
+    the end of a run like every hook event.
 
 ### AD-22 — Attachments are content-addressed; renders are awaited in handlers
 - **Binds:** `noctis-ui`, `noctis-image`, `noctis-core`, `noctis-ports`; FR-30,
@@ -1267,6 +1272,17 @@ list in CI.
       its `install` adds state, the `noctis-voice` Module (voice state, voice server
       and `GUILD_DELETE` handlers plus an `AppStarted` hook) and the leave-all Shutdown
       Task.
+    - Amended (2026-10-25, Story 17.2): **plugin event seam.** A plugin delivers its
+      own typed events to Modules through `noctis_core::lifecycle::ExtensionEvent`
+      (every one is a `HookEvent`, so `#[derive(Hook)]` handlers take it; one
+      `Extension` hook kind matched by `TypeId`) fired by `Emitter` (`App::emitter()`,
+      `HookCtx::emitter()`; holds the App weakly). **Media client.** `noctis-voice`
+      is the second non-Discord HTTP user besides the `AssetFetcher`: one `reqwest`
+      0.12 client per App (the client Songbird's `HttpRequest` input takes), built in
+      `VoicePlugin::install` with a connect timeout, a redirect cap, `no_proxy()`, no
+      default headers or user agent and never the bot token; Discord's API is refused
+      both in `Track::url` and in every redirect hop. deps-check `asset-http` allows
+      `reqwest` only as a normal dependency of `noctis-voice`.
   - **`Dispatcher`** is core's public entry into the AD-23 pipeline:
     `EventCtx::dispatcher()` returns it, and `Dispatcher::run_command(invocation)`
     runs a resolved Command Path, with options decoded by the caller, through stages
@@ -1495,6 +1511,9 @@ list in CI.
     `Display`; neither is ever logged.
   - Error Sinks receive every handler error, panic, hook error and overflow drop.
     The default sink logs at `error`.
+  - Amended (2026-10-25, Story 17.2): `noctis_voice_tracks_total` (counter; `result`:
+    `finished`, `skipped`, `stopped`, `error`; feature `voice`) counts each track that
+    became current once; no guild, channel, user or track ids or URLs in its labels.
 
 ### AD-30 — Voice through Songbird's driver, Noctis's gateway (added 2026-10-25)
 - **Binds:** `noctis-voice`, `noctis-gateway`, facade; FR-80; maintainer decision §10.
@@ -1535,6 +1554,19 @@ list in CI.
     noctis-gateway`, the facade's `voice`-gated edge to `noctis-voice` and a
     dev-only `noctis-voice -> noctis-testkit` edge; deps-check allows `songbird` only
     as a normal dependency of `noctis-voice` (rule `songbird-gated`).
+  - Amended (2026-10-25, Story 17.2): the queue is Noctis-owned (Songbird's
+    `builtin-queue` is never enabled): each call's entry holds a bounded queue
+    (`VoiceConfig::max_queue`, 1..=10000, default 1000, current track included) of
+    track descriptions; the driver only ever holds the current track (`play_only`),
+    and a pending track's lazy input is created when it becomes current. Every track
+    that becomes current gets a token; driver reports for another token are ignored,
+    so each yields exactly one `TrackEnd` or `TrackError`. The queue reports the
+    `ExtensionEvent`s `TrackStart`, `TrackEnd` (`Finished`/`Skipped`/`Stopped`),
+    `TrackError` and `QueueEmpty`; removing a call drops its queue without events.
+    `VoiceConfig::idle_leave` (default off, 1 s..=24 h) leaves a connected call with
+    nothing playing. Demux formats are `noctis-voice` features `ogg`, `mkv`, `mp3`,
+    `aac`, `isomp4`, `flac` and `wav` (all on by default) mapped to symphonia 0.5,
+    with one symphonia version in the graph. Media inputs use the AD-24 media client.
 
 ## Consistency Conventions
 

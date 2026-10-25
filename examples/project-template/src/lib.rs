@@ -7,7 +7,7 @@
 //!   hand and whose Modules tab toggles features (UD-5, UD-6).
 //! - `profile` — `/profile` and the "Show profile" user command render a card image into
 //!   a Media Gallery (UD-2), with a modal to edit the bio.
-//! - `voice` (template feature `voice`) — `/join channel` and `/leave` (FR-80).
+//! - `voice` (template feature `voice`) — `/join channel`, `/leave`, `/play url`, `/skip`, `/stop` (FR-80).
 //!
 //! [`configure`] wires every Module, Adapter and piece of state onto an [`AppBuilder`];
 //! `main.rs` and the tests share it.
@@ -79,8 +79,8 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // without `.intents(..)` the build fails with `[GW-05]` MissingIntent.
     // Voice channels (template feature `voice`, off by default; needs a C compiler and
     // cmake for libopus): `.voice(..)` installs voice and adds GUILD_VOICE_STATES, and
-    // the `voice` Module's `/join` and `/leave` call `ctx.voice()`. At shutdown every
-    // call leaves its channel before the shards close.
+    // the `voice` Module's `/join`, `/leave`, `/play`, `/skip` and `/stop` call
+    // `ctx.voice()`. At shutdown every call leaves its channel before the shards close.
     #[cfg(feature = "voice")]
     builder
         .voice(noctis::voice::VoiceConfig::default())

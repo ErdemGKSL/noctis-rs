@@ -1,5 +1,5 @@
-//! The `voice` feature (Story 17.1): `.voice(..)` adds `GUILD_VOICE_STATES`, and
-//! `/join` and `/leave` are mounted and answer privately. `TestApp` runs on the fake
+//! The `voice` feature (Stories 17.1, 17.2): `.voice(..)` adds `GUILD_VOICE_STATES`;
+//! `/join`, `/leave`, `/play`, `/skip` and `/stop` are mounted and answer privately. `TestApp` runs on the fake
 //! gateway, so `/leave` sends op 4 with no channel and succeeds.
 #![cfg(feature = "voice")]
 
@@ -30,5 +30,28 @@ async fn leave_answers_privately() -> anyhow::Result<()> {
     let left = app.command("leave").by(USER).in_guild(GUILD).run().await?;
     assert!(left.is_ephemeral());
     assert_eq!(left.text(), "Left the voice channel.");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queue_commands_exist() -> anyhow::Result<()> {
+    let app = TestApp::build(configure(&mut App::builder()))
+        .await?
+        .guild(TestGuild::new(GUILD, "Test Guild"))
+        .user(TestUser::new(USER));
+    // Without a call each queue command asks to join first, privately.
+    let play = app
+        .command("play")
+        .option("url", "https://cdn.example.com/a.ogg")
+        .by(USER)
+        .in_guild(GUILD)
+        .run()
+        .await?;
+    let skip = app.command("skip").by(USER).in_guild(GUILD).run().await?;
+    let stop = app.command("stop").by(USER).in_guild(GUILD).run().await?;
+    for reply in [play, skip, stop] {
+        assert!(reply.is_ephemeral());
+        assert_eq!(reply.text(), "Use /join first.");
+    }
     Ok(())
 }

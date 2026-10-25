@@ -1759,6 +1759,13 @@ pub mod lifecycle {
     //! the running hook is cancelled (reported as `Cancelled`) and queued
     //! events are discarded with one warning.
     //!
+    //! **Plugin events.** A plugin's own typed events implement
+    //! [`ExtensionEvent`] (every one is a [`HookEvent`]) and are fired with
+    //! an [`Emitter`] (`app.emitter()`, `HookCtx::emitter()`) into the same
+    //! ordered queue while the App runs; outside a run, or with no hook for
+    //! the type, they are dropped. The `voice` feature's track events
+    //! (`noctis::voice::TrackStart`, ..) are such events.
+    //!
     //! ```
     //! use noctis::lifecycle::{HookCtx, ModuleToggled, ShardFatal};
     //! use noctis::prelude::*;
@@ -1790,8 +1797,9 @@ pub mod lifecycle {
     //! ```
 
     pub use noctis_core::lifecycle::{
-        AllShardsReady, AppStarted, HookEvent, ModuleToggled, PublishCompleted, PublishFailed,
-        ShardDisconnected, ShardFatal, ShardReady, ShardResumed, ShutdownReason, ShutdownStarted,
+        AllShardsReady, AppStarted, Emitter, ExtensionEvent, HookEvent, ModuleToggled,
+        PublishCompleted, PublishFailed, ShardDisconnected, ShardFatal, ShardReady, ShardResumed,
+        ShutdownReason, ShutdownStarted,
     };
     pub use noctis_core::{HookCtx, LifecycleHook};
 }
@@ -2820,8 +2828,54 @@ pub mod voice {
     //!   both leave and remove the call. Before the first READY a join is
     //!   [`VoiceError::NotReady`].
     //! - **Shutdown.** Before the shards close, every call sends op 4 leave
-    //!   (for at most `min(shutdown_grace, 5 s)`).
-    //! - **Metrics.** `noctis_voice_calls{app}`: the live and pending calls.
+    //!   (for at most `min(shutdown_grace, 5 s)`); queues stop without
+    //!   events.
+    //! - **Tracks.** [`Track::file(path)`](Track::file),
+    //!   [`Track::url(url)`](Track::url) (`http`/`https`, at most 4096
+    //!   bytes, no credentials, never Discord's API) and
+    //!   [`Track::command(program, args)`](Track::command) (stdout is the
+    //!   audio; killed when the track stops), plus `.title(..)` (at most 256
+    //!   chars) and `.requested_by(user)`. A bad input is
+    //!   [`VoiceError::InvalidInput`]. Nothing is opened, fetched or spawned
+    //!   until the track becomes current.
+    //! - **Queue.** One per call, on its [`CallHandle`]:
+    //!   [`enqueue`](CallHandle::enqueue) (plays at once when idle; at most
+    //!   `max_queue` tracks, current included, else
+    //!   [`VoiceError::QueueFull`]), [`skip`](CallHandle::skip),
+    //!   [`pause`](CallHandle::pause), [`resume`](CallHandle::resume),
+    //!   [`stop`](CallHandle::stop) (current and pending),
+    //!   [`clear`](CallHandle::clear) (pending only),
+    //!   [`set_volume`](CallHandle::set_volume) (`0.0..=2.0`, else
+    //!   [`VoiceError::InvalidVolume`]), [`now_playing`](CallHandle::now_playing),
+    //!   [`list`](CallHandle::list), [`queue_len`](CallHandle::queue_len),
+    //!   [`volume`](CallHandle::volume), [`is_paused`](CallHandle::is_paused).
+    //!   The driver only ever holds the current track.
+    //! - **Track events** (hook events: a `#[derive(Hook)]` handler takes
+    //!   them, `noctis::lifecycle::ExtensionEvent`):
+    //!
+    //!   | Event (`NAME`) | Fires | Data |
+    //!   | --- | --- | --- |
+    //!   | [`TrackStart`] (`VOICE_TRACK_START`) | a track became current and is playable | `guild`, `track` |
+    //!   | [`TrackEnd`] (`VOICE_TRACK_END`) | the current track finished, was skipped or stopped | `guild`, `track`, `reason` ([`EndReason`]) |
+    //!   | [`TrackError`] (`VOICE_TRACK_ERROR`) | the current track failed (create, parse, decode); the next one starts | `guild`, `track`, `error` |
+    //!   | [`QueueEmpty`] (`VOICE_QUEUE_EMPTY`) | the queue ran out of tracks | `guild` |
+    //!
+    //!   A leave, a disconnect, a `GUILD_DELETE` or the shutdown drops the
+    //!   queue without events.
+    //! - **Formats.** symphonia demuxes Ogg, Matroska/WebM, MP3, AAC/MP4,
+    //!   FLAC and WAV (the `noctis-voice` features, all on with `voice`);
+    //!   Opus is always decodable.
+    //! - **Media HTTP.** URL tracks use the App's own media client:
+    //!   `media_connect_timeout` (default 10 s), at most
+    //!   `media_max_redirects` redirects (default 5), no proxy, no bot
+    //!   token, user agent or Noctis header, and a redirect to Discord's API
+    //!   is refused.
+    //! - **Idle leave.** `VoiceConfig::idle_leave(Some(d))` (1 s..=24 h,
+    //!   default off) leaves a connected call that had no playing track for
+    //!   `d`.
+    //! - **Metrics.** `noctis_voice_calls{app}`: the live and pending calls;
+    //!   `noctis_voice_tracks_total{app, result}`: the tracks that became
+    //!   current, by `finished`, `skipped`, `stopped` or `error`.
     //!
     //! ```no_run
     //! use noctis::prelude::*;
@@ -2859,9 +2913,71 @@ pub mod voice {
     //! # Ok(())
     //! # }
     //! ```
+    //!
+    //! Playing a URL and reacting to the track events:
+    //!
+    //! ```no_run
+    //! use noctis::lifecycle::HookCtx;
+    //! use noctis::prelude::*;
+    //! use noctis::voice::{Track, TrackError, TrackStart, VoiceError};
+    //!
+    //! #[derive(SlashCommand)]
+    //! #[command("play", description = "Play a URL")]
+    //! struct Play {
+    //!     #[option(description = "The media URL")]
+    //!     url: String,
+    //! }
+    //!
+    //! impl Play {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+    //!         let Some(call) = ctx.guild_id().and_then(|g| ctx.voice().call(g)) else {
+    //!             return ctx.reply_text("Join a voice channel first.").await;
+    //!         };
+    //!         let queued = async {
+    //!             let track = Track::url(&self.url)?.requested_by(ctx.user_id());
+    //!             call.enqueue(track).await
+    //!         };
+    //!         match queued.await {
+    //!             Ok(info) => ctx.reply_text(format!("Queued #{} ({} in queue).", info.id(), call.queue_len())).await,
+    //!             Err(error @ VoiceError::QueueFull { .. }) => ctx.reply_text(error.to_string()).await,
+    //!             Err(error) => ctx.reply_text(format!("Could not queue: {error}")).await,
+    //!         }
+    //!     }
+    //! }
+    //!
+    //! #[derive(Hook)]
+    //! struct NowPlaying;
+    //!
+    //! impl NowPlaying {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: HookCtx, event: TrackStart) -> HandlerResult<()> {
+    //!         eprintln!("now playing #{} in {}", event.track.id(), event.guild);
+    //!         Ok(())
+    //!     }
+    //! }
+    //!
+    //! #[derive(Hook)]
+    //! struct TrackErrorLog;
+    //!
+    //! impl TrackErrorLog {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: HookCtx, event: TrackError) -> HandlerResult<()> {
+    //!         eprintln!("track failed in {}: {}", event.guild, event.error);
+    //!         Ok(())
+    //!     }
+    //! }
+    //!
+    //! let _music = Module::new("music")
+    //!     .add::<Play>()
+    //!     .add::<NowPlaying>()
+    //!     .add::<TrackErrorLog>();
+    //! ```
 
     pub use noctis_voice::{
-        AppBuilderVoiceExt, CallHandle, Voice, VoiceConfig, VoiceError, VoiceExt, VoicePlugin,
+        AppBuilderVoiceExt, CallHandle, EndReason, QueueEmpty, Track, TrackEnd, TrackError,
+        TrackId, TrackInfo, TrackSource, TrackStart, Voice, VoiceConfig, VoiceError, VoiceExt,
+        VoicePlugin,
     };
 }
 

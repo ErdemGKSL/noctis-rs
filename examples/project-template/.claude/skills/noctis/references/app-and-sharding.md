@@ -866,6 +866,45 @@ events of the closing shards may still follow it). A startup that fails after
 `ShutdownStarted { reason: StartupFailed }` and `run` still returns its `StartError`; a
 missing token or a bad locale overlay fails before `AppStarted`, so nothing fires.
 
+**Plugin events (`ExtensionEvent`).** A plugin's own typed events reach hooks the same
+way. Every type implementing `noctis::lifecycle::ExtensionEvent` (`Clone + Debug +
+Send + Sync + 'static`, `const NAME: &'static str`) is a `HookEvent`, so a
+`#[derive(Hook)]` handler takes it like a lifecycle payload. The `voice` feature's
+`TrackStart`, `TrackEnd`, `TrackError` and `QueueEmpty` are such events
+(`references/voice.md` §8). A plugin fires its events with an `Emitter`
+(`app.emitter()` before `run`, or `ctx.emitter()` on `HookCtx`; cheap clone, holds the
+App weakly): `emitter.emit(event)` queues it on the same ordered hook queue while the
+App runs, behind earlier hook events, and never on the gateway lanes. Outside a run,
+with no hook for that type, or after the App was dropped, it is dropped. Failures are
+reported with `event_type` = its `NAME`, like every hook.
+
+```rust
+use noctis::lifecycle::{Emitter, ExtensionEvent, HookCtx};
+
+#[derive(Debug, Clone)]
+pub struct LevelUp { pub user: Id<UserMarker>, pub level: u32 }
+
+impl ExtensionEvent for LevelUp {
+    const NAME: &'static str = "LEVEL_UP";
+}
+
+#[derive(Hook)]
+pub struct Congratulate;
+
+impl Congratulate {
+    #[handler]
+    async fn handle(self, _ctx: HookCtx, ev: LevelUp) -> HandlerResult<()> {
+        tracing::info!(user = %ev.user, level = ev.level, "level up");
+        Ok(())
+    }
+}
+
+// Elsewhere (a plugin, or code holding `app.emitter()`):
+fn level_up(emitter: &Emitter, user: Id<UserMarker>, level: u32) {
+    emitter.emit(LevelUp { user, level });
+}
+```
+
 **Delivery.** While `run`/`run_until` runs, every occurrence goes into one ordered
 queue drained by one task: per event, in arrival order, every hook registered for it in
 Registry fold order (parent before child, `add` order, plugins' Modules included), one
@@ -885,7 +924,7 @@ unselected hook is never registered and never fires.
 
 **`HookCtx`** (cheap clone; `Debug` prints the Module and the states, never the HTTP
 client): `module()`, `app_id()`, `state::<T>()`, `http()`, `gateway()` (detached outside
-a run), `kv()`, `cache()`, `modules()`, `webhooks()`.
+a run), `kv()`, `cache()`, `modules()`, `webhooks()`, `emitter()` (the App's `Emitter`).
 
 **`LifecycleHook`** is the hook's descriptor (`X::descriptor()`, what `Module::add::<X>()`
 stores); its `Debug` names the handler and the event. Bot code never builds one by hand.
@@ -1155,6 +1194,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full` \| `unknown_template` \| `unsupported` \| `over_cap`) | renders rejected before drawing |
 | `noctis_discord_cache_update_errors_total` | counter | `app` | Discord cache updates that failed or exceeded 1 s; the event or interaction still reaches its handlers (one `noctis::cache` warning per outage) |
 | `noctis_voice_calls` | gauge | `app` | live and pending voice calls (feature `voice`, see `voice.md` §5) |
+| `noctis_voice_tracks_total` | counter | `app`, `result` | tracks that became current, by outcome: `finished`, `skipped`, `stopped`, `error` (feature `voice`, see `voice.md` §5) |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
 `autocomplete` are emitted today; `component` and `render` join with their handlers.

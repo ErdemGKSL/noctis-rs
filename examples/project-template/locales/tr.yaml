@@ -9,6 +9,9 @@ cmdword:
   bio: biyografi
   join: katıl
   leave: ayrıl
+  play: çal
+  skip: geç
+  stop: durdur
 
 cmd:
   setup:
@@ -43,6 +46,16 @@ cmd:
         description: Katılınacak ses veya sahne kanalı
   leave:
     description: Ses kanalından ayrıl
+  play:
+    description: Bu sunucunun ses kanalında bir medya bağlantısını sıraya ekle
+    opt:
+      url:
+        name: bağlantı
+        description: Bir http(s) ses veya video bağlantısı
+  skip:
+    description: Çalan parçayı geç
+  stop:
+    description: Çalmayı durdur ve sırayı temizle
 
 ctxcmd:
   show_profile:
@@ -119,3 +132,8 @@ voice:
   joined: "{channel} kanalına katıldım."
   left: Ses kanalından ayrıldım.
   failed: "Ses hatası: {error}"
+  not_in_call: Önce /katıl komutunu kullan.
+  queued: "{title} sıraya eklendi (sırada #{position})."
+  skipped: "{title} geçildi."
+  nothing_playing: Şu an bir şey çalmıyor.
+  stopped: "Durduruldu; {count} parça kaldırıldı."

@@ -6,8 +6,9 @@ use noctis_core::gateway::GatewayError;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
-/// Why [`Voice::join`](crate::Voice::join), [`Voice::leave`](crate::Voice::leave)
-/// or [`CallHandle::leave`](crate::CallHandle::leave) failed.
+/// Why a voice operation failed: [`Voice::join`](crate::Voice::join),
+/// [`Voice::leave`](crate::Voice::leave), a [`CallHandle`](crate::CallHandle)
+/// queue operation or a [`Track`](crate::Track) constructor.
 ///
 /// ```
 /// use noctis_gateway::GatewayError;
@@ -20,7 +21,7 @@ use twilight_model::id::marker::GuildMarker;
 /// assert!(replaced.to_string().starts_with("[VC-02]"));
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum VoiceError {
     /// The App has no voice: call `.voice(VoiceConfig::default())` on the
     /// `AppBuilder`.
@@ -64,5 +65,26 @@ pub enum VoiceError {
     Interrupted {
         /// The guild.
         guild: Id<GuildMarker>,
+    },
+    /// The guild's queue already holds `VoiceConfig::max_queue` tracks
+    /// (the current one included); nothing changed.
+    #[error("the queue of guild {guild} is full: it holds at most {max} tracks")]
+    QueueFull {
+        /// The guild.
+        guild: Id<GuildMarker>,
+        /// The configured `max_queue`.
+        max: usize,
+    },
+    /// A volume outside `0.0..=2.0` (or not finite); nothing changed.
+    #[error("the volume {volume} is out of range: use 0.0..=2.0")]
+    InvalidVolume {
+        /// The refused volume.
+        volume: f32,
+    },
+    /// A [`Track`](crate::Track) constructor refused its input.
+    #[error("invalid track input: {reason}")]
+    InvalidInput {
+        /// The rule the input broke.
+        reason: String,
     },
 }

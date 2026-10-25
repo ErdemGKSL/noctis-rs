@@ -26,12 +26,19 @@
 //! end of a run the queue is drained until `shutdown_grace` after
 //! [`ShutdownStarted`] (at least 1 s); then the running hook is cancelled
 //! (reported as `Cancelled`) and the queued events are discarded.
+//!
+//! Plugins add their own typed events: an [`ExtensionEvent`] is a
+//! [`HookEvent`] that the plugin fires with an [`Emitter`]
+//! (`App::emitter()`, [`HookCtx::emitter`]) into the same queue, while a
+//! run runs.
 
+use std::any::TypeId;
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use futures_util::FutureExt as _;
@@ -60,6 +67,10 @@ const DRAIN_AT_LEAST: Duration = Duration::from_secs(1);
 const CUT_WAIT: Duration = Duration::from_secs(1);
 
 pub(crate) mod sealed {
+    use std::any::{Any, TypeId};
+    use std::fmt;
+    use std::sync::Arc;
+
     /// The lifecycle event kinds, as indices of the hook index.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum HookKind {
@@ -73,11 +84,13 @@ pub(crate) mod sealed {
         PublishFailed,
         ModuleToggled,
         ShutdownStarted,
+        /// A plugin's own [`ExtensionEvent`](super::ExtensionEvent).
+        Extension,
     }
 
     impl HookKind {
         /// How many kinds there are.
-        pub const COUNT: usize = 10;
+        pub const COUNT: usize = 11;
 
         /// Its index in `0..COUNT`.
         pub const fn index(self) -> usize {
@@ -98,7 +111,46 @@ pub(crate) mod sealed {
         PublishFailed(super::PublishFailed),
         ModuleToggled(super::ModuleToggled),
         ShutdownStarted(super::ShutdownStarted),
+        Extension(ExtensionFired),
     }
+
+    /// One fired [`ExtensionEvent`](super::ExtensionEvent), type-erased.
+    #[derive(Clone)]
+    pub struct ExtensionFired {
+        /// The payload's type: only the hooks of this type run.
+        pub(crate) type_id: TypeId,
+        /// Its `NAME`.
+        pub(crate) name: &'static str,
+        /// The payload.
+        pub(crate) payload: Arc<dyn Any + Send + Sync>,
+    }
+
+    impl ExtensionFired {
+        /// Erases `event`.
+        pub(crate) fn new<E: super::ExtensionEvent>(event: E) -> Self {
+            Self {
+                type_id: TypeId::of::<E>(),
+                name: E::NAME,
+                payload: Arc::new(event),
+            }
+        }
+    }
+
+    impl fmt::Debug for ExtensionFired {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("ExtensionFired")
+                .field("name", &self.name)
+                .finish_non_exhaustive()
+        }
+    }
+
+    impl PartialEq for ExtensionFired {
+        fn eq(&self, other: &Self) -> bool {
+            Arc::ptr_eq(&self.payload, &other.payload)
+        }
+    }
+
+    impl Eq for ExtensionFired {}
 
     /// What a lifecycle payload tells the hook index.
     pub trait Sealed: Sized {
@@ -108,6 +160,21 @@ pub(crate) mod sealed {
         fn into_fired(self) -> Fired;
         /// The payload of `fired`, if it is this type's.
         fn from_fired(fired: &Fired) -> Option<&Self>;
+    }
+
+    impl<E: super::ExtensionEvent> Sealed for E {
+        const KIND: HookKind = HookKind::Extension;
+
+        fn into_fired(self) -> Fired {
+            Fired::Extension(ExtensionFired::new(self))
+        }
+
+        fn from_fired(fired: &Fired) -> Option<&Self> {
+            match fired {
+                Fired::Extension(e) => e.payload.downcast_ref(),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -127,6 +194,7 @@ impl Fired {
             Self::PublishFailed(_) => HookKind::PublishFailed,
             Self::ModuleToggled(_) => HookKind::ModuleToggled,
             Self::ShutdownStarted(_) => HookKind::ShutdownStarted,
+            Self::Extension(_) => HookKind::Extension,
         }
     }
 
@@ -143,6 +211,7 @@ impl Fired {
             Self::PublishFailed(_) => PublishFailed::NAME,
             Self::ModuleToggled(_) => ModuleToggled::NAME,
             Self::ShutdownStarted(_) => ShutdownStarted::NAME,
+            Self::Extension(e) => e.name,
         }
     }
 
@@ -176,7 +245,8 @@ impl Fired {
 
 /// A lifecycle event payload a `#[derive(Hook)]` struct's `#[handler]`
 /// method takes as its event: one of the types in
-/// [`noctis_core::lifecycle`](self). Sealed.
+/// [`noctis_core::lifecycle`](self), or a plugin's own [`ExtensionEvent`].
+/// Sealed: implement [`ExtensionEvent`] instead.
 ///
 /// ```
 /// use noctis_core::lifecycle::{AppStarted, HookEvent};
@@ -186,12 +256,96 @@ impl Fired {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a lifecycle event",
     label = "not a lifecycle event",
-    note = "use a type from `noctis::lifecycle`; gateway events are handled by `#[derive(EventHandler)]`"
+    note = "use a type from `noctis::lifecycle` or a plugin's `ExtensionEvent` (such as `noctis::voice::TrackStart`); gateway events are handled by `#[derive(EventHandler)]`"
 )]
 pub trait HookEvent: sealed::Sealed + Clone + Send + Sync + 'static {
     /// The event's name (`"APP_STARTED"`): the `hook_event` span field and
     /// the `event_type` of an `ErrorOrigin::Hook` report.
     const NAME: &'static str;
+}
+
+/// A plugin's own hook event: every `ExtensionEvent` is a [`HookEvent`], so
+/// a `#[derive(Hook)]` struct's `#[handler]` method takes it like a
+/// lifecycle payload, and an [`Emitter`] fires it.
+///
+/// Extension events go into the run's ordered hook queue (never the gateway
+/// lanes): a slow hook delays the later hooks, not the gateway events.
+/// Errors and panics reach the [`ErrorOrigin::Hook`] Error Sink with
+/// `event_type = NAME`. Outside a run, or without a hook for the type, an
+/// emitted event is dropped.
+///
+/// ```
+/// use noctis_core::lifecycle::{ExtensionEvent, HookEvent};
+///
+/// #[derive(Debug, Clone)]
+/// struct Leveled { level: u32 }
+///
+/// impl ExtensionEvent for Leveled {
+///     const NAME: &'static str = "LEVELED";
+/// }
+///
+/// assert_eq!(<Leveled as HookEvent>::NAME, "LEVELED");
+/// ```
+pub trait ExtensionEvent: Clone + fmt::Debug + Send + Sync + 'static {
+    /// The event's name (`"VOICE_TRACK_START"`): the `hook_event` span field
+    /// and the `event_type` of an `ErrorOrigin::Hook` report.
+    const NAME: &'static str;
+}
+
+impl<E: ExtensionEvent> HookEvent for E {
+    const NAME: &'static str = <E as ExtensionEvent>::NAME;
+}
+
+/// Fires [`ExtensionEvent`]s into the App's hook queue; what a plugin keeps
+/// to deliver its own typed events to the Modules' hooks.
+///
+/// Get it from `App::emitter()` or [`HookCtx::emitter`]. Cheap to clone. It
+/// holds the App weakly: once the App is dropped, [`emit`](Self::emit) does
+/// nothing.
+///
+/// ```
+/// use noctis_core::App;
+/// use noctis_core::lifecycle::ExtensionEvent;
+///
+/// #[derive(Debug, Clone)]
+/// struct Ping;
+///
+/// impl ExtensionEvent for Ping {
+///     const NAME: &'static str = "PING";
+/// }
+///
+/// # #[tokio::main(flavor = "current_thread")] async fn main() {
+/// let app = App::builder().build().unwrap();
+/// let emitter = app.emitter();
+/// emitter.emit(Ping); // no run and no hook: dropped
+/// # }
+/// ```
+#[derive(Clone)]
+pub struct Emitter(Weak<AppShared>);
+
+impl Emitter {
+    /// The emitter of `app`.
+    pub(crate) fn of(app: &Arc<AppShared>) -> Self {
+        Self(Arc::downgrade(app))
+    }
+
+    /// Fires `event`: while the App runs and a hook is registered for `E`,
+    /// it is queued behind the earlier hook events and every hook of `E`
+    /// runs with it, in Registry fold order. Otherwise it is dropped
+    /// without allocating.
+    pub fn emit<E: ExtensionEvent>(&self, event: E) {
+        if let Some(app) = self.0.upgrade() {
+            app.lifecycle.emit_extension(event);
+        }
+    }
+}
+
+impl fmt::Debug for Emitter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Emitter")
+            .field("attached", &(self.0.strong_count() > 0))
+            .finish()
+    }
 }
 
 /// Declares each payload's sealed impl and name.
@@ -455,6 +609,11 @@ impl HookCtx {
     pub fn webhooks(&self) -> crate::Webhooks {
         crate::Webhooks::of(Some(&self.0.app))
     }
+
+    /// The App's [`Emitter`] of [`ExtensionEvent`]s.
+    pub fn emitter(&self) -> Emitter {
+        Emitter::of(&self.0.app)
+    }
 }
 
 impl fmt::Debug for HookCtx {
@@ -481,6 +640,8 @@ pub struct LifecycleHook {
     name: &'static str,
     kind: HookKind,
     event: &'static str,
+    /// The payload type of an [`ExtensionEvent`] hook.
+    extension: Option<TypeId>,
     call: Arc<ErasedHook>,
 }
 
@@ -504,6 +665,7 @@ impl LifecycleHook {
             name: handler,
             kind: E::KIND,
             event: E::NAME,
+            extension: (E::KIND == HookKind::Extension).then(TypeId::of::<E>),
             call: Arc::new(call),
         }
     }
@@ -535,32 +697,55 @@ pub(crate) struct HookEntry {
     pub(crate) hook: LifecycleHook,
 }
 
-/// Every folded hook by event kind, in fold order.
+/// The extension hooks by payload type.
+type ByExtension = HashMap<TypeId, Vec<HookEntry>>; // keyed-map: one entry per ExtensionEvent type with a registered hook, fixed at build
+
+/// Every folded hook by event kind (extension hooks by payload type), in
+/// fold order.
 #[derive(Debug, Default)]
 pub(crate) struct Hooks {
     by_kind: [Vec<HookEntry>; HookKind::COUNT],
+    by_extension: ByExtension,
 }
 
 impl Hooks {
-    /// Appends `entry` to its kind's list.
+    /// Appends `entry` to its kind's (or its extension type's) list.
     pub(crate) fn push(&mut self, entry: HookEntry) {
-        self.by_kind[entry.hook.kind().index()].push(entry);
+        match entry.hook.extension {
+            Some(type_id) => self.by_extension.entry(type_id).or_default().push(entry),
+            None => self.by_kind[entry.hook.kind().index()].push(entry),
+        }
     }
 
-    /// The hooks of `kind`, in fold order.
+    /// The hooks of `kind`, in fold order (none for `Extension`: see
+    /// [`of_fired`](Self::of_fired)).
     pub(crate) fn of(&self, kind: HookKind) -> &[HookEntry] {
         &self.by_kind[kind.index()]
     }
 
+    /// The hooks `event` runs, in fold order.
+    pub(crate) fn of_fired(&self, event: &Fired) -> &[HookEntry] {
+        match event {
+            Fired::Extension(e) => self.by_extension.get(&e.type_id).map_or(&[], Vec::as_slice),
+            other => self.of(other.kind()),
+        }
+    }
+
+    /// Whether a hook is registered for the extension type `type_id`.
+    pub(crate) fn wants_extension(&self, type_id: TypeId) -> bool {
+        self.by_extension.contains_key(&type_id)
+    }
+
     /// Whether no hook is registered at all.
     pub(crate) fn is_empty(&self) -> bool {
-        self.by_kind.iter().all(Vec::is_empty)
+        self.by_kind.iter().all(Vec::is_empty) && self.by_extension.is_empty()
     }
 
     /// How many hooks are registered.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.by_kind.iter().map(Vec::len).sum()
+        self.by_kind.iter().map(Vec::len).sum::<usize>()
+            + self.by_extension.values().map(Vec::len).sum::<usize>()
     }
 }
 
@@ -669,6 +854,18 @@ impl Lifecycle {
         }
     }
 
+    /// Enqueues `event` for its hooks while a run runs; dropped (and never
+    /// boxed) without a hook of `E` or outside a run.
+    pub(crate) fn emit_extension<E: ExtensionEvent>(&self, event: E) {
+        if !self.hooks.wants_extension(TypeId::of::<E>()) {
+            return;
+        }
+        let queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(sender) = queue.as_ref() {
+            let _ = sender.send(sealed::Sealed::into_fired(event));
+        }
+    }
+
     /// A new receiver of the tap.
     #[cfg(test)]
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<LifecycleEvent> {
@@ -703,7 +900,7 @@ pub(crate) async fn fire<E: HookEvent>(app: &Arc<AppShared>, make: impl FnOnce()
 /// (a nested toggle) recurses safely.
 fn run_inline(app: Arc<AppShared>, event: Fired) -> BoxFuture<'static, ()> {
     Box::pin(async move {
-        for entry in app.lifecycle.hooks().of(event.kind()) {
+        for entry in app.lifecycle.hooks().of_fired(&event) {
             run_hook(&app, entry, &event, None).await;
         }
     })
@@ -821,7 +1018,7 @@ async fn runner(
 ) {
     while let Some(event) = queue.recv().await {
         let mut started = false;
-        for entry in app.lifecycle.hooks().of(event.kind()) {
+        for entry in app.lifecycle.hooks().of_fired(&event) {
             if cut.is_cancelled() {
                 break;
             }

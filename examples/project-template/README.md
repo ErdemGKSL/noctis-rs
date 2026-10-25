@@ -14,7 +14,7 @@ image rendering.
 | `/setup start` | `src/modules/setup/` | Hand-written three-step flow: the step in a Payload field, "Step n of 3" progress, pre-filled selects, Back/Next/Cancel, Finish |
 | `/dashboard` | `src/modules/dashboard/` | Hand-written tabs (a `PayloadEnum` field), a role list paginated with the budget helper, module toggles |
 | `/profile`, "Show profile" | `src/modules/profile/` | Rendered card (Template) in a Media Gallery, button → modal → re-render bio editing, XP event handler, user command |
-| `/join`, `/leave` (cargo feature `voice`, off by default; needs a C compiler and cmake) | `src/modules/voice/` | Voice connections: `.voice(VoiceConfig::default())`, `ctx.voice().join(..)`/`leave(..)`, typed `VoiceError` replies; build with `cargo build --features voice` |
+| `/join`, `/leave`, `/play`, `/skip`, `/stop` (cargo feature `voice`, off by default; needs a C compiler and cmake) | `src/modules/voice/` | Voice connections and the per-guild queue: `.voice(VoiceConfig::default())`, `ctx.voice().join(..)`/`leave(..)`, `call.enqueue(Track::url(..)?)`, a `TrackError` hook, typed `VoiceError` replies; build with `cargo build --features voice` |
 | Custom Adapter | `src/adapters/bounded_cache.rs` | Implementing the `CacheStore` port yourself |
 | Locales | `locales/en-US.yaml`, `locales/tr.yaml` | Typed strings, word-by-word command translation |
 | Tests | `tests/` | Testkit flows, Adapter conformance, pixel snapshot |

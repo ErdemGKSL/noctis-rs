@@ -109,6 +109,12 @@ cargo_metadata = "0.23"
 # `gateway` only compiles `Call` and `Shard::Generic`; its `Songbird` manager
 # is never used. `tws` + `rustls` keep the graph ring-only (no aws-lc-rs).
 songbird = { version = "0.6.1", default-features = false, features = ["driver", "gateway", "rustls", "tws"] }
+# Demux formats of noctis-voice's tracks (AD-30): the 0.5 line Songbird
+# resolves, so the graph keeps one symphonia; noctis-voice only turns formats on.
+symphonia = { version = "0.5.5", default-features = false }
+# Media HTTP of noctis-voice only (AD-24 amended, AD-30; deps-check
+# `asset-http`): the version Songbird's `HttpRequest` takes, ring-only rustls.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

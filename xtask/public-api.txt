@@ -77,6 +77,7 @@ pub fn noctis::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::App::discord_cache(&self) -> noctis::DiscordCacheConfig
+pub fn noctis::App::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
@@ -4039,10 +4040,22 @@ impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
 pub const noctis::lifecycle::AppStarted::NAME: &'static str
 impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
 pub const noctis::lifecycle::AppStarted::NAME: &'static str
+pub struct noctis::lifecycle::Emitter(_)
+impl noctis::lifecycle::Emitter
+pub fn noctis::lifecycle::Emitter::emit<E: noctis::lifecycle::ExtensionEvent>(&self, E)
+impl core::clone::Clone for noctis::lifecycle::Emitter
+pub fn noctis::lifecycle::Emitter::clone(&self) -> Self
+impl core::fmt::Debug for noctis::lifecycle::Emitter
+pub fn noctis::lifecycle::Emitter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::lifecycle::ExtensionEvent: core::clone::Clone + core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::lifecycle::ExtensionEvent::NAME: &'static str
+impl<E: noctis::lifecycle::ExtensionEvent> noctis::lifecycle::HookEvent for E
+pub const E::NAME: &'static str
 pub struct noctis::lifecycle::HookCtx(_)
 impl noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
 pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
@@ -4058,6 +4071,7 @@ pub struct noctis::lifecycle::HookCtx(_)
 impl noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
 pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
@@ -4071,6 +4085,8 @@ impl core::fmt::Debug for noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::lifecycle::HookEvent: noctis::__private::core::lifecycle::sealed::Sealed + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
 pub const noctis::lifecycle::HookEvent::NAME: &'static str
+impl<E: noctis::lifecycle::ExtensionEvent> noctis::lifecycle::HookEvent for E
+pub const E::NAME: &'static str
 pub struct noctis::lifecycle::LifecycleHook
 impl core::clone::Clone for noctis::lifecycle::LifecycleHook
 pub fn noctis::lifecycle::LifecycleHook::clone(&self) -> Self
@@ -5038,6 +5054,7 @@ pub fn noctis::prelude::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::App::discord_cache(&self) -> noctis::DiscordCacheConfig
+pub fn noctis::prelude::App::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
@@ -5449,6 +5466,7 @@ pub struct noctis::prelude::HookCtx(_)
 impl noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
 pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
@@ -5464,6 +5482,7 @@ pub struct noctis::prelude::HookCtx(_)
 impl noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
 pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
@@ -9634,12 +9653,147 @@ pub fn noctis::voice::AppBuilderVoiceExt::voice(&mut self, noctis::voice::VoiceC
 pub struct noctis::voice::CallHandle
 impl noctis::voice::CallHandle
 pub fn noctis::voice::CallHandle::channel(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::voice::CallHandle::clear(&self) -> core::result::Result<usize, noctis::voice::VoiceError>
+pub async fn noctis::voice::CallHandle::enqueue(&self, noctis::voice::Track) -> core::result::Result<noctis::voice::TrackInfo, noctis::voice::VoiceError>
 pub fn noctis::voice::CallHandle::guild(&self) -> twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub fn noctis::voice::CallHandle::is_paused(&self) -> bool
 pub async fn noctis::voice::CallHandle::leave(&self) -> core::result::Result<(), noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::list(&self) -> alloc::vec::Vec<noctis::voice::TrackInfo>
+pub fn noctis::voice::CallHandle::now_playing(&self) -> core::option::Option<noctis::voice::TrackInfo>
+pub fn noctis::voice::CallHandle::pause(&self) -> core::result::Result<bool, noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::queue_len(&self) -> usize
+pub fn noctis::voice::CallHandle::resume(&self) -> core::result::Result<bool, noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::set_volume(&self, f32) -> core::result::Result<(), noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::skip(&self) -> core::result::Result<core::option::Option<noctis::voice::TrackInfo>, noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::stop(&self) -> core::result::Result<usize, noctis::voice::VoiceError>
+pub fn noctis::voice::CallHandle::volume(&self) -> f32
 impl core::clone::Clone for noctis::voice::CallHandle
 pub fn noctis::voice::CallHandle::clone(&self) -> Self
 impl core::fmt::Debug for noctis::voice::CallHandle
 pub fn noctis::voice::CallHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::voice::EndReason
+pub noctis::voice::EndReason::Finished
+pub noctis::voice::EndReason::Skipped
+pub noctis::voice::EndReason::Stopped
+impl noctis::voice::EndReason
+pub const fn noctis::voice::EndReason::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::voice::EndReason
+pub fn noctis::voice::EndReason::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::EndReason
+impl core::cmp::PartialEq for noctis::voice::EndReason
+pub fn noctis::voice::EndReason::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::EndReason
+pub fn noctis::voice::EndReason::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::voice::EndReason
+pub fn noctis::voice::EndReason::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::voice::EndReason
+impl core::marker::StructuralPartialEq for noctis::voice::EndReason
+#[non_exhaustive] pub struct noctis::voice::QueueEmpty
+pub noctis::voice::QueueEmpty::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+impl core::clone::Clone for noctis::voice::QueueEmpty
+pub fn noctis::voice::QueueEmpty::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::voice::QueueEmpty
+pub fn noctis::voice::QueueEmpty::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::QueueEmpty
+pub fn noctis::voice::QueueEmpty::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::QueueEmpty
+impl noctis::lifecycle::ExtensionEvent for noctis::voice::QueueEmpty
+pub const noctis::voice::QueueEmpty::NAME: &'static str
+pub struct noctis::voice::Track
+impl noctis::voice::Track
+pub fn noctis::voice::Track::command<I>(impl core::convert::Into<std::ffi::os_str::OsString>, I) -> core::result::Result<Self, noctis::voice::VoiceError> where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::Into<std::ffi::os_str::OsString>
+pub fn noctis::voice::Track::file(impl core::convert::Into<std::path::PathBuf>) -> core::result::Result<Self, noctis::voice::VoiceError>
+pub fn noctis::voice::Track::requested_by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::voice::Track::source(&self) -> &noctis::voice::TrackSource
+pub fn noctis::voice::Track::title(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::voice::Track::url(impl core::convert::AsRef<str>) -> core::result::Result<Self, noctis::voice::VoiceError>
+impl core::clone::Clone for noctis::voice::Track
+pub fn noctis::voice::Track::clone(&self) -> Self
+impl core::fmt::Debug for noctis::voice::Track
+pub fn noctis::voice::Track::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::voice::TrackEnd
+pub noctis::voice::TrackEnd::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::TrackEnd::reason: noctis::voice::EndReason
+pub noctis::voice::TrackEnd::track: noctis::voice::TrackInfo
+impl core::clone::Clone for noctis::voice::TrackEnd
+pub fn noctis::voice::TrackEnd::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::voice::TrackEnd
+pub fn noctis::voice::TrackEnd::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::TrackEnd
+pub fn noctis::voice::TrackEnd::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::TrackEnd
+impl noctis::lifecycle::ExtensionEvent for noctis::voice::TrackEnd
+pub const noctis::voice::TrackEnd::NAME: &'static str
+#[non_exhaustive] pub struct noctis::voice::TrackError
+pub noctis::voice::TrackError::error: alloc::string::String
+pub noctis::voice::TrackError::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::TrackError::track: noctis::voice::TrackInfo
+impl core::clone::Clone for noctis::voice::TrackError
+pub fn noctis::voice::TrackError::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::voice::TrackError
+pub fn noctis::voice::TrackError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::TrackError
+pub fn noctis::voice::TrackError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::TrackError
+impl noctis::lifecycle::ExtensionEvent for noctis::voice::TrackError
+pub const noctis::voice::TrackError::NAME: &'static str
+pub struct noctis::voice::TrackId(_)
+impl noctis::voice::TrackId
+pub const fn noctis::voice::TrackId::get(self) -> u64
+impl core::clone::Clone for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::TrackId
+impl core::cmp::Ord for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::voice::TrackId
+pub fn noctis::voice::TrackId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::voice::TrackId
+impl core::marker::StructuralPartialEq for noctis::voice::TrackId
+pub struct noctis::voice::TrackInfo(_)
+impl noctis::voice::TrackInfo
+pub fn noctis::voice::TrackInfo::id(&self) -> noctis::voice::TrackId
+pub fn noctis::voice::TrackInfo::requested_by(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub fn noctis::voice::TrackInfo::source(&self) -> &noctis::voice::TrackSource
+pub fn noctis::voice::TrackInfo::title(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::voice::TrackInfo
+pub fn noctis::voice::TrackInfo::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::TrackInfo
+impl core::cmp::PartialEq for noctis::voice::TrackInfo
+pub fn noctis::voice::TrackInfo::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::TrackInfo
+pub fn noctis::voice::TrackInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::voice::TrackSource
+pub noctis::voice::TrackSource::Command(std::ffi::os_str::OsString)
+pub noctis::voice::TrackSource::File(std::path::PathBuf)
+pub noctis::voice::TrackSource::Url(alloc::string::String)
+impl core::clone::Clone for noctis::voice::TrackSource
+pub fn noctis::voice::TrackSource::clone(&self) -> Self
+impl core::cmp::Eq for noctis::voice::TrackSource
+impl core::cmp::PartialEq for noctis::voice::TrackSource
+pub fn noctis::voice::TrackSource::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::TrackSource
+pub fn noctis::voice::TrackSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::TrackSource
+#[non_exhaustive] pub struct noctis::voice::TrackStart
+pub noctis::voice::TrackStart::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::TrackStart::track: noctis::voice::TrackInfo
+impl core::clone::Clone for noctis::voice::TrackStart
+pub fn noctis::voice::TrackStart::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::voice::TrackStart
+pub fn noctis::voice::TrackStart::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::voice::TrackStart
+pub fn noctis::voice::TrackStart::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::voice::TrackStart
+impl noctis::lifecycle::ExtensionEvent for noctis::voice::TrackStart
+pub const noctis::voice::TrackStart::NAME: &'static str
 pub struct noctis::voice::Voice
 impl noctis::voice::Voice
 pub fn noctis::voice::Voice::active_calls(&self) -> usize
@@ -9652,9 +9806,17 @@ impl core::fmt::Debug for noctis::voice::Voice
 pub fn noctis::voice::Voice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub struct noctis::voice::VoiceConfig
 impl noctis::voice::VoiceConfig
+pub const fn noctis::voice::VoiceConfig::get_idle_leave(&self) -> core::option::Option<core::time::Duration>
 pub const fn noctis::voice::VoiceConfig::get_join_timeout(&self) -> core::time::Duration
+pub const fn noctis::voice::VoiceConfig::get_max_queue(&self) -> usize
+pub const fn noctis::voice::VoiceConfig::get_media_connect_timeout(&self) -> core::time::Duration
+pub const fn noctis::voice::VoiceConfig::get_media_max_redirects(&self) -> u8
+pub const fn noctis::voice::VoiceConfig::idle_leave(self, core::option::Option<core::time::Duration>) -> Self
 pub const fn noctis::voice::VoiceConfig::is_self_deaf(&self) -> bool
 pub const fn noctis::voice::VoiceConfig::join_timeout(self, core::time::Duration) -> Self
+pub const fn noctis::voice::VoiceConfig::max_queue(self, usize) -> Self
+pub const fn noctis::voice::VoiceConfig::media_connect_timeout(self, core::time::Duration) -> Self
+pub const fn noctis::voice::VoiceConfig::media_max_redirects(self, u8) -> Self
 pub fn noctis::voice::VoiceConfig::new() -> Self
 pub const fn noctis::voice::VoiceConfig::self_deaf(self, bool) -> Self
 impl core::clone::Clone for noctis::voice::VoiceConfig
@@ -9674,14 +9836,20 @@ pub noctis::voice::VoiceError::Driver::reason: alloc::string::String
 pub noctis::voice::VoiceError::Gateway(noctis::gateway::GatewayError)
 pub noctis::voice::VoiceError::Interrupted
 pub noctis::voice::VoiceError::Interrupted::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::VoiceError::InvalidInput
+pub noctis::voice::VoiceError::InvalidInput::reason: alloc::string::String
+pub noctis::voice::VoiceError::InvalidVolume
+pub noctis::voice::VoiceError::InvalidVolume::volume: f32
 pub noctis::voice::VoiceError::NotInstalled
 pub noctis::voice::VoiceError::NotReady
+pub noctis::voice::VoiceError::QueueFull
+pub noctis::voice::VoiceError::QueueFull::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::voice::VoiceError::QueueFull::max: usize
 pub noctis::voice::VoiceError::Timeout
 pub noctis::voice::VoiceError::Timeout::after: core::time::Duration
 pub noctis::voice::VoiceError::Timeout::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
 impl core::clone::Clone for noctis::voice::VoiceError
 pub fn noctis::voice::VoiceError::clone(&self) -> Self
-impl core::cmp::Eq for noctis::voice::VoiceError
 impl core::cmp::PartialEq for noctis::voice::VoiceError
 pub fn noctis::voice::VoiceError::eq(&self, &Self) -> bool
 impl core::error::Error for noctis::voice::VoiceError

@@ -1,14 +1,22 @@
-//! Voice (template feature `voice`, off by default): `/join channel` and `/leave`.
+//! Voice (template feature `voice`, off by default): `/join channel`, `/leave`,
+//! `/play url`, `/skip` and `/stop`, plus a hook that logs failed tracks.
 //!
 //! `.voice(VoiceConfig::default())` in `configure` installs voice (it adds the
 //! `GUILD_VOICE_STATES` intent); `ctx.voice()` is the App's `Voice`. Every op 4 goes
 //! through the guild's owning shard inside the GW-04 budget ([VC-01]), and a guild has
 //! one call: `/join` in another channel moves it ([VC-02]). The Noctis `voice` feature
 //! builds libopus from source, so it needs a C compiler and cmake.
+//!
+//! Each call has a queue on its `CallHandle` (`enqueue`, `skip`, `pause`, `resume`,
+//! `stop`, `clear`, `set_volume`, `now_playing`, `list`), at most
+//! `VoiceConfig::max_queue` tracks (default 1000). Track events (`TrackStart`,
+//! `TrackEnd`, `TrackError`, `QueueEmpty`) are hook events a `#[derive(Hook)]` takes.
 
+use noctis::lifecycle::HookCtx;
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::ChannelMarker;
+use noctis::voice::{Track, TrackError};
 
 use crate::strings::{Strings, keys};
 
@@ -60,7 +68,101 @@ impl Leave {
     }
 }
 
-/// The `voice` Module: `/join` and `/leave`.
+/// `/play url`: queues a media URL in this server's call (join it first with `/join`).
+/// `Track::url` refuses non-http(s) URLs, credentials and Discord's API; the queue
+/// refuses more than `max_queue` tracks (`VoiceError::QueueFull`).
+#[derive(SlashCommand, Debug)]
+#[command("play", contexts = [Guild], response = ephemeral)]
+pub struct Play {
+    /// The description is `cmd.play.opt.url.description` in `locales/en-US.yaml`;
+    /// `Track::url` accepts at most 4096 bytes.
+    #[option(max_length = 4096)]
+    pub url: String,
+}
+
+impl Play {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let s = Strings::of(ctx.response_locale());
+        let Some(call) = ctx.guild_id().and_then(|guild| ctx.voice().call(guild)) else {
+            return ctx.reply_text(s.voice.not_in_call()).await;
+        };
+        let queued = async {
+            let track = Track::url(&self.url)?.title(&self.url).requested_by(ctx.user_id());
+            call.enqueue(track).await
+        };
+        match queued.await {
+            Ok(info) => {
+                let title = info.title().unwrap_or_default().to_owned();
+                ctx.reply_text(s.voice.queued(title, call.queue_len())).await
+            }
+            Err(error) => ctx.reply_text(s.voice.failed(error)).await,
+        }
+    }
+}
+
+/// `/skip`: skips the current track; the next one starts.
+#[derive(SlashCommand, Debug)]
+#[command("skip", contexts = [Guild], response = ephemeral)]
+pub struct Skip;
+
+impl Skip {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let s = Strings::of(ctx.response_locale());
+        let Some(call) = ctx.guild_id().and_then(|guild| ctx.voice().call(guild)) else {
+            return ctx.reply_text(s.voice.not_in_call()).await;
+        };
+        match call.skip() {
+            Ok(Some(track)) => {
+                let title = track.title().unwrap_or_default().to_owned();
+                ctx.reply_text(s.voice.skipped(title)).await
+            }
+            Ok(None) => ctx.reply_text(s.voice.nothing_playing()).await,
+            Err(error) => ctx.reply_text(s.voice.failed(error)).await,
+        }
+    }
+}
+
+/// `/stop`: stops the current track and clears the queue; the bot stays in the channel.
+#[derive(SlashCommand, Debug)]
+#[command("stop", contexts = [Guild], response = ephemeral)]
+pub struct Stop;
+
+impl Stop {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let s = Strings::of(ctx.response_locale());
+        let Some(call) = ctx.guild_id().and_then(|guild| ctx.voice().call(guild)) else {
+            return ctx.reply_text(s.voice.not_in_call()).await;
+        };
+        match call.stop() {
+            Ok(count) => ctx.reply_text(s.voice.stopped(count)).await,
+            Err(error) => ctx.reply_text(s.voice.failed(error)).await,
+        }
+    }
+}
+
+/// Logs every failed track (`VOICE_TRACK_ERROR`); the queue has already moved on.
+#[derive(Hook)]
+pub struct TrackErrorLog;
+
+impl TrackErrorLog {
+    #[handler]
+    async fn handle(self, _ctx: HookCtx, event: TrackError) -> HandlerResult<()> {
+        tracing::warn!(guild = %event.guild, track = %event.track.id(), error = %event.error, "track failed");
+        Ok(())
+    }
+}
+
+/// The `voice` Module: `/join`, `/leave`, `/play`, `/skip`, `/stop` and the
+/// `TrackErrorLog` hook.
 pub fn module() -> Module {
-    Module::new("voice").add::<Join>().add::<Leave>()
+    Module::new("voice")
+        .add::<Join>()
+        .add::<Leave>()
+        .add::<Play>()
+        .add::<Skip>()
+        .add::<Stop>()
+        .add::<TrackErrorLog>()
 }

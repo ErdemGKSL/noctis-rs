@@ -2,9 +2,11 @@
 //! connection (AD-30, VC-02).
 
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
+use noctis_core::lifecycle::Emitter;
 use noctis_gateway::GatewayHandle;
 use songbird::id::{GuildId, UserId};
 use songbird::shards::Shard;
@@ -14,7 +16,10 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::config::VoiceConfig;
+use crate::player::SongbirdPlayer;
+use crate::queue::{Binding, IdleLeave, Player, QueueCell};
 use crate::shard::NoctisShard;
+use crate::track::TrackId;
 
 /// The gauge of the live and pending calls.
 const CALLS_GAUGE: &str = "noctis_voice_calls";
@@ -32,6 +37,8 @@ pub(crate) struct Entry {
     pub(crate) call: Arc<tokio::sync::Mutex<Call>>,
     /// The call's op 4 adapter (its refusals).
     pub(crate) shard: Arc<NoctisShard>,
+    /// The guild's queue; shut down whenever the entry is removed.
+    pub(crate) queue: Arc<QueueCell>,
 }
 
 /// What a join works with, cloned out of its entry.
@@ -48,78 +55,52 @@ type CallMap = HashMap<Id<GuildMarker>, Entry>; // keyed-map: one entry per guil
 /// The shutdown waiters.
 type Leaving = HashMap<Id<GuildMarker>, oneshot::Sender<()>>; // keyed-map: only the guilds of the running shutdown task, cleared when it ends
 
-/// The voice state of one App, registered as App state by `VoicePlugin`.
-pub(crate) struct VoiceShared {
+/// The voice state of one App, registered as App state by `VoicePlugin`:
+/// a handle on [`VoiceInner`] (an idle timer holds it weakly).
+pub(crate) struct VoiceShared(Arc<VoiceInner>);
+
+impl Deref for VoiceShared {
+    type Target = VoiceInner;
+
+    fn deref(&self) -> &VoiceInner {
+        &self.0
+    }
+}
+
+/// The voice state of one App.
+pub(crate) struct VoiceInner {
     pub(crate) config: VoiceConfig,
     calls: Mutex<CallMap>,
     /// The next entry generation and join number.
     counter: AtomicU64,
+    /// The next track id.
+    track_ids: AtomicU64,
     /// Shutdown: the guilds whose leave waits for the bot's own
     /// `VOICE_STATE_UPDATE` with no channel.
     leaving: Mutex<Leaving>,
-    /// The `app` label, bound by `AppStarted` or `App::voice`.
-    app: OnceLock<Arc<str>>,
+    /// The `app` label and the `Emitter`, bound by `AppStarted` or
+    /// `App::voice`.
+    binding: Arc<Binding>,
+    /// The App's media HTTP client (URL tracks).
+    media: reqwest::Client,
+    /// Tests: new queues play on a `FakePlayer` recording here.
+    #[cfg(test)]
+    pub(crate) fake_player: Mutex<Option<crate::queue::fake::Played>>,
 }
 
 impl VoiceShared {
-    pub(crate) fn new(config: VoiceConfig) -> Self {
-        Self {
+    pub(crate) fn new(config: VoiceConfig, media: reqwest::Client) -> Self {
+        Self(Arc::new(VoiceInner {
             config,
             calls: Mutex::new(HashMap::new()),
             counter: AtomicU64::new(1),
+            track_ids: AtomicU64::new(1),
             leaving: Mutex::new(HashMap::new()),
-            app: OnceLock::new(),
-        }
-    }
-
-    fn calls(&self) -> MutexGuard<'_, CallMap> {
-        self.calls.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn leaving(&self) -> MutexGuard<'_, Leaving> {
-        self.leaving.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn next(&self) -> u64 {
-        self.counter.fetch_add(1, Ordering::Relaxed)
-    }
-
-    /// Binds the `app` label (the first binding wins) and publishes the
-    /// gauge.
-    pub(crate) fn bind_app(&self, app: &str) {
-        if self.app.get().is_none() {
-            let _ = self.app.set(Arc::from(app));
-            let len = self.calls().len();
-            self.publish(len);
-        }
-    }
-
-    /// Sets `noctis_voice_calls` to `len`; nothing before the label is
-    /// bound.
-    fn publish(&self, len: usize) {
-        if let Some(app) = self.app.get() {
-            let len = u32::try_from(len).unwrap_or(u32::MAX);
-            metrics::gauge!(CALLS_GAUGE, "app" => Arc::clone(app)).set(f64::from(len));
-        }
-    }
-
-    /// The number of live and pending calls.
-    pub(crate) fn len(&self) -> usize {
-        self.calls().len()
-    }
-
-    /// The generation and channel of `guild`'s entry.
-    pub(crate) fn entry(&self, guild: Id<GuildMarker>) -> Option<(u64, Option<Id<ChannelMarker>>)> {
-        self.calls()
-            .get(&guild)
-            .map(|entry| (entry.generation, entry.channel))
-    }
-
-    /// The call of `guild`'s entry.
-    pub(crate) fn call(&self, guild: Id<GuildMarker>) -> Option<Arc<tokio::sync::Mutex<Call>>> {
-        self.calls()
-            .get(&guild)
-            .map(|entry| Arc::clone(&entry.call))
+            binding: Arc::default(),
+            media,
+            #[cfg(test)]
+            fake_player: Mutex::new(None),
+        }))
     }
 
     /// Gets `guild`'s entry or creates it, as a new join to `channel`.
@@ -153,24 +134,169 @@ impl VoiceShared {
             // Noctis's own join timeout covers the whole join.
             Config::default().gateway_timeout(None),
         );
+        let call = Arc::new(tokio::sync::Mutex::new(call));
+        let generation = self.next();
+        let queue = self.new_queue(guild, generation, &call);
         let entry = Entry {
-            generation: self.next(),
+            generation,
             join,
             channel: Some(channel),
-            call: Arc::new(tokio::sync::Mutex::new(call)),
-            shard,
-        };
-        let joining = Joining {
-            generation: entry.generation,
-            join,
-            call: Arc::clone(&entry.call),
-            shard: Arc::clone(&entry.shard),
+            call: Arc::clone(&call),
+            shard: Arc::clone(&shard),
+            queue,
         };
         calls.insert(guild, entry);
         let len = calls.len();
         drop(calls);
         self.publish(len);
-        joining
+        Joining {
+            generation,
+            join,
+            call,
+            shard,
+        }
+    }
+
+    /// A new queue for `guild`'s entry of `generation`, playing on `call`.
+    fn new_queue(
+        &self,
+        guild: Id<GuildMarker>,
+        generation: u64,
+        call: &Arc<tokio::sync::Mutex<Call>>,
+    ) -> Arc<QueueCell> {
+        let idle = self.config.get_idle_leave().map(|after| {
+            let inner = Arc::downgrade(&self.0);
+            let leave: IdleLeave = Arc::new(move || {
+                let inner = Weak::clone(&inner);
+                Box::pin(async move {
+                    if let Some(inner) = inner.upgrade() {
+                        inner.idle_leave(guild, generation).await;
+                    }
+                })
+            });
+            (after, leave)
+        });
+        #[cfg(test)]
+        let fake = self
+            .fake_player
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Arc::new_cyclic(|queue: &Weak<QueueCell>| {
+            #[cfg(test)]
+            if let Some(played) = fake {
+                return QueueCell::new(
+                    guild,
+                    self.config.get_max_queue(),
+                    Box::new(crate::queue::fake::FakePlayer(played)),
+                    Arc::clone(&self.binding),
+                    idle,
+                );
+            }
+            let player: Box<dyn Player> = Box::new(SongbirdPlayer::new(
+                Arc::clone(call),
+                self.media.clone(),
+                Weak::clone(queue),
+            ));
+            QueueCell::new(
+                guild,
+                self.config.get_max_queue(),
+                player,
+                Arc::clone(&self.binding),
+                idle,
+            )
+        })
+    }
+}
+
+impl VoiceInner {
+    fn calls(&self) -> MutexGuard<'_, CallMap> {
+        self.calls.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn leaving(&self) -> MutexGuard<'_, Leaving> {
+        self.leaving.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn next(&self) -> u64 {
+        self.counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Binds the `app` label and the `Emitter` (the first binding wins)
+    /// and publishes the gauge.
+    pub(crate) fn bind_app(&self, app: &str, emitter: Emitter) {
+        let _ = self.binding.emitter.set(emitter);
+        if self.binding.app.get().is_none() {
+            let _ = self.binding.app.set(Arc::from(app));
+            let len = self.calls().len();
+            self.publish(len);
+        }
+    }
+
+    /// A new track id, unique per App.
+    pub(crate) fn next_track_id(&self) -> TrackId {
+        TrackId::new(self.track_ids.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Sets `noctis_voice_calls` to `len`; nothing before the label is
+    /// bound.
+    fn publish(&self, len: usize) {
+        if let Some(app) = self.binding.app.get() {
+            let len = u32::try_from(len).unwrap_or(u32::MAX);
+            metrics::gauge!(CALLS_GAUGE, "app" => Arc::clone(app)).set(f64::from(len));
+        }
+    }
+
+    /// The number of live and pending calls.
+    pub(crate) fn len(&self) -> usize {
+        self.calls().len()
+    }
+
+    /// The generation and channel of `guild`'s entry.
+    pub(crate) fn entry(&self, guild: Id<GuildMarker>) -> Option<(u64, Option<Id<ChannelMarker>>)> {
+        self.calls()
+            .get(&guild)
+            .map(|entry| (entry.generation, entry.channel))
+    }
+
+    /// The call of `guild`'s entry.
+    pub(crate) fn call(&self, guild: Id<GuildMarker>) -> Option<Arc<tokio::sync::Mutex<Call>>> {
+        self.calls()
+            .get(&guild)
+            .map(|entry| Arc::clone(&entry.call))
+    }
+
+    /// The queue of `guild`'s entry of `generation`, if it is still open.
+    pub(crate) fn queue(&self, guild: Id<GuildMarker>, generation: u64) -> Option<Arc<QueueCell>> {
+        self.calls()
+            .get(&guild)
+            .filter(|entry| entry.generation == generation)
+            .map(|entry| Arc::clone(&entry.queue))
+    }
+
+    /// The join of `guild`'s entry of `generation` resolved: its queue may
+    /// arm the idle timer.
+    pub(crate) fn connected(&self, guild: Id<GuildMarker>, generation: u64) {
+        if let Some(queue) = self.queue(guild, generation) {
+            queue.set_connected();
+        }
+    }
+
+    /// Idle leave: removes `guild`'s entry of `generation` and sends op 4
+    /// leave, like `CallHandle::leave`.
+    async fn idle_leave(&self, guild: Id<GuildMarker>, generation: u64) {
+        let Some(entry) = self.remove_generation(guild, generation) else {
+            return;
+        };
+        tracing::debug!(target: "noctis::voice", guild = guild.get(), "idle leave");
+        if let Err(error) = crate::voice::leave_entry(guild, &entry).await {
+            tracing::warn!(
+                target: "noctis::voice",
+                guild = guild.get(),
+                %error,
+                "op 4 leave of an idle call was not sent"
+            );
+        }
     }
 
     /// Removes `guild`'s entry when `should_remove` returns `true` for it.
@@ -187,7 +313,8 @@ impl VoiceShared {
             .flatten();
         let len = calls.len();
         drop(calls);
-        if removed.is_some() {
+        if let Some(entry) = &removed {
+            entry.queue.shutdown();
             self.publish(len);
         }
         removed
@@ -235,6 +362,9 @@ impl VoiceShared {
     pub(crate) fn take_all(&self) -> Vec<(Id<GuildMarker>, Entry)> {
         let taken: Vec<_> = self.calls().drain().collect();
         self.publish(0);
+        for (_, entry) in &taken {
+            entry.queue.shutdown();
+        }
         taken
     }
 

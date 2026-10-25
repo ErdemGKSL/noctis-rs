@@ -40,6 +40,16 @@ cmd:
         description: The voice or stage channel to join
   leave:
     description: Leave the voice channel
+  play:
+    description: Queue a media URL in this server's voice channel
+    opt:
+      url:
+        name: url
+        description: An http(s) audio or video URL
+  skip:
+    description: Skip the current track
+  stop:
+    description: Stop playback and clear the queue
 
 ctxcmd:
   show_profile:
@@ -117,6 +127,11 @@ voice:
   joined: "Joined {channel}."
   left: Left the voice channel.
   failed: "Voice failed: {error}"
+  not_in_call: Use /join first.
+  queued: "Queued {title} (#{position} in the queue)."
+  skipped: "Skipped {title}."
+  nothing_playing: Nothing is playing.
+  stopped: "Stopped; {count} tracks removed."
 
 # --- Overrides of framework strings (optional) ------------------------------------------
 # Keys under `noctis.` are owned by Noctis (built-in notices) and ship with defaults; define one only

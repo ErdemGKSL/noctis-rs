@@ -431,6 +431,13 @@ support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
   AD-24's "non-Discord HTTP only in `AssetFetcher`": `noctis-voice` may fetch media
   through Songbird's input HTTP client with a connect timeout and redirect cap; it
   never sends the bot token or Noctis headers and never reaches Discord's API.
+- Amended (2026-10-25, Story 17.2): the media client is a dedicated per-App `reqwest`
+  0.12 client in `noctis-voice` (the client Songbird's `HttpRequest` input takes; the
+  same version Songbird resolves): connect timeout `media_connect_timeout`, at most
+  `media_max_redirects` redirects, `no_proxy()`, no default headers or user agent,
+  never the bot token, and Discord's API refused in `Track::url` and in every
+  redirect hop. deps-check `asset-http` allows `reqwest` only as a normal dependency
+  of `noctis-voice`.
 - **Order.** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
   with Epic 16; merges serialize through the merge lock. Epic 14's template, skill
   and docs stories cover the `voice` feature once Epic 17 is merged.

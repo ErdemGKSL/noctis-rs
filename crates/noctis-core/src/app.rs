@@ -492,6 +492,14 @@ impl App {
         self.shared.gateway.clone()
     }
 
+    /// The App's [`Emitter`](crate::lifecycle::Emitter): fires a plugin's
+    /// own [`ExtensionEvent`](crate::lifecycle::ExtensionEvent)s to the
+    /// Modules' hooks while the App runs. Take it before `run` consumes the
+    /// App; it holds the App weakly.
+    pub fn emitter(&self) -> crate::lifecycle::Emitter {
+        crate::lifecycle::Emitter::of(&self.shared)
+    }
+
     /// The App's presence handle (`app.gateway().presence()`): set the
     /// presence of every shard or of one at run time.
     ///

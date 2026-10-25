@@ -557,3 +557,128 @@ async fn hook_ctx_handles() {
     assert!(checked.load(Ordering::SeqCst));
     assert!(sink.seen().is_empty());
 }
+
+/// A test extension event.
+#[derive(Debug, Clone, PartialEq)]
+struct Leveled(u32);
+
+impl ExtensionEvent for Leveled {
+    const NAME: &'static str = "TEST_LEVELED";
+}
+
+/// Another test extension event, with no hook.
+#[derive(Debug, Clone)]
+struct Unheard;
+
+impl ExtensionEvent for Unheard {
+    const NAME: &'static str = "TEST_UNHEARD";
+}
+
+#[test]
+fn extension_events_are_hook_events() {
+    assert_eq!(<Leveled as HookEvent>::NAME, "TEST_LEVELED");
+    assert_eq!(Leveled::KIND, HookKind::Extension);
+    let fired = Leveled(3).into_fired();
+    assert_eq!(fired.kind(), HookKind::Extension);
+    assert_eq!(fired.name(), "TEST_LEVELED");
+    assert_eq!(fired, fired.clone());
+    assert_ne!(fired, Leveled(3).into_fired());
+    assert_eq!(Leveled::from_fired(&fired), Some(&Leveled(3)));
+    assert!(Unheard::from_fired(&fired).is_none());
+    assert!(Leveled::from_fired(&AppStarted { publisher: false }.into_fired()).is_none());
+    assert!(format!("{fired:?}").contains("TEST_LEVELED"));
+    let hook = recording::<Leveled>("t::Lvl", &Arc::new(Seq::default()));
+    assert!(format!("{hook:?}").contains("TEST_LEVELED"));
+}
+
+/// Extension events: in emit order on the hook queue, with the hook's
+/// Module; another extension type never reaches them; errors and panics
+/// are reported with `event_type = NAME` and later events still run.
+#[tokio::test(flavor = "multi_thread")]
+async fn extension_events_run_in_order() {
+    let sink = Arc::new(Recording::default());
+    let seq = Arc::new(Seq::default());
+    let failing = LifecycleHook::__new::<Leveled, _, _>("t::Fails", |_, e: Leveled| async move {
+        match e.0 {
+            2 => Err(HandlerError::new(std::io::Error::other("bad level"))),
+            3 => panic!("level boom"),
+            _ => Ok(()),
+        }
+    });
+    let module = Module::new("ops")
+        .__add(recording::<Leveled>("t::Lvl", &seq))
+        .module(Module::new("ops/xp").__add(failing))
+        .__add(recording::<AppStarted>("t::Up", &seq));
+    let app = app(vec![module], &sink);
+    assert_eq!(app.shared().lifecycle.hooks().len(), 3);
+    let emitter = app.emitter();
+    assert!(format!("{emitter:?}").contains("attached: true"));
+    // Outside a run: dropped.
+    emitter.emit(Leveled(0));
+    let run = HookRun::start(app.shared());
+    run.app_started(false);
+    for level in 1..=4 {
+        emitter.emit(Leveled(level));
+        emitter.emit(Unheard);
+    }
+    run.finish(Duration::from_secs(5)).await;
+    assert_eq!(
+        seq.get(),
+        [
+            "t::Up@ops:AppStarted { publisher: false }",
+            "t::Lvl@ops:Leveled(1)",
+            "t::Lvl@ops:Leveled(2)",
+            "t::Lvl@ops:Leveled(3)",
+            "t::Lvl@ops:Leveled(4)",
+        ]
+    );
+    let seen = sink.seen();
+    let kinds: Vec<_> = seen.iter().map(|s| s.kind.as_str()).collect();
+    assert_eq!(kinds, ["error:bad level", "panic:level boom"]);
+    for report in &seen {
+        assert_eq!(report.origin, ErrorOrigin::Hook);
+        assert_eq!(report.module.as_deref(), Some("ops/xp"));
+        assert_eq!(report.handler.as_deref(), Some("t::Fails"));
+        assert_eq!(report.event_type.as_deref(), Some("TEST_LEVELED"));
+    }
+}
+
+/// Without a hook for the type nothing is queued; an `Emitter` outliving
+/// its App does nothing; `HookCtx::emitter` reaches the same queue.
+#[tokio::test(flavor = "multi_thread")]
+async fn extension_events_without_hooks_or_app() {
+    let sink = Arc::new(Recording::default());
+    let seq = Arc::new(Seq::default());
+    let relay =
+        LifecycleHook::__new::<AppStarted, _, _>("t::Relay", |ctx: HookCtx, _| async move {
+            ctx.emitter().emit(Leveled(9));
+            Ok(())
+        });
+    let module = Module::new("ops")
+        .__add(relay)
+        .__add(recording::<Leveled>("t::Lvl", &seq));
+    let app = app(vec![module], &sink);
+    assert!(
+        !app.shared()
+            .lifecycle
+            .hooks()
+            .wants_extension(TypeId::of::<Unheard>())
+    );
+    let run = HookRun::start(app.shared());
+    run.app_started(false);
+    // `finish` detaches the queue first: wait for the relayed event.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while seq.get().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    run.finish(Duration::from_secs(5)).await;
+    assert_eq!(seq.get(), ["t::Lvl@ops:Leveled(9)"]);
+    let emitter = app.emitter();
+    drop(app);
+    assert!(format!("{emitter:?}").contains("attached: false"));
+    emitter.emit(Leveled(1));
+    assert!(sink.seen().is_empty());
+}

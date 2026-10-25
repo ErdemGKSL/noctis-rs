@@ -101,6 +101,7 @@ const fn row(
 /// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`, `over_cap`) |
 /// | `noctis_discord_cache_update_errors_total` | counter | `app` (failed or timed-out Discord cache updates; the event or interaction still runs) |
 /// | `noctis_voice_calls` | gauge | `app` (live and pending voice calls; feature `voice`) |
+/// | `noctis_voice_tracks_total` | counter | `app`, `result` (`finished`, `skipped`, `stopped`, `error`: one per track that became current; feature `voice`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -252,6 +253,12 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Gauge,
         &["app"],
         "Live and pending voice calls (feature `voice`)",
+    ),
+    row(
+        "noctis_voice_tracks_total",
+        MetricType::Counter,
+        &["app", "result"],
+        "Tracks that became current, by outcome (feature `voice`)",
     ),
 ];
 

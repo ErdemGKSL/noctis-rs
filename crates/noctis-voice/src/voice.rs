@@ -13,7 +13,9 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 
 use crate::call::{Entry, VoiceShared};
 use crate::error::VoiceError;
+use crate::queue::{Queue, QueueCell};
 use crate::shard::NoctisShard;
+use crate::track::{Track, TrackInfo};
 
 /// The App's voice connections: one call per guild (VC-02), joined and left
 /// through Noctis's gateway (VC-01).
@@ -101,6 +103,8 @@ impl Voice {
         let join = {
             let mut call = joining.call.lock().await;
             if call.current_connection().is_some() && call.current_channel() == Some(target) {
+                drop(call);
+                shared.connected(guild, joining.generation);
                 return Ok(handle);
             }
             if call.current_channel().is_some() && call.current_connection().is_none() {
@@ -124,7 +128,10 @@ impl Voice {
         };
         let after = shared.config.get_join_timeout();
         let error = match tokio::time::timeout(after, join).await {
-            Ok(Ok(())) => return Ok(handle),
+            Ok(Ok(())) => {
+                shared.connected(guild, joining.generation);
+                return Ok(handle);
+            }
             Ok(Err(JoinError::Dropped)) => return Err(VoiceError::Interrupted { guild }),
             Ok(Err(JoinError::TimedOut)) | Err(_) => VoiceError::Timeout { guild, after },
             Ok(Err(error)) => VoiceError::Driver {
@@ -178,7 +185,7 @@ impl Voice {
 
     /// The number of live and pending calls (0 without voice).
     pub fn active_calls(&self) -> usize {
-        self.shared.as_deref().map_or(0, VoiceShared::len)
+        self.shared.as_deref().map_or(0, |shared| shared.len())
     }
 }
 
@@ -192,7 +199,7 @@ impl fmt::Debug for Voice {
 }
 
 /// Sends op 4 leave for `guild`'s removed entry and stops its driver.
-async fn leave_entry(guild: Id<GuildMarker>, entry: &Entry) -> Result<(), VoiceError> {
+pub(crate) async fn leave_entry(guild: Id<GuildMarker>, entry: &Entry) -> Result<(), VoiceError> {
     let mut call = entry.call.lock().await;
     call.leave()
         .await
@@ -217,16 +224,38 @@ fn map_send_error(guild: Id<GuildMarker>, error: JoinError, shard: &NoctisShard)
     }
 }
 
-/// One guild's call, from [`Voice::join`] or [`Voice::call`].
+/// One guild's call, from [`Voice::join`] or [`Voice::call`], and its
+/// queue.
 ///
 /// A handle never keeps the call alive: once the call is left, disconnected,
 /// removed or replaced by a new call of the guild, the handle is stale
-/// ([`channel`](Self::channel) is `None`, [`leave`](Self::leave) is
-/// [`VoiceError::Interrupted`]).
+/// ([`channel`](Self::channel) is `None`, [`leave`](Self::leave) and every
+/// queue mutator are [`VoiceError::Interrupted`], the queue getters read
+/// `None`, empty or `1.0`).
+///
+/// **The queue** holds the current track plus the pending ones, at most
+/// `VoiceConfig::max_queue` (default 1000). The driver only ever holds the
+/// current track; a pending track's input is created when it becomes
+/// current. Its outcomes reach Modules as the hook events
+/// [`TrackStart`](crate::TrackStart), [`TrackEnd`](crate::TrackEnd),
+/// [`TrackError`](crate::TrackError) and [`QueueEmpty`](crate::QueueEmpty).
+/// A track error never stops the queue: the next track starts.
+///
+/// ```no_run
+/// use noctis_voice::{CallHandle, Track, VoiceError};
+///
+/// async fn play(call: &CallHandle) -> Result<(), VoiceError> {
+///     let info = call.enqueue(Track::url("https://cdn.example.com/a.ogg")?.title("A")).await?;
+///     assert_eq!(call.now_playing().map(|t| t.id()), Some(info.id()));
+///     call.set_volume(0.5)?;
+///     call.skip()?;
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone)]
 pub struct CallHandle {
     guild: Id<GuildMarker>,
-    generation: u64,
+    pub(crate) generation: u64,
     voice: Voice,
 }
 
@@ -256,6 +285,133 @@ impl CallHandle {
             Some(entry) => leave_entry(self.guild, &entry).await,
             None => Err(VoiceError::Interrupted { guild: self.guild }),
         }
+    }
+
+    /// The queue of this handle's call, if it is not stale.
+    fn queue(&self) -> Result<std::sync::Arc<QueueCell>, VoiceError> {
+        self.voice
+            .shared()?
+            .queue(self.guild, self.generation)
+            .ok_or(VoiceError::Interrupted { guild: self.guild })
+    }
+
+    /// Reads the queue; `None` for a stale handle.
+    fn read<T>(&self, read: impl FnOnce(&Queue) -> T) -> Option<T> {
+        self.queue().ok()?.read(read)
+    }
+
+    /// Appends `track` to the queue and returns its [`TrackInfo`] (with a
+    /// new id). With nothing current it becomes current at once and plays;
+    /// [`TrackStart`](crate::TrackStart) fires when the driver reports it
+    /// playable. A paused current track stays paused.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::QueueFull`] when the queue (current plus pending)
+    /// already holds `VoiceConfig::max_queue` tracks; nothing changes.
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    #[expect(
+        clippy::unused_async,
+        reason = "async by contract: room for an awaited admission step without an API break"
+    )]
+    pub async fn enqueue(&self, track: Track) -> Result<TrackInfo, VoiceError> {
+        let queue = self.queue()?;
+        let info = track.into_info(self.voice.shared()?.next_track_id());
+        queue.enqueue(info)
+    }
+
+    /// Skips the current track: [`TrackEnd`](crate::TrackEnd) with
+    /// [`EndReason::Skipped`](crate::EndReason::Skipped), then the next
+    /// track plays (not paused), or [`QueueEmpty`](crate::QueueEmpty).
+    /// Returns the skipped track; `None` (and no event) when nothing is
+    /// current.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    pub fn skip(&self) -> Result<Option<TrackInfo>, VoiceError> {
+        self.queue()?.skip()
+    }
+
+    /// Pauses the current track; `false` when it is already paused or
+    /// nothing is current.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    pub fn pause(&self) -> Result<bool, VoiceError> {
+        self.queue()?.pause()
+    }
+
+    /// Resumes the paused current track; `false` when it is playing or
+    /// nothing is current.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    pub fn resume(&self) -> Result<bool, VoiceError> {
+        self.queue()?.resume()
+    }
+
+    /// Stops the current track ([`TrackEnd`](crate::TrackEnd) with
+    /// [`EndReason::Stopped`](crate::EndReason::Stopped), then
+    /// [`QueueEmpty`](crate::QueueEmpty)) and drops the pending ones.
+    /// Returns how many tracks the queue held (0 and no event when empty).
+    /// The call stays connected.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    pub fn stop(&self) -> Result<usize, VoiceError> {
+        self.queue()?.stop()
+    }
+
+    /// Drops the pending tracks; the current one keeps playing and no
+    /// event fires. Returns how many were dropped.
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::Interrupted`] for a stale handle.
+    pub fn clear(&self) -> Result<usize, VoiceError> {
+        self.queue()?.clear()
+    }
+
+    /// Sets the volume of the current track and of every later one:
+    /// `0.0..=2.0` (default `1.0`).
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::InvalidVolume`] for a volume outside `0.0..=2.0` or
+    /// not finite (nothing changes); [`VoiceError::Interrupted`] for a stale
+    /// handle.
+    pub fn set_volume(&self, volume: f32) -> Result<(), VoiceError> {
+        self.queue()?.set_volume(volume)
+    }
+
+    /// The current track (playing or paused); `None` when nothing is
+    /// current or the handle is stale.
+    pub fn now_playing(&self) -> Option<TrackInfo> {
+        self.read(Queue::now_playing).flatten()
+    }
+
+    /// Whether the current track is paused.
+    pub fn is_paused(&self) -> bool {
+        self.read(Queue::is_paused).unwrap_or(false)
+    }
+
+    /// The pending tracks, in play order (the current one excluded).
+    pub fn list(&self) -> Vec<TrackInfo> {
+        self.read(Queue::list).unwrap_or_default()
+    }
+
+    /// The current plus the pending tracks.
+    pub fn queue_len(&self) -> usize {
+        self.read(Queue::len).unwrap_or(0)
+    }
+
+    /// The queue's volume (`1.0` by default and for a stale handle).
+    pub fn volume(&self) -> f32 {
+        self.read(Queue::volume).unwrap_or(1.0)
     }
 }
 
@@ -299,7 +455,7 @@ impl VoiceExt for App {
     fn voice(&self) -> Voice {
         let shared = self.state::<VoiceShared>();
         if let Some(shared) = &shared {
-            shared.bind_app(self.app_id().as_str());
+            shared.bind_app(self.app_id().as_str(), self.emitter());
         }
         Voice::new(shared, self.gateway())
     }

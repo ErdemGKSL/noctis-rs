@@ -11,6 +11,7 @@ use songbird::id::ChannelId;
 
 use crate::call::VoiceShared;
 use crate::config::VoiceConfig;
+use crate::media::media_client;
 
 /// The id of the Module the plugin's handlers live in.
 const MODULE: &str = "noctis-voice";
@@ -51,7 +52,14 @@ impl Plugin for VoicePlugin {
         for message in self.config.violations() {
             app.report(BuildViolation::plugin::<Self>(message));
         }
-        app.state(VoiceShared::new(self.config.clone()));
+        let media = match media_client(&self.config) {
+            Ok(media) => media,
+            Err(message) => {
+                app.report(BuildViolation::plugin::<Self>(message));
+                return;
+            }
+        };
+        app.state(VoiceShared::new(self.config.clone(), media));
         app.module(
             Module::new(MODULE)
                 .__add(EventHandler::__new::<VoiceStateUpdate, _, _>(
@@ -153,10 +161,11 @@ async fn on_guild_delete(ctx: EventCtx, event: GuildDelete) -> HandlerResult<()>
     Ok(())
 }
 
-/// Binds the `app` label of `noctis_voice_calls`.
+/// Binds the `app` label of the voice metrics and the track events'
+/// `Emitter`.
 async fn on_app_started(ctx: HookCtx, _: AppStarted) -> HandlerResult<()> {
     if let Some(shared) = ctx.state::<VoiceShared>() {
-        shared.bind_app(ctx.app_id());
+        shared.bind_app(ctx.app_id(), ctx.emitter());
     }
     Ok(())
 }
