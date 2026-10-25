@@ -2,7 +2,8 @@
 title: 'Story 16.2: Lock-light lanes, parallel drain and per-guild ordering without head-of-line blocking'
 type: 'refactor'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'f7b3b161430323238c282e1959cdf16e80656d69'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
