@@ -2,10 +2,10 @@
 title: 'Story 16.2: Lock-light lanes, parallel drain and per-guild ordering without head-of-line blocking'
 type: 'refactor'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'f7b3b161430323238c282e1959cdf16e80656d69'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
@@ -124,6 +124,38 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 28 findings — high 0, medium 6, low 14, false 8, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) Interactions wait behind a whole popped batch of events in `drain_partition` — verified: after `recv_batch` the loop only re-checks the partition's interaction lane in the permit `select!` or at the next batch, so an interaction arriving mid-batch waits for up to 31 cache feeds/dispatches (16.1 checked before every item); patch: serve queued interactions before each batched event without waiting, plus a test (group A).
+  - `[low]` `[reject]` (blind) One busy partition can take all global event capacity, so a quiet partition's droppables are dropped — real, but it is exactly the intent-contract Matrix row "Full, droppable, own partition has none → dropped" (D3); changing it means editing this build's spec.
+  - `[medium]` `[patch]` (blind) A partition's overflow never shrinks back into free global event capacity — verified in `Shared::enqueue` (own non-empty overflow forces new events to overflow) and `Queues::pop` (1:1 refill), so a partition squeezed earlier drops non-droppables via `OverflowFull` while Σ event depth is far below capacity; patch: refill from own overflow while `reserve` on the event total succeeds (group B).
+  - `[low]` `[reject]` (blind) A panicked partition drain is swallowed by `drain_shared` — pre-existing handling (16.1's `settle` also discards a drain panic; the panic hook still prints), no reachable panic in `drain_partition` shown, and the fix adds error/restart branches.
+  - `[low]` `[reject]` (blind) Partition count ignores the process's shard count — spec D1 settles "independent of the shard count"; extra drains only park on an idle `Notify`, and contiguous shard ranges spread evenly over residues.
+  - `[low]` `[reject]` (blind) Unconditional `yield_now` before every batch costs latency at low load — real but one scheduler round trip (µs) far below the 1 ms NFR, bench-tuned (memlog), and the fix adds state/branches.
+  - `[low]` `[patch]` (blind) Guildless ordered events lose cross-shard arrival order but docs still say "arrival order" — verified: guildless events of different partitions reach the `None` FIFO in drain timing order; patch: facade doc and Usage Skill reference say order is per shard.
+  - `[low]` `[reject]` (blind) Unsplit `LaneReceiver::recv_taking` allocates per multi-partition wait — no production caller uses the unsplit receiver with n > 1 (`drain` splits it; testkit uses one partition); not on the measured path.
+  - `[low]` `[reject]` (blind) Lane gauges can be left stale under parallel partitions — a Relaxed-load/set interleaving across partitions can leave a stale value only until the next push/pop; writing the fetch result has the same race, so the fix is more than a direct correction.
+  - `[low]` `[reject]` (blind) Runner-abort path (`RunnerGuard`) untested and aborted queued ordered jobs not in the summary — runners are aborted only at runtime teardown; 16.1's mpsc sub-queue jobs were likewise uncounted.
+  - `[low]` `[reject]` (blind) Partition tests depend on scheduler timing and `Arc::strong_count` — `cancel_counts_batched_and_waiting` asserts totals that are the same in every reachable state, `abort_aborts_partition_drains` is deterministic today and would fail loudly (timeout) on a change, not silently.
+  - `[low]` `[patch]` (blind) PIPELINE.md 16.2 provenance names `0fbcf93` plus working tree, and the title is stale — verified at L1 and L146; patch: record `571314f6697d7bda149761cbdbd387fdd3cae7d3` and a neutral title.
+  - `[medium]` `[patch]` (edge) Overflow-only/refill path leaves global capacity unused (same as blind finding 3) — group B; patch as above.
+  - `[low]` `[reject]` (edge) Partition drain panic swallowed in the `JoinSet` loop — same evidence as blind finding 4.
+  - `[medium]` `[patch]` (edge) Interaction waits behind up to 31 batched events — same defect as blind finding 1; group A.
+  - `[false]` `[reject]` (edge) Code checks own partition's overflow instead of the global overflow total named in Design Notes — no bad outcome: per-partition FIFO only needs the own-overflow check, the global form would push quiet partitions into overflow; logged as an implementation decision in the memlog.
+  - `[low]` `[patch]` (vgap) `App::run` building lanes with `lane_partitions()` partitions is untested — pre-verified (reverting to `lanes(..)` passes every test); patch: crate-private lane-construction helper plus a 4-worker test asserting 4 partitions.
+  - `[low]` `[patch]` (vgap) Interactions in a drain's local batch at cancel are not counted by any test — pre-verified; patch: unit test of `Discarded::of` with batched interactions.
+  - `[false]` `[reject]` (intent D1) Saturation throughput below 2× baseline — the spec deliberately settled it (AC + D7: targets measured and recorded, not gates; epic context "bench numbers do not gate"); the miss is recorded with value and cause in PIPELINE.md and the memlog.
+  - `[false]` `[reject]` (intent D2) Push P16/P1 ratio 3.41× > 1.5× — same settlement (D7); the remaining contention is the global bound atomic required by the intent-contract ("Bounds are global ... reserve with CAS").
+  - `[medium]` `[patch]` (intent D3) (d) interaction p99 worse than baseline at P = 1 and 4 — the code-caused part is the batched drain not re-checking interactions (group A); the rest is recorded per D7.
+  - `[false]` `[reject]` (intent D4) Drop/eviction differs from 16.1 with n > 1 — the intent-contract Matrix rows "Full, droppable, own partition has droppable/none" settle per-partition eviction; existing `lanes` tests pass unchanged.
+  - `[false]` `[reject]` (intent D5) Existing worker tests edited — spec Tasks and D6 settle exactly these two hash references; nothing else changed.
+  - `[false]` `[reject]` (intent D6) `pipeline_alloc` ordered count 4 → 5 — the spec Tasks allow an increase with a memlog `(decision)` line and cause (on-demand runner spawn, required by "no task per idle guild"); `unhandled` stays 0.
+  - `[medium]` `[patch]` (intent D7) Interaction priority scope — cross-partition priority is not required (AC "in every partition", D1); the within-drain part (interactions waiting behind a popped batch) is the group A defect.
+  - `[false]` `[reject]` (intent D8) Push still sets one gauge and `notify_one` per item; `pop_one` sets three gauges — the AC requires one gauge update per drain batch only, which holds.
+  - `[false]` `[reject]` (intent D9) Isolation evidence at the harness level; bench fixture keeps the old hash — (c) target met in the bench; the spec Code Map says to leave the fixture hash as is.
+  - `[low]` `[reject]` (intent D10) Per-batch `yield_now` is unspecified policy — same as blind finding 6: µs-level cost, bench-tuned and logged; fix adds branches.
+
 ## Design Notes
 
 **Decisions** (memlog):
@@ -154,3 +186,12 @@ deferred: []
 - `cargo run --release -p xtask -- deps-check`, `rules-catalog`, `api-snapshot` (no `--bless`), `skill-check`, `tw-grammar --check`; `git diff --exit-code xtask/public-api.txt` -- ok
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run by the gate script only.
+
+## Auto Run Result
+
+- **Summary:** Lanes split into per-shard partitions (`shard % n`, n = runtime workers clamped 1..=64) with global atomic bounds and per-partition eviction; one drain task per partition with batched pops (`DRAIN_BATCH` = 32); per-guild ordering via a `Mutex<HashMap<guild, VecDeque<Job>>>` with on-demand runners instead of hashed sub-queues. Bench numbers recorded in `crates/noctis-core/benches/PIPELINE.md`.
+- **Files changed:** `crates/noctis-gateway/src/lanes.rs` (partitioned queues, global bounds, refill); `crates/noctis-gateway/src/lanes/partition_tests.rs` (partition tests); `crates/noctis-core/src/worker.rs` (parallel drain, per-guild runners, interaction pre-check per batched item); `crates/noctis-core/src/worker/tests.rs` (tests); `crates/noctis-core/src/app.rs` (lane construction helper + partition test); `crates/noctis/src/lib.rs` (ordering docs: per shard); `crates/noctis-core/benches/PIPELINE.md` (bench results, provenance); Usage Skill reference `modules-middleware-ratelimits.md` (ordering wording).
+- **Review findings:** 28 findings (high 0, medium 6, low 14, false 8). Patched: group A (interactions waiting behind a popped batch, 4 medium entries), group B (overflow not refilling into free global capacity, 2 medium entries), guildless ordering docs, PIPELINE.md provenance, `App::run` partition-count test, batched-interaction cancel count test. Patched counts by verdict: high 0, medium 6, low 4. Deferred: none. Rejected: busy partition starving quiet droppables (intent Matrix D3); drain panic swallowed (pre-existing, x2); partition count vs shard count (D1); per-batch `yield_now` (µs cost, bench-tuned, x2); unsplit `recv_taking` alloc (no production caller); stale gauges (same race in fix); runner abort untested (teardown only, as 16.1); timing-dependent tests (deterministic totals); own vs global overflow check (false, logged decision); bench targets missed (false, D7 not gates, x2); per-partition eviction (false, Matrix); worker test edits (false, D6); alloc count 4->5 (false, logged decision); per-push gauge/notify (false, AC per batch only); bench fixture hash (false, Code Map).
+- **Follow-up review recommended:** true. Named risk: the group B refill patch (overflow draining into free global event capacity via `reserve`) changes the bound accounting on the hot path; its interaction with concurrent pushes in other partitions is not independently re-reviewed.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot unchanged, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** saturation throughput and P16/P1 push ratio miss the bench targets on the 4-CPU shared host (recorded, not gates); guildless ordered events are ordered per shard only; lane gauges may be briefly stale under parallel partitions.

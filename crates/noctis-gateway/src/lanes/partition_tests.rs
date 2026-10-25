@@ -450,6 +450,43 @@ fn refill_and_overflow_only_pop() {
     assert_eq!(take_all(&mut partitions[1]), ["M6", "M7"]);
 }
 
+/// Event capacity another partition frees drains this partition's overflow
+/// into its event lane, oldest first, so its new events are not dropped.
+#[test]
+fn overflow_drains_into_freed_capacity() {
+    let (sender, receiver) = lanes_with(config(3, 2), n(2));
+    let shared = Arc::clone(&receiver.shared);
+    let mut partitions = receiver.into_partitions();
+    sender.push(m(1, 1));
+    sender.push(m(1, 2));
+    sender.push(m(0, 3));
+    sender.push(m(0, 4));
+    sender.push(m(0, 5));
+    assert_eq!(event_tags(&shared, 0), ["M3"]);
+    assert_eq!(overflow_tags(&shared, 0), ["M4", "M5"]);
+    // Partition 1 frees two slots; partition 0's next pop moves its whole
+    // overflow into them.
+    assert_eq!(take_all(&mut partitions[1]), ["M1", "M2"]);
+    let mut batch = VecDeque::new();
+    assert_eq!(partitions[0].try_recv_batch(&mut batch, n(1)), 1);
+    assert_eq!(tags(&batch), ["M3"]);
+    assert_eq!(event_tags(&shared, 0), ["M4", "M5"]);
+    assert_eq!(overflow_tags(&shared, 0), Vec::<String>::new());
+    assert_eq!(
+        shared.depths(),
+        LaneDepths {
+            interaction: 0,
+            event: 2,
+            overflow: 0
+        }
+    );
+    // The overflow is empty: a new event takes the free slot.
+    sender.push(m(0, 6));
+    assert_eq!(event_tags(&shared, 0), ["M4", "M5", "M6"]);
+    assert_eq!(take_all(&mut partitions[0]), ["M4", "M5", "M6"]);
+    assert_eq!(shared.depths(), LaneDepths::default());
+}
+
 /// Counts the gauge `set` calls.
 #[derive(Default)]
 struct GaugeSets(AtomicUsize);

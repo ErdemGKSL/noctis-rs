@@ -750,6 +750,12 @@ impl App {
         self.handler_concurrency
     }
 
+    /// The lanes `run` builds: [`lane_config`](Self::lane_config) split
+    /// into [`lane_partitions`] partitions.
+    pub(crate) fn run_lanes(&self) -> (noctis_gateway::LaneSender, noctis_gateway::LaneReceiver) {
+        noctis_gateway::lanes_with(self.lane_config(), lane_partitions())
+    }
+
     /// The lane configuration `run` passes to the lanes.
     ///
     /// `run` splits the lanes into [`lane_partitions`] partitions.
@@ -1094,7 +1100,7 @@ impl App {
         log_plan(&plan);
         let options = self.gateway_options(token, &plan);
         describe_metrics();
-        let (sender, receiver) = noctis_gateway::lanes_with(self.lane_config(), lane_partitions());
+        let (sender, receiver) = self.run_lanes();
         // The testkit's injection point (AD-10): it observes a clone of the
         // shard tasks' sender; production Apps install no tap.
         if let Some(tap) = &self.shared.lane_tap {

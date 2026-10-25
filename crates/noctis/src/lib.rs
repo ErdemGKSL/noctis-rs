@@ -1256,10 +1256,12 @@ pub use noctis_macros::MessageCommand;
 /// - `ordered`: the handler runs before the concurrent handlers of the
 ///   event, one event at a time per guild: each guild gets its own FIFO,
 ///   created when an ordered event of it arrives and removed once it is
-///   empty (guildless events share one FIFO). A hung ordered handler blocks
-///   only its own guild (or every guildless event), but the events queued
-///   behind it keep their worker permits, so it can eventually hold every
-///   `handler_concurrency` permit and stop all event handling. noctis adds
+///   empty. Guildless events share one FIFO and keep arrival order per
+///   shard only, with no defined order across shards. A hung ordered
+///   handler blocks only its own guild (or every guildless event), but the
+///   events queued behind it keep their worker permits, so it can
+///   eventually hold every `handler_concurrency` permit and stop all event
+///   handling. noctis adds
 ///   no timeout: bound slow work in ordered handlers yourself, for example
 ///   with `tokio::time::timeout`.
 /// - `droppable`: the event may be dropped when the event lane is full, if

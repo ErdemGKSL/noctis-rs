@@ -2231,6 +2231,41 @@ mod partitions {
         );
     }
 
+    /// `run` splits its lanes into one partition per runtime worker.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn run_lanes_use_lane_partitions() {
+        let mut builder = App::builder();
+        builder.runtime(&Runtime::for_test());
+        let app = builder.build().unwrap();
+        assert_eq!(app.run_lanes().1.into_partitions().len(), 4);
+    }
+
+    /// Interactions still in a drain's local batch at cancel count as
+    /// interactions; batched, queued and waiting events as events.
+    #[test]
+    fn discarded_counts_batched_interactions() {
+        let (sender, receiver) =
+            noctis_gateway::lanes_with(LaneConfig::default(), NonZeroUsize::MIN);
+        let partition = receiver.into_partitions().remove(0);
+        let inbound = |kind| Inbound {
+            shard: ShardId::new(0, 16),
+            received_at: Instant::now(),
+            kind,
+        };
+        sender.push(inbound(InboundKind::Event(Box::new(message_delete(
+            1, None,
+        )))));
+        sender.push(inbound(ping(1)));
+        let batch = VecDeque::from([
+            inbound(ping(2)),
+            inbound(InboundKind::Event(Box::new(message_delete(2, None)))),
+            inbound(ping(3)),
+        ]);
+        let discarded = Discarded::of(&partition, &batch, 1);
+        assert_eq!(discarded.interactions, 3);
+        assert_eq!(discarded.events, 3);
+    }
+
     /// Two guilds that shared a 16.1 sub-queue no longer block each other.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn colliding_guilds_are_isolated() {
@@ -2379,6 +2414,53 @@ mod partitions {
         m.push(2, message_delete(99_999, Some(GA)));
         until("E started", || seen.lock().unwrap().is_some()).await;
         assert_eq!(*seen.lock().unwrap(), Some(true));
+    }
+
+    /// The drain's guild check: pushes `ping(9)` on shard 0 when guild 1
+    /// is checked.
+    struct PushOnCheck(Mutex<Option<LaneSender>>);
+
+    impl noctis_ports::GuildAccessList for PushOnCheck {
+        fn allows(&self, guild: Id<GuildMarker>) -> bool {
+            if guild.get() == 1
+                && let Some(sender) = self.0.lock().unwrap().take()
+            {
+                sender.push(Inbound {
+                    shard: ShardId::new(0, 16),
+                    received_at: Instant::now(),
+                    kind: ping(9),
+                });
+            }
+            true
+        }
+    }
+
+    /// An interaction pushed while the drain handles a batch's handled
+    /// event is served before the batch's later events.
+    #[tokio::test(flavor = "current_thread")]
+    async fn interaction_before_later_batched_event() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let access = Arc::new(PushOnCheck(Mutex::new(None)));
+        let mut m = Multi::start(
+            App::builder()
+                .guild_access(Arc::clone(&access))
+                .module(Module::new("m").__add(noop::<MessageDelete>("h"))),
+            1,
+        );
+        m.push(0, message_delete(1, Some(1)));
+        m.push(0, user_update(2));
+        m.push(0, user_update(3));
+        *access.0.lock().unwrap() = m.sender.take();
+        m.join().await;
+        let text = capture.text();
+        let at = |needle: &str| {
+            text.lines()
+                .position(|line| line.contains("no handler registered") && line.contains(needle))
+        };
+        let interaction = at("kind=Interaction").expect("the interaction was traced");
+        let later = at("kind=UserUpdate").expect("the later events were traced");
+        assert!(interaction < later, "{text}");
     }
 
     /// At most `handler_concurrency` events hold permits with 4 drains.

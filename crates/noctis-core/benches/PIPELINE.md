@@ -1,4 +1,4 @@
-# Event pipeline baseline (Story 16.1) and Story 16.2
+# Event pipeline benchmarks
 
 The numbers below are the baseline of `crates/noctis-core/benches/pipeline.rs`:
 the path from a shard's parsed `Inbound` to a handler start, before any Epic 16
@@ -143,9 +143,11 @@ Same bench, unchanged measurement code, same command and columns as above.
 
 ### Commit
 
-`0fbcf936b2b178a63441d7abe0dcd2b0d3d83759`, plus Story 16.2's working-tree
-changes (lanes partitioned by shard, one drain per partition with batched pops,
-on-demand per-guild ordered FIFOs).
+`571314f6697d7bda149761cbdbd387fdd3cae7d3` (lanes partitioned by shard, one
+drain per partition with batched pops, on-demand per-guild ordered FIFOs).
+Later review patches touched the drain and the lanes (interactions served
+between batched events, overflow refilled into freed capacity); the numbers
+were not re-measured for them.
 
 The bench runtime has 4 worker threads, so the App runs **4 lane partitions**
 and 4 drain tasks (partitions = runtime workers). Producer `i` of P pushes on

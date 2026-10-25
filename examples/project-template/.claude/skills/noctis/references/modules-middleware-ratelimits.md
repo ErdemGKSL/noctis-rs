@@ -359,8 +359,9 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   reactions or DM typing.
 - **Several handlers per event all run.** `ordered` handlers run first, sequentially in
   fold order, and in **per-guild order**: events of one guild (each guild gets its own
-  FIFO, created on demand and removed when empty; guildless events share one) run their
-  ordered handlers one event at a time, in arrival order. Then every non-ordered
+  FIFO, created on demand and removed when empty) run their ordered handlers one event
+  at a time, in arrival order. Guildless events share one FIFO and keep arrival order per
+  shard only: guildless events of different shards have no defined order. Then every non-ordered
   handler of the event runs concurrently. Each handler gets its own copy of the payload.
 - **Ordered hang hazard:** a hung `ordered` handler blocks only its own guild (or all
   guildless events), but the events queued behind it keep their worker permits, so it

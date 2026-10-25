@@ -183,7 +183,7 @@ development_status:
 
   epic-16: in-progress
   16-1-event-pipeline-throughput-bench-and-baseline: done
-  16-2-lock-light-lanes-parallel-drain-and-per-guild-ordering-witho: in-progress
+  16-2-lock-light-lanes-parallel-drain-and-per-guild-ordering-witho: done
   16-3-per-event-and-per-handler-overhead: backlog
   epic-16-retrospective: optional
 

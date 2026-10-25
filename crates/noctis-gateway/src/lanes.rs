@@ -352,19 +352,36 @@ impl Queues {
             taken.interaction += 1;
             return Some(inbound);
         }
-        if let Some(inbound) = self.event.pop_front() {
+        let inbound = if let Some(inbound) = self.event.pop_front() {
             if let Some(refill) = self.overflow.pop_front() {
-                let droppable = event_type(&refill).is_some_and(|t| shared.is_droppable(t));
-                self.event.push_back(refill, droppable);
+                self.refill_one(refill, shared);
                 taken.overflow += 1;
             } else {
                 taken.event += 1;
             }
-            return Some(inbound);
+            inbound
+        } else {
+            let inbound = self.overflow.pop_front()?;
+            taken.overflow += 1;
+            inbound
+        };
+        // Event capacity other partitions freed takes this partition's
+        // overflow, oldest first.
+        while !self.overflow.is_empty()
+            && reserve(&shared.totals.event, shared.config.event_capacity.get())
+        {
+            if let Some(refill) = self.overflow.pop_front() {
+                self.refill_one(refill, shared);
+                taken.overflow += 1;
+            }
         }
-        let inbound = self.overflow.pop_front()?;
-        taken.overflow += 1;
         Some(inbound)
+    }
+
+    /// Moves `refill`, taken off the overflow, to the back of the event lane.
+    fn refill_one(&mut self, refill: Inbound, shared: &Shared) {
+        let droppable = event_type(&refill).is_some_and(|t| shared.is_droppable(t));
+        self.event.push_back(refill, droppable);
     }
 
     /// Takes the next interaction only.

@@ -437,6 +437,11 @@ async fn drain_partition(mut partition: LanePartition, workers: &Workers) -> Dis
         let shard = inbound.shard.number();
         match inbound.kind {
             InboundKind::Event(event) => {
+                // Interactions pushed since this batch was popped never wait
+                // behind its events.
+                while let Some(Some(interaction)) = partition.recv_interaction().now_or_never() {
+                    workers.interaction(interaction);
+                }
                 // The guild record follows every event, handled or not.
                 workers.app.locales.observe(&event);
                 // The Discord cache sees a cached event type before any of
