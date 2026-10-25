@@ -406,7 +406,9 @@ impl TestApp {
 
     /// The `d` of every Voice State Update (op 4) the App sent so far,
     /// oldest first: `guild_id`, `channel_id` (`null` for a leave),
-    /// `self_mute`, `self_deaf`. Empty before any.
+    /// `self_mute`, `self_deaf`. Empty before any. Op 4 frames sent outside a
+    /// run are kept only until the gateway fake's frame log is cleared
+    /// directly (`gateway_fake().clear_frames()`).
     ///
     /// ```no_run
     /// # async fn check(app: &noctis_testkit::TestApp) {

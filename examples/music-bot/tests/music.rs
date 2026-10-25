@@ -176,6 +176,24 @@ async fn play_refusals() -> Result<(), TestError> {
     );
     assert_eq!(op4_channels(&app), [json!("51")]);
     assert_eq!(played(&recorder), ["first"]);
+    assert_eq!(recorder.commands(G).len(), 1);
+    let queue = command(&app, "queue").await?;
+    assert!(!queue.text().contains("1. "), "{}", queue.text());
+    app.stop().await
+}
+
+/// An idle call in another channel (nothing playing or queued) moves to the author's.
+#[tokio::test(flavor = "multi_thread")]
+async fn play_moves_an_idle_call() -> Result<(), TestError> {
+    let (app, recorder) = start(true).await;
+    in_voice(&app, V2);
+    play(&app, "first").await?;
+    private(&command(&app, "stop").await?, "Stopped; 1 track removed.");
+    in_voice(&app, V);
+    let reply = play(&app, "second").await?;
+    assert!(reply.text().contains("**second**"), "{}", reply.text());
+    assert_eq!(op4_channels(&app), [json!("51"), json!("50")]);
+    assert_eq!(played(&recorder), ["first", "second"]);
     app.stop().await
 }
 

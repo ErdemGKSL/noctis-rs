@@ -7837,8 +7837,6 @@ pub fn noctis::testkit::voice::VoiceRecorder::clone(&self) -> Self
 impl core::cmp::Eq for noctis::testkit::voice::VoiceRecorder
 impl core::cmp::PartialEq for noctis::testkit::voice::VoiceRecorder
 pub fn noctis::testkit::voice::VoiceRecorder::eq(&self, &Self) -> bool
-impl core::default::Default for noctis::testkit::voice::VoiceRecorder
-pub fn noctis::testkit::voice::VoiceRecorder::default() -> Self
 impl core::fmt::Debug for noctis::testkit::voice::VoiceRecorder
 pub fn noctis::testkit::voice::VoiceRecorder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub mod noctis::twilight

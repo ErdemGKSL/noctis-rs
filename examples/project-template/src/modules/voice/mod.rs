@@ -101,6 +101,11 @@ impl Play {
             return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;
         };
         let s = Strings::of(ctx.response_locale());
+        // Build the track first: an invalid URL must not leave the bot idle in a channel.
+        let track = match Track::url(&self.url) {
+            Ok(track) => track.title(&self.url).requested_by(ctx.user_id()),
+            Err(error) => return ctx.reply_text(s.voice.failed(error)).await,
+        };
         let call = if let Some(call) = ctx.voice().call(guild) {
             call
         } else {
@@ -112,13 +117,7 @@ impl Play {
                 Err(error) => return ctx.reply_text(s.voice.failed(error)).await,
             }
         };
-        let queued = async {
-            let track = Track::url(&self.url)?
-                .title(&self.url)
-                .requested_by(ctx.user_id());
-            call.enqueue(track).await
-        };
-        match queued.await {
+        match call.enqueue(track).await {
             Ok(info) => {
                 let title = info.title().unwrap_or_default().to_owned();
                 ctx.reply_text(s.voice.queued(title, call.queue_len()))

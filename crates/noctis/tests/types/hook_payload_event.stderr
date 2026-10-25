@@ -1,19 +1,33 @@
-error[E0277]: `noctis::events::MessageCreate` is not a lifecycle event
+error[E0277]: the trait bound `noctis::events::MessageCreate: ExtensionEvent` is not satisfied
   --> tests/types/hook_payload_event.rs:10:14
    |
 10 |     async fn handle(self, _ctx: HookCtx, _ev: MessageCreate) -> HandlerResult<()> {
-   |              ^^^^^^ not a lifecycle event
+   |              ^^^^^^ the trait `ExtensionEvent` is not implemented for `noctis::events::MessageCreate`
    |
-   = help: the trait `HookEvent` is not implemented for `noctis::events::MessageCreate`
-   = note: use a type from `noctis::lifecycle`; gateway events are handled by `#[derive(EventHandler)]`
-   = help: the following other types implement trait `HookEvent`:
-             AllShardsReady
-             AppStarted
-             ModuleToggled
-             PublishCompleted
-             PublishFailed
-             ShardDisconnected
-             ShardFatal
-             ShardReady
-           and $N others
+help: `noctis::__private::noctis_core::kind::__LifecycleKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | / impl<S, F> __Bind<__C, S, F> for __LifecycleKind
+   | | where
+   | |     S: __LifecycleHook + __HookParams,
+   | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, S, F>`
+...
+   | / impl<S, R, F> __Bind<__CR<R>, S, F> for __LifecycleKind
+   | | where
+   | |     S: __LifecycleHook + __HookParams,
+   | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<R>, S, F>`
+...
+   | / impl<S, X, R, F> __Bind<__CXR<X, R>, S, F> for __LifecycleKind
+   | | where
+   | |     S: __LifecycleHook + __HookParams,
+   | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CXR<X, R>, S, F>`
+...
+   | / impl<S, E, F, Fut> __Bind<__CX<E>, S, F> for __LifecycleKind
+   | | where
+   | |     S: __LifecycleHook,
+   | |     E: HookEvent,
+   | |     F: Fn(S, HookCtx, E) -> Fut + Send + Sync + 'static,
+   | |     Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+   | |_____________________________________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<E>, S, F>`
+   = note: required for `noctis::events::MessageCreate` to implement `HookEvent`
    = note: required for `noctis::__private::noctis_core::kind::__LifecycleKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<noctis::events::MessageCreate>, Up, _>`

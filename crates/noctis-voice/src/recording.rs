@@ -104,13 +104,13 @@ type Guilds = HashMap<Id<GuildMarker>, GuildRecord>; // keyed-map: test-only (fe
 ///
 /// [`VoiceConfig::recording`]: crate::VoiceConfig::recording
 /// [`VoiceConfig::recorder`]: crate::VoiceConfig::recorder
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct VoiceRecorder(Arc<Mutex<Guilds>>);
 
 impl VoiceRecorder {
     /// An empty recorder.
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self(Arc::default())
     }
 
     fn lock(&self) -> MutexGuard<'_, Guilds> {

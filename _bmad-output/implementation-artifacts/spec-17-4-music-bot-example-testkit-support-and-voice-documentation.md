@@ -2,7 +2,7 @@
 title: 'Story 17.4: Music-bot example, testkit support and voice documentation'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'e66a25e56da9771f572b7f3abfc0ae3ce7a2e216'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -13,7 +13,14 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/spec-17-3-optimized-opus-path-passthrough-encoder-tuning-and-voice-bench.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/views-and-recipes.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      No local gate compiles or runs the project template's tests, so its voice tests (`play_joins_the_authors_channel`, `queue_commands_exist`) can regress unnoticed.
+    evidence: |-
+      tools/story-loop/gates.sh runs only root-workspace commands; examples/project-template is its own workspace (root Cargo.toml excludes it), and the only job that tests it (`template-build` in .github/workflows-disabled/ci.yml) is disabled and continue-on-error. Pre-existing since Story 17.1; this story only adds tests to the unexercised suite. Fix: add a gate step `cargo test --release --manifest-path examples/project-template/Cargo.toml --features voice` (story-loop tooling, outside this story's change).
+    location: >-
+      tools/story-loop/gates.sh
+    severity: medium
 ---
 
 <intent-contract>
@@ -241,6 +248,41 @@ The fixed values are documented `pub const`s on `noctis_testkit::fake`: `FAKE_VO
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 31 findings — high 0, medium 3, low 19, false 9, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) Template Cargo.lock downgrades takumi-raster/takumi-core and getrandom — the new lock matches the root workspace pins (`takumi-core =0.31.0`, root Cargo.lock `takumi-raster 0.5.8`) and drops the duplicate takumi-core 0.33; it aligns the template with the path-dependency graph instead of downgrading it.
+  - `[medium]` `[patch]` (blind) Template `/play` joins the author's channel before `Track::url` validates the URL — real: `Play::handle` joins first, then `Track::url(&self.url)?` fails; the template sets no `idle_leave`, so the bot stays in the channel. Fix: build the track before the call lookup/join.
+  - `[low]` `[reject]` (blind) Two concurrent `/play` from different channels both join; the second moves the call — real but needs simultaneous commands from two channels; the fix needs a per-guild lock (new state and branches) in an example.
+  - `[low]` `[reject]` (blind) Music-bot buttons and controls have no "same voice channel"/DJ permission check — real behaviour, but the spec's command set settles no permission model; adding one is new feature logic (guards plus a REST lookup per click).
+  - `[low]` `[patch]` (blind) "I'm already playing in <#X>." also refuses when the bot sits idle in another channel — real: `music.rs` refuses whenever `call.channel()` differs, while the Design Notes and guide §10 say it refuses to move a call another listener is using; users meet it after every finished queue until the 5 min idle leave. Fix: refuse only when something is current or queued, otherwise join (move).
+  - `[low]` `[patch]` (blind) Skill `voice.md` §11 says idle leave leaves a call that "stays alone or silent" — real: idle leave has no member tracking (guide §6, skill §9). Fix: drop "alone".
+  - `[low]` `[reject]` (blind) `VoiceRecorder::report` can return a newer track when a skip races between the token clone and `now_playing` — real only when a test calls `finish`/`fail` concurrently with a control; the fix needs a token check inside the queue lock (new `QueueCell` accessor).
+  - `[low]` `[patch]` (blind) `VoiceRecorder` publicly derives `Default`, giving a detached recorder that records nothing — real: `public-api.txt` L7830-7831 lists it while `new()` is `pub(crate)`. Fix: drop the derive (keep `new`), re-bless the API snapshot and the Usage Skill hash.
+  - `[false]` `[reject]` (blind) `TestApp::answer_voice(self, on) -> Self` cannot be toggled later — the spec's Code Map fixes this exact builder signature ("builder style, like `.timeout`"); a deliberate, correct choice.
+  - `[low]` `[reject]` (blind) `dispatch_bot_voice_state` always sends `self_deaf: true, self_mute: false` — real and documented ("self-deafened"); the join completes on session/channel regardless of the flags, and echoing per-guild op 4 flags adds state or parameters to a spec-fixed signature.
+  - `[false]` `[reject]` (blind) Adding `examples/music-bot` to the workspace newly requires cmake for workspace builds/CI — every gate and CI job already builds `--all-features` (gates.sh clippy/test, ci.yml L52/L111), which includes `voice`/libopus since 17.1; the requirement is not new.
+  - `[low]` `[patch]` (blind) No regression test for the per-App Songbird scheduler of recording Apps — grouped with the verification-gap finding below; real: no test pins the memlog decision, and reverting `driver_config` would only show up as flaky panics. Fix: one deterministic two-runtime test.
+  - `[low]` `[patch]` (blind) The refusal test never checks that the refused `/play` left the queue unchanged — real: `play_refusals` asserts only `Play` commands, which a queued second track would not add, while the spec row says "The queue is unchanged". Fix: assert nothing is queued after the refusal.
+  - `[low]` `[patch]` (blind) `voice_state_updates()` loses op 4 frames if a test clears the gateway fake's frame log directly — real via the hidden `gateway_fake().clear_frames()`. Fix: one doc sentence on `voice_state_updates`.
+  - `[medium]` `[patch]` (edge) Template `/play` with an invalid URL joins and stays — same defect as the blind template-validation finding; shares its patch.
+  - `[low]` `[reject]` (edge) `VoiceRecorder::report` returns a stale track when skip/stop races — same as the blind report-race finding; rejected with it.
+  - `[low]` `[reject]` (edge) Any member can skip/stop from the public player — same as the blind permission finding; rejected with it.
+  - `[low]` `[patch]` (edge) `/play` refused with "already playing" while the bot idles in another channel — same as the blind idle-refusal finding; shares its patch.
+  - `[false]` `[reject]` (edge) `answer_voice` advances the session `seq` before a failed send — the send fails only on a closed connection, the existing `dispatch` uses the same order, and twilight keeps only the last seq (a gap after reconnect is legal and unchecked).
+  - `[low]` `[patch]` (edge) `voice_state_updates` misses frames cleared through `gateway_fake().clear_frames()` — same as the blind clear-frames finding; shares its doc patch.
+  - `[false]` `[reject]` (edge) The recording scheduler is created lazily and could bind to a different runtime than later joins — an App runs on one runtime for its whole life (`TestApp` owns it); no path runs one App's joins on two runtimes.
+  - `[medium]` `[defer]` (vgap) The template's voice tests never run in any local gate — pre-verified; pre-existing since 17.1 (gates.sh covers only the root workspace; the template is excluded); deferred with the gate-script fix.
+  - `[low]` `[reject]` (vgap) No test pins the non-404 branch of `author_channel` — pre-verified; the 404 half is tested and the code is a plain `Err(error) => Err(error.into())`; a regression there is unlikely and the fix is a new test only (filed disposition defer).
+  - `[low]` `[patch]` (vgap) The per-App scheduler is protected only by incidental test timing — pre-verified, filed disposition patch; grouped with the blind scheduler-test finding. Fix: two-runtime test in `recording/tests.rs`.
+  - `[false]` `[reject]` (intent) Live run vs simulated run: no test runs the real driver or yt-dlp — the intent's Never list forbids exactly that in tests; deliberately settled.
+  - `[false]` `[reject]` (intent) Direct media URLs go through yt-dlp instead of `Track::url` (R1a vs R1b) — the spec's "yt-dlp input (decision)" Design Note settles R1b.
+  - `[false]` `[reject]` (intent) The recording driver still uses a Songbird `Call`/scheduler (R2a vs R2b) — the "Why `join_gateway` (decision)" Design Note settles R2b.
+  - `[low]` `[reject]` (intent) `noctis-voice/testkit` can be enabled by a direct dependent and no gate asserts only the facade enables it — true today only through the facade (`crates/noctis/Cargo.toml` L45, cargo-tree AC check); a dedicated deps-check rule is new gate logic for an unlikely misuse.
+  - `[false]` `[reject]` (intent) The template code adopts only the author lookup, not the View/yt-dlp patterns (R3a vs R3b) — the spec's Tasks settle R3b (template `/play` change plus AGENTS/skill text).
+  - `[low]` `[reject]` (intent) The new rust blocks in the guide and skill §11/§12 are not compiled — real, but the spec asks for no doc compilation and adding a compile harness is new tooling; the snippets mirror compiled example code.
+  - `[low]` `[patch]` (intent) `/play` refuses while idle in another channel, unlike "someone is listening to" — same as the blind idle-refusal finding; shares its patch.
+
 ## Design Notes
 
 **Why `join_gateway` (decision).** A real join resolves only after Songbird's driver opens the voice WebSocket and UDP to the endpoint in `VOICE_SERVER_UPDATE`. A fake voice server would mean reimplementing Discord's voice protocol, including DAVE. Songbird's own gateway-only join keeps the outermost Noctis surfaces real: `Voice::join`, op 4 through the gateway and budget, the plugin's `update_state`/`update_server` feeding the `Call`, timeouts and VC-02 moves. Only the driver connect and the audio player are swapped. Tests keep the 17.2 queue and event code paths.
@@ -280,3 +322,14 @@ assert!(matches!(recorder.commands(G)[..], [RecordedCommand::Play { .. }]));
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `api-snapshot` -- ok; the printed hash goes into `SKILL.md`
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run only by the gate script.
+
+## Auto Run Result
+
+- Summary: adds `examples/music-bot` (`/play` with yt-dlp URL/search input, author's channel via `GET /guilds/{g}/voice-states/{u}`, queue/now-playing Components V2 player with skip/stop/pause controls), a recording voice driver in `noctis-voice` (`VoiceConfig::recording()`, `VoiceRecorder`, gated by `noctis-voice/testkit`, enabled only via the `noctis` facade testkit path) built on Songbird `join_gateway`, testkit gateway helpers (`TestApp::answer_voice`, `voice_state_updates`, bot voice-state dispatch), the voice guide (`docs/guides/voice.md`) and Usage Skill `references/voice.md`/`testing.md` updates, and a template `/play` that looks up the author's channel.
+- Files changed: `crates/noctis-voice/src/{recording.rs,recording/tests.rs,config.rs,call.rs,queue.rs,voice.rs,lib.rs,tests.rs}` (recording driver and hooks); `crates/noctis-testkit/src/{app.rs,fake/gateway.rs,fake.rs,lib.rs}` + tests (op 4 answering helpers); `crates/noctis/{Cargo.toml,src/lib.rs}` (facade testkit wiring); `examples/music-bot/**` (new example and tests); `examples/project-template/**` (template `/play`, tests, locales, AGENTS.md, skill, Cargo.lock); `docs/guides/{voice.md,README.md}`; `xtask/public-api.txt` and Usage Skill API hash; architecture spine, memlog and maintainer-decisions entries.
+- Review findings (31: high 0, medium 3, low 19, false 9): patches applied 6 distinct fixes (patched by verdict: medium 2 entries / 1 fix, low 9 entries) - template `/play` builds the track before joining; music-bot refuses "already playing" only when something is current or queued, otherwise moves; skill voice.md idle-leave wording; `VoiceRecorder` no longer derives public `Default` (API re-blessed, hash updated); two-runtime per-App scheduler regression test; refusal test asserts the queue is unchanged; `voice_state_updates` doc notes `clear_frames`.
+- Deferred: 1 (medium) - template voice tests run in no local gate (pre-existing since 17.1; gates.sh covers only the root workspace).
+- Rejected: 9 false (lock alignment, builder signature, cmake not new, seq order, lazy scheduler runtime, settled intent R1b/R2b/R3b, deliberate no-live-run) and 7 low (concurrent cross-channel /play race, no DJ permission model, report/skip race, fixed self_deaf flags, non-404 author_channel branch untested, facade-only testkit not gate-enforced, uncompiled doc snippets) - reasons in the triage log.
+- Follow-up review recommended: false (first pass; no high patched; medium patches cover one root cause shared by two entries, verified by tests).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot ok at hash 74a3d518..., skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- Residual risks: template voice tests are not gated; no live Discord/yt-dlp run in tests by design; concurrent `/play` from two channels can move the call; any member can control the player.

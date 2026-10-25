@@ -65,15 +65,18 @@ impl Play {
         };
         let voice = ctx.voice();
         let call = match voice.call(guild) {
-            // Never move a call someone else is listening to.
-            Some(call) if call.channel().is_some_and(|c| c != channel) => {
+            // Never move a call someone is listening to; an idle one moves (VC-02).
+            Some(call)
+                if call.channel().is_some_and(|c| c != channel)
+                    && (call.now_playing().is_some() || call.queue_len() > 0) =>
+            {
                 let playing_in = call.channel().unwrap_or(channel);
                 return ctx
                     .reply_text(format!("I'm already playing in <#{playing_in}>."))
                     .await;
             }
-            Some(call) => call,
-            None => match voice.join(guild, channel).await {
+            Some(call) if call.channel() == Some(channel) => call,
+            _ => match voice.join(guild, channel).await {
                 Ok(call) => call,
                 Err(error) => return ctx.reply_text(format!("Could not join: {error}")).await,
             },

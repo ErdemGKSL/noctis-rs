@@ -454,7 +454,7 @@ declare `response = ephemeral` and answer with one `ctx.reply_text` line. They u
 with the public player.
 
 **Idle leave.** `.voice(VoiceConfig::default().idle_leave(Some(Duration::from_mins(5))))`
-leaves a call that stays alone or silent; log failed tracks with a `#[derive(Hook)]`
+leaves a call that stays idle (nothing playing); log failed tracks with a `#[derive(Hook)]`
 on `TrackError` (the queue has already moved on).
 
 ## 12. Testing voice

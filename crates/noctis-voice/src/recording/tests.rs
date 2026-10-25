@@ -385,3 +385,25 @@ async fn shutdown_leave_is_confirmed() {
     assert_eq!(channels, [json!("10"), Value::Null]);
     assert_eq!(recorder.commands(g), [play(&a, 1.0), RecordedCommand::Stop]);
 }
+
+/// Each recording App gets its own Songbird `Scheduler` (`VoiceShared::driver_config`):
+/// a second App on a fresh runtime still joins and plays after the first App's runtime
+/// was dropped (a shared scheduler would be bound to the dead runtime).
+#[test]
+fn recording_apps_survive_a_dropped_runtime() {
+    for app in ["voice-rec-rt-1", "voice-rec-rt-2"] {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap_or_else(|e| panic!("{e}"));
+        runtime.block_on(async {
+            let (running, recorder) = start(app).await;
+            let g = guild();
+            let call = join(&running, g, 10).await;
+            let a = enqueue_now(&call, track("a"));
+            assert_eq!(recorder.commands(g), [play(&a, 1.0)]);
+            running.stop().await;
+        });
+        drop(runtime);
+    }
+}
