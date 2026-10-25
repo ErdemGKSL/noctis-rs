@@ -51,6 +51,10 @@ setup)
   ;;
 sync)
   git fetch -q origin main || { echo "FAIL: fetch"; exit 1; }
+  # A conflicted rebase leaves a dirty tree too; never mistake it for an interrupted story's work.
+  if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+    echo "FAIL:conflict (rebase still in progress)"; git diff --name-only --diff-filter=U; exit 1
+  fi
   if [ -n "$(git status --porcelain)" ]; then
     # An interrupted story left work in the tree; keep it as it is (the story resumes). Its commits reach main
     # through lane.sh merge, which rebases them once the story is committed.
