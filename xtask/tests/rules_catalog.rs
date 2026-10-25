@@ -812,6 +812,7 @@ fn p13_p2_wrong_type() {
             .collect();
         assert_eq!(pending_lines.len(), 1, "{err}");
         assert!(!pending_lines[0].contains("P2-feature"), "{err}");
+        assert!(pending_lines[0].contains("expected a boolean"), "{err}");
         // The whole file is rejected, so the constants check runs (P11).
         assert!(
             err.contains("custom-id constant REF_LEN: not defined"),

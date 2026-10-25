@@ -2,7 +2,7 @@
 title: 'Story 14.4: Rules catalog completeness audit'
 type: 'chore'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '40f851e096d8b92a93f5fbaca59a9b9765bb0ce7'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -108,6 +108,33 @@ Audit (`audit_problems(catalog_text: &str) -> Vec<String>` in `xtask/src/rules_c
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 23 findings — high 0, medium 0, low 10, false 13, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) Audit section is checked only by a unit test, not by the `rules-catalog` CLI — the spec settles this (Never: "Do not make the audit section a `rules-catalog` CLI check"; D2); `mod.rs` documents it, and `cargo test --release --workspace` is a gate, so drift fails the gates.
+  - `[low]` `[reject]` (blind) By-construction Evidence column paths are never verified — all 26 rows' paths were checked now: each file exists and carries `// [<ID>]`; verifying them needs new path parsing and file reads, for docs drift a developer rarely meets.
+  - `[low]` `[reject]` (blind) "Why its input is dynamic" cells are never checked for content — every one of the 27 rows has a reason today; enforcing a non-empty second cell adds a new check for an unlikely edit.
+  - `[false]` `[reject]` (blind) `real_catalog_audit_is_complete` duplicates the runtime-only id list — it guards a named regression `audit_problems` cannot see: a classifier or Enforcement change that moves a row together with its table entry; the list is the spec's AC 3 set.
+  - `[false]` `[reject]` (blind) `p2 = true` is an unverified self-attestation — the epics AC reads "may remain only if tagged `p2`" and spec D1 chose the tag; no reading of the intent asks for a P2 allowlist.
+  - `[low]` `[patch]` (blind) CID-04 Notes cell does not name the renamed `cid_04_*` unit tests — real inconsistency with rows like MSG-08; patch: name the tests in the Notes cell.
+  - `[false]` `[reject]` (blind) Classifier unit test does not cover the new `(out of scope for v1)` cell — the classifier treats any parenthesis-only cell as DocOnly (`catalog.rs` l.19), and the real-catalog audit pins REG-06 under Documentation only and the summary's 3 documentation-only rows.
+  - `[low]` `[reject]` (blind) `Row::enforcement` is a test-only field built in production — about 135 short string clones per run of a dev tool; cfg-gating the field adds cfg branches at construction for no user-visible gain.
+  - `[false]` `[reject]` (blind) Q5 test covers only a public legacy source — the spec asks for exactly this case as evidence of the Q5 interpretation; no wrong behaviour is shown, and "no fallback" is the absence of code.
+  - `[false]` `[reject]` (blind) pending.rs test names skip pd5/pd6 — the spec asks for unit tests PD3, PD4, PD8, PD9; PD5 is covered by CLI `p13_p2_wrong_type`, PD6 by `p2_satisfied_pending`, PD10 by the existing unknown-id tests.
+  - `[low]` `[patch]` (blind) `p13_p2_wrong_type` does not assert the type error — an unrelated TOML failure would pass; patch: assert stderr contains `expected a boolean`.
+  - `[low]` `[reject]` (blind) Run-on sentence in the §6 pending-file paragraph — the wording is dictated verbatim by spec task (c), so changing it edits the spec; the failure on an untagged entry is stated in the pending file header and the CLI message.
+  - `[false]` `[reject]` (edge) Non-P2 entry tagged `p2 = true` passes — same as the self-attestation finding: the intent asks for a tag.
+  - `[low]` `[reject]` (edge) `~~~` fences inside the audit section are not skipped — the catalog uses no `~~~` fence; handling it adds a branch for a case nobody writes.
+  - `[false]` `[reject]` (edge) Indented audit table rows are ignored — such a row makes `real_catalog_audit_is_complete` fail loudly ("is not listed"), never pass wrongly; the catalog's only indented `|` lines are inside a code block.
+  - `[low]` `[reject]` (edge) By-construction evidence files can go stale — same as the Evidence-column finding; all paths verified today.
+  - `[false]` `[reject]` (intent) AC 2 met only in the catalog, no static-input rule moved to compile time — the intent allows "recorded with the reason its input is dynamic"; MSG-04 ids are runtime `Vec`s and `components! {}` semantics are fixed by the spec's Never list.
+  - `[false]` `[reject]` (intent) By-construction list has 26 rows, adding LOC-04 — the epics AC says "exactly those the catalog marks so (at Gate 2: …)"; spec D3 settles LOC-04 (FR-42).
+  - `[low]` `[patch]` (intent) By-construction set is not pinned to an expected list — spec AC 2 names the exact 26 ids for `real_catalog_audit_is_complete`, but the test pins only the runtime-only list; patch: add the by-construction expected-ids assertion.
+  - `[false]` `[reject]` (intent) Audit lives in a unit test, not in `xtask rules-catalog` — settled by spec D2 and the Never list; the CLI still reports the AC 1 summary line.
+  - `[false]` `[reject]` (intent) `p2` tag is syntactic, not semantic — the epics text asks for a tag; "fails" in the docs matches the CLI's exit 1 while the entry stays counted as pending.
+  - `[low]` `[patch]` (intent) PRD Q1's second half (per-Text-Display maximum) is not recorded — the CV2-04 Unconfirmed row names only the counting unit; patch: record the second half and its conservative default.
+  - `[false]` `[reject]` (intent) App-build rows with static input were not reviewed — maintainer decision §4 places rules that need the combined Modules at App build, and the AC targets rules "checked only at runtime".
+
 ## Design Notes
 
 **Audit section layout** (bare ids in first cells):
@@ -148,3 +175,12 @@ Find each by-construction evidence file with `grep -rn "// \[<ID>\]" crates`. Dy
 - `tools/story-loop/bg.sh cargo test --release --workspace` -- pass
 - `cargo run --release -p xtask -- api-snapshot` and `cargo run --release -p xtask -- skill-check` -- pass unchanged (no API change)
 - `cargo run --release -p xtask -- deps-check`, `cargo deny check`, `cargo +1.91 check --release --workspace` -- pass
+
+## Auto Run Result
+
+- **Summary:** v1 rules audit of `docs/discord-rules.md`: new "v1 rules audit" section listing 26 by-construction rules (with `// [<ID>]` evidence) and 27 runtime-only rules with the reason their input is dynamic; `real_catalog_audit_is_complete` (xtask unit test) keeps the lists equal to what `rules-catalog` derives; `rules-pending.toml` entries must carry `p2 = true`; PRD Q1/Q5 recorded; `rules-catalog` reports 135 rules: 130 covered, 0 pending, 3 documentation-only, 2 aliases.
+- **Files changed:** `docs/discord-rules.md` (audit section, CID-04 notes, CV2-04 Q1 row); `xtask/src/rules_catalog/{audit.rs,catalog.rs,mod.rs,pending.rs}` (audit parser/check, enforcement field, `p2` tag); `xtask/rules-pending.toml` (p2 header); `xtask/tests/rules_catalog.rs` (CLI tests); `crates/noctis-core/src/registry/tests.rs`, `crates/noctis-core/src/responder/tests/components.rs` (renamed/added rule-tagged tests); `CHANGELOG.md`.
+- **Review findings:** 23 total (high 0, medium 0, low 10, false 13). Patched 4 low: CID-04 Notes name the `cid_04_*` tests; `p13_p2_wrong_type` asserts `expected a boolean`; by-construction expected-ids assertion added; PRD Q1 per-Text-Display maximum recorded. Deferred 0. Rejected 19 (6 low, 13 false) with reasons in the Review Triage Log (audit stays a unit test per D2; p2 tag per D1; LOC-04 per D3; unlikely docs drift cases).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 4).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green; `cargo test --release -p xtask` and `rules-catalog` re-run after patches, green. CI paused by maintainer.
+- **Residual risks:** Evidence-column paths and "why dynamic" cells are not machine-verified (all checked manually today).

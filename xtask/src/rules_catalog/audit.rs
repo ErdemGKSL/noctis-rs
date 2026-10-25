@@ -342,5 +342,20 @@ Intro.
         runtime_only.sort_unstable();
         expected.sort_unstable();
         assert_eq!(runtime_only, expected);
+        let mut by_construction: Vec<&str> = catalog
+            .rows
+            .iter()
+            .filter(|r| List::ByConstruction.contains(r))
+            .map(|r| r.id.as_str())
+            .collect();
+        let mut expected = vec![
+            "OPT-12", "OPT-14", "LOC-04", "CTX-02", "CTX-03", "META-05", "INT-03", "INT-04",
+            "INT-06", "INT-08", "INT-09", "INT-10", "CID-05", "CID-07", "CV2-01", "CV2-02",
+            "CV2-12", "CV2-14", "MSG-03", "MSG-05", "MSG-07", "ATT-05", "ATT-07", "WH-01", "WH-03",
+            "GW-07",
+        ];
+        by_construction.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(by_construction, expected);
     }
 }
