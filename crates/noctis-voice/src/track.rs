@@ -54,7 +54,7 @@ pub enum TrackSource {
 /// assert!(matches!(track.source(), TrackSource::Url(_)));
 /// assert!(Track::url("https://discord.com/api/v10/users/@me").is_err());
 /// assert!(Track::file("").is_err());
-/// let piped = Track::command("yt-dlp", ["-o", "-", "https://example.com/v"])?;
+/// let piped = Track::command("yt-dlp", ["-o", "-", "--", "https://example.com/v"])?;
 /// assert!(matches!(piped.source(), TrackSource::Command(_)));
 /// # Ok::<(), noctis_voice::VoiceError>(())
 /// ```
@@ -94,19 +94,28 @@ impl Track {
     /// (connect timeout, redirect cap, no proxy, no bot token or Noctis
     /// headers).
     ///
+    /// The media client fetches any public or private host (loopback,
+    /// `10.0.0.0/8`, `169.254.169.254`, ...), directly or through
+    /// redirects: a bot that takes URLs from users should allow-list hosts
+    /// (for example only `cdn.discordapp.com` attachments) before calling
+    /// this.
+    ///
     /// # Errors
     ///
     /// [`VoiceError::InvalidInput`] for a URL that is empty, malformed,
     /// longer than 4096 bytes, not `http`/`https`, carries credentials
     /// (`user:pass@`), or points at Discord's API (`discord.com/api`,
-    /// `discordapp.com/api` or a subdomain's).
+    /// `discordapp.com/api` or a subdomain's; the first path segment is
+    /// percent-decoded once, so `%61pi` counts as `api`).
     pub fn url(url: impl AsRef<str>) -> Result<Self, VoiceError> {
         let url = check_url(url.as_ref())?;
         Ok(Self::new(TrackSource::Url(url.into()), Vec::new()))
     }
 
-    /// A child process whose stdout is the audio (`yt-dlp -o - URL`,
-    /// `ffmpeg … -f opus -`). It is spawned when the track becomes current,
+    /// A child process whose stdout is the audio (`yt-dlp -o - -- URL`,
+    /// `ffmpeg … -f opus -`). The args are passed verbatim with no shell,
+    /// but the program still parses them as options, so put `--` before
+    /// user input. It is spawned when the track becomes current,
     /// with stdin and stderr closed, and killed and reaped when the track
     /// ends, is skipped or stopped, or the call is left.
     ///

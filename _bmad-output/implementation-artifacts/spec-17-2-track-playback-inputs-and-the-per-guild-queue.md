@@ -2,17 +2,24 @@
 title: 'Story 17.2: Track playback, inputs and the per-guild queue'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '3f8d1593c584695ae8e541c4caea8d3464217626'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-17-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-17-1-voice-connections-through-noctis-gateway.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      No test drives a join that resolves Ok, so the two `shared.connected(guild, joining.generation)` calls in `join_inner` (the idle-leave arm point) are unpinned.
+    evidence: |-
+      Verification-gap layer (pre-verified): `idle_leave_leaves` calls `running.shared.connected(..)` directly and every join test in `tests/voice_gateway.rs` stays pending, times out, is interrupted or fails in the driver. Deleting either call keeps every gate green while `idle_leave` never fires for real calls. A resolved join needs a fake voice server (UDP/WS) the repo does not have; close the gap when Story 17.4's `recording()` fake exists.
+    location: >-
+      crates/noctis-voice/src/voice.rs:107, crates/noctis-voice/src/voice.rs:132
+    severity: medium
 ---
 
 <intent-contract>
@@ -187,6 +194,46 @@ Extension events (core):
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 36 findings — high 0, medium 14, low 7, false 15, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) Idle leave can fire after a track starts: the elapsed timer spawns `leave()` detached and `idle_leave` removes by generation without re-checking idleness; `Locked.timer` never cleared — confirmed at `queue.rs` `sync_idle` and `call.rs` `idle_leave`/`remove_generation`; patch: remove only when the queue is still idle (the stale-timer sub-claim is harmless, see the edge row below).
+  - `[medium]` `[patch]` (blind) Media client has no read/response timeout, so a stalled or silently dead connection blocks the lazy `HttpRequest` forever — confirmed: only `connect_timeout` is set and Songbird 0.6.1 has no preparation timeout; `read_timeout` would kill paused tracks (the consumer stops reading), so patch: TCP keepalive on the client plus a doc sentence.
+  - `[medium]` `[patch]` (blind) `is_discord_api` bypassable with percent-encoding (`/%61pi/`) — confirmed: the first segment is compared raw; patch: percent-decode it before comparing, plus test rows.
+  - `[medium]` `[patch]` (blind) URL tracks allow SSRF into loopback/private/link-local hosts, and the template feeds any member's string to `Track::url` — confirmed; the spec deliberately accepts `127.0.0.1` (tests need it), so no code guard; patch: warnings in `Track::url` rustdoc, voice.md and the template's `/play`.
+  - `[low]` `[reject]` (blind) Redirect policy allows https to http downgrade — real but no credentials or headers are ever sent, users will rarely meet it, and the fix adds a branch and a policy decision.
+  - `[low]` `[reject]` (blind) Extension events ride the unbounded lifecycle channel — the channel is pre-existing; voice events are bounded by track transitions (at most `max_queue` per burst), and a bound/overflow policy is new design, not a direct correction.
+  - `[medium]` `[patch]` (blind) `SongbirdPlayer` has no tests (slot mirror, token-mismatch drop, `stop` token reset, `Errored` extraction, event registration) — same root as the vgap `Report` row; patch: `Report`-to-queue mapping tests, plus slot tests on an unconnected `Call` if Songbird allows.
+  - `[medium]` `[defer]` (blind) Real join path never calls `connected` in a test — same root as the vgap row; deferred: needs a fake voice server (Story 17.4).
+  - `[low]` `[reject]` (blind) Child kill-and-reap promise untested — the kill is Songbird's `ChildContainer` drop (`ChildCompose` wraps the child in it); a process-liveness test is platform-specific and adds complexity for a regression developers are unlikely to meet.
+  - `[medium]` `[patch]` (blind) `Track::command` yt-dlp examples pass user URLs without `--`, inviting option injection (`--exec`) — confirmed in voice.md L194 and the track.rs docs that agents copy; patch: `--` before user input plus one sentence.
+  - `[low]` `[reject]` (blind) Template `/play`, `/skip`, `/stop` have no authorization — an example design choice like 17.1's `/join`/`/leave`; no defect in noctis, and access policy is the bot author's.
+  - `[low]` `[reject]` (blind) `TrackError.error` can carry URL query secrets while the doc says "never a token" — the claim refers to the bot token, which is never sent; the URL is the bot's own input and is already in `TrackInfo::source`; low and not met in everyday use.
+  - `[low]` `[patch]` (blind) `proxy_environment_is_ignored` passes vacuously if the child test path changes (0 tests, exit 0) — confirmed: only `status.success()` is checked; patch: assert `1 passed` in the child's stdout.
+  - `[low]` `[reject]` (blind) Template `/play` shows `queue_len()` as position and `enqueue` burns ids on `QueueFull` — cosmetic: the position counts the current track as #1 and only a concurrent `/play` skews it; id gaps break no uniqueness.
+  - `[false]` `[reject]` (blind) `ExtensionFired` equality is pointer identity — the spec's Code Map deliberately chose `Arc::ptr_eq`, and no caller compares extension payloads for equality; no named harm.
+  - `[false]` `[reject]` (blind) Extension hooks silently disappear through `Hooks::of` — every current call site is correct: `of_fired` routes extensions through `by_extension`, `wants` is only used for `Fired::from_shard` (never extension), and `of` documents the empty slot.
+  - `[medium]` `[patch]` (edge) Enqueue/resume after the idle sleep but before the spawned leave removes the entry still leaves the call — same root as the blind idle row; patched there.
+  - `[false]` `[reject]` (edge) Fired timer kept in `locked.timer` can block re-arming when leave is a no-op — the leave only no-ops when the entry of that generation is gone (its queue was shut down and closed) or the App is dropped; with the idle re-check, a not-idle result means `sync_idle` already took the timer.
+  - `[false]` `[reject]` (edge) `TrackEnd`/`TrackError` without a preceding `TrackStart` — the spec settled it: `TrackStart` fires on `Playable`, and the matrix rows "track error (create…)" and "error chain" expect `TrackError` without a start.
+  - `[medium]` `[patch]` (edge) `is_discord_api` percent-encoding bypass — same root as the blind row; patched there.
+  - `[false]` `[reject]` (edge) Enqueue on a pending call then a failed join discards the track with no event — the spec matrix "leave with queue" settles it: removal stops the player, counts `stopped`, emits no track events; enqueue on a pending call is the spec's tested path.
+  - `[medium]` `[patch]` (edge) Aborting the timer after the sleep cannot stop the detached leave — same root as the blind idle row; patched there.
+  - `[medium]` `[patch]` (vgap) `SongbirdPlayer`/`Report` driver-event mapping untested — pre-verified regression gap; patch: in-crate `Report` tests over a `QueueCell`.
+  - `[medium]` `[defer]` (vgap) `join_inner` marking the call connected never exercised — pre-verified; filed disposition `defer` accepted: a resolved join needs a fake voice server the repo lacks.
+  - `[medium]` `[patch]` (vgap) App shutdown with a non-empty queue: `take_all`'s `queue.shutdown()` unpinned — pre-verified; patch: e2e test asserting `Stop(token)`, `stopped` +1 and no hook event after `running.stop()`.
+  - `[medium]` `[patch]` (intent D1) Driver-to-queue event path not exercised — same root as the `SongbirdPlayer` rows; patched there (Songbird's test driver is `#[cfg(test)]`-only, which the AC allows).
+  - `[false]` `[reject]` (intent D2) Only WAV is decoded in tests — the spec's Design Notes deliberately prove decoding on a generated WAV; other formats are wired through features with no fixture encoder in the repo.
+  - `[false]` `[reject]` (intent D3) Header test calls `media_client` directly — the plugin uses the same function; the auditor itself notes no behavioural gap.
+  - `[false]` `[reject]` (intent D4) No event when a track ends by leave/shutdown — settled by the spec matrix "leave with queue" and the AD-30 amendment.
+  - `[false]` `[reject]` (intent D5) Unpaired Start/End — settled by the spec (start on `Playable`) and the memlog decision.
+  - `[false]` `[reject]` (intent D6) Events are hook payloads via a new core seam — the spec's intent-contract approach selects this seam; Modules handle them with `#[derive(Hook)]`.
+  - `[false]` `[reject]` (intent D7) "Never panics a handler" only at the queue surface — `lifecycle/tests.rs::extension_events_run_in_order` covers erroring and panicking extension hooks reported to the Error Sinks.
+  - `[false]` `[reject]` (intent D8) `set_volume` vs `volume` naming — the spec's task list names `set_volume(f32)` plus the `volume()` getter.
+  - `[false]` `[reject]` (intent D9) Paused counts as idle — the spec's idle-leave matrix defines idle as "no current track or the current one paused".
+  - `[false]` `[reject]` (intent D10) Template covers only `/play`, `/skip`, `/stop` — the spec's task list selects these; the Usage Skill documents the full queue API, satisfying "template and Usage Skill document".
+  - `[false]` `[reject]` (intent D11) Maintainer decisions §10 amended by the diff — the spec directs the amendment and the maintainer delegated decisions; no violation.
+
 ## Design Notes
 
 **Typed events through a core seam (decision).** `EventPayload` and `HookEvent` are sealed and gateway- or lifecycle-only, and core has no way for a plugin to deliver its own events to Modules. The lifecycle hook machinery is already type-erased (`from_fired`) and already reaches `#[derive(Hook)]` through `E: HookEvent`. One `Extension` kind with a `TypeId`-checked downcast therefore gives plugins typed, ordered, App-wide events. Error reporting, Module ownership, the end-of-run drain and the derive all come with it, and the macros do not change. `Emitter` holds a `Weak` because `VoiceShared` lives in the App's own state (an `Arc` would leak the App). Events fire on the hook queue (not the gateway lanes), so a slow track hook never delays gateway events.
@@ -218,3 +265,14 @@ impl Np { #[handler] async fn handle(self, ctx: HookCtx, e: TrackStart) -> Handl
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `api-snapshot` -- ok; the printed hash goes into `SKILL.md`
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run only by the gate script.
+
+## Auto Run Result
+
+- **Summary:** `noctis-voice` gains track playback: `Track` inputs (URL over a dedicated no-proxy media client that refuses Discord API hosts, file, child command), a bounded per-guild Noctis-owned queue (enqueue/skip/stop/pause/resume/volume, `max_queue`) that hands Songbird only the current track via a crate-private `Player` with per-track tokens, idle leave, and typed `TrackStart`/`TrackEnd`/`TrackError` events delivered to Modules through a new core `Extension` lifecycle seam (`#[derive(Hook)]` works unchanged). Template gains `/play`, `/skip`, `/stop`; Usage Skill and public API snapshot updated.
+- **Files changed:** `noctis-core` lifecycle/app/observe (extension event seam + tests); `noctis-voice` `track.rs`, `queue.rs` (+fake, tests), `player.rs`, `media.rs` (+tests), `events.rs`, `call.rs`, `voice.rs`, `config.rs`, `error.rs`, `plugin.rs`, `test_support.rs`, `tests.rs`, `tests/track_events_derive.rs`; `noctis` re-exports; `xtask/src/deps_check.rs` (reqwest edge for asset-http); `xtask/public-api.txt`; `examples/project-template/` (voice module, locales, tests, AGENTS.md, Usage Skill voice/app references, Cargo.lock).
+- **Review findings:** 36 (high 0, medium 14, low 7, false 15). Patched (10 entries, all medium except 1 low; distinct fixes): idle leave re-checks idleness before removing the call; media client TCP keepalive + doc; `is_discord_api` percent-decodes the first path segment; SSRF warnings in `Track::url` docs, voice.md and template `/play`; `--` before user URLs in yt-dlp examples; `Report`-to-queue driver mapping tests; app-shutdown-with-queue e2e test; `proxy_environment_is_ignored` asserts `1 passed`.
+- **Deferred (2, same root):** real join path marking the call connected is untested; needs a fake voice server (Story 17.4).
+- **Rejected:** 7 low (https-to-http redirect, unbounded lifecycle channel, child reap test, template authorization, URL secrets in `TrackError`, cosmetic queue position/id gaps) and 15 false (all settled by the spec matrix, Design Notes or existing tests); reasons recorded in the Review Triage Log.
+- **Follow-up review recommended: true** (first pass, 0 high / 9 medium / 1 low patched). Named risk: the idle-leave race fix (re-check idleness inside `idle_leave` against the detached timer) touches concurrency between `sync_idle`, `enqueue`/`resume` and removal by generation, and is only covered by unit-level queue tests.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); `cargo hack` left to the epic-last gate. CI paused by the maintainer.
+- **Residual risks:** no test drives a real Songbird join/driver end to end (deferred to 17.4); URL tracks can reach private hosts by design (documented, no guard); redirect downgrade to http allowed.

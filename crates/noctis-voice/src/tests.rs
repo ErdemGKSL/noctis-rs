@@ -454,3 +454,114 @@ async fn idle_leave_leaves() {
     assert_eq!(call.channel(), None);
     running.stop().await;
 }
+
+/// Activity after the idle timer's sleep but before its removal keeps the
+/// call: the removal re-checks idleness.
+#[tokio::test(flavor = "multi_thread")]
+async fn idle_leave_rechecks_idleness() {
+    let running = Running::start(
+        "voice-idle-race",
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+    )
+    .await;
+    let call = running.pending_call().await;
+    running.shared.connected(call.guild(), call.generation);
+    call.enqueue(track("a"))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    // What the elapsed timer runs, after the enqueue landed.
+    running
+        .shared
+        .idle_leave(call.guild(), call.generation)
+        .await;
+    assert_eq!(running.voice.active_calls(), 1, "a playing call stays");
+    assert!(call.pause().unwrap_or_else(|e| panic!("{e}")));
+    running
+        .shared
+        .idle_leave(call.guild(), call.generation)
+        .await;
+    assert_eq!(running.voice.active_calls(), 0, "an idle call leaves");
+    running.stop().await;
+}
+
+/// App shutdown with a queue: the current track is stopped on the player
+/// and counted `stopped`, and no track event fires.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_stops_the_current_track() {
+    const APP: &str = "voice-shutdown";
+    let running = Running::start(
+        APP,
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+    )
+    .await;
+    let call = running.pending_call().await;
+    for name in ["a", "b"] {
+        call.enqueue(track(name))
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+    let token = running.token();
+    let (played, seen) = (running.played.clone(), Arc::clone(&running.seen));
+    let stopped = tracks(APP, "stopped");
+    running.stop().await;
+    assert_eq!(played.all().last(), Some(&crate::queue::Cmd::Stop(token)));
+    until("the stopped counter", || {
+        tracks(APP, "stopped") == stopped + 1
+    })
+    .await;
+    assert!(seen.get().is_empty(), "{:?}", seen.get());
+}
+
+/// The driver-event mapping: `Playable`, `End` and `Error` reach the hooks
+/// as `TrackStart`, `TrackEnd{Finished}` and `TrackError`; a stale token
+/// and a dropped queue are ignored.
+#[tokio::test(flavor = "multi_thread")]
+async fn driver_reports_map_to_events() {
+    use songbird::events::{EventContext, TrackEvent};
+
+    use crate::player::Report;
+
+    let running = Running::start(
+        "voice-report",
+        VoiceConfig::default().join_timeout(Duration::from_mins(1)),
+    )
+    .await;
+    let call = running.pending_call().await;
+    let queue = running.queue(&call);
+    for name in ["a", "b"] {
+        call.enqueue(track(name))
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+    let report = |token, event| {
+        Report {
+            queue: Arc::downgrade(&queue),
+            token,
+            event,
+        }
+        .report(&EventContext::Track(&[]));
+    };
+    let a = running.token();
+    report(a, TrackEvent::Playable);
+    report(a, TrackEvent::End);
+    let b = running.token();
+    report(a, TrackEvent::Error); // stale: ignored
+    Report {
+        queue: std::sync::Weak::new(),
+        token: b,
+        event: TrackEvent::End,
+    }
+    .report(&EventContext::Track(&[])); // dropped queue: ignored
+    report(b, TrackEvent::Error);
+    let empty = format!("empty {}", guild());
+    assert_eq!(
+        running.seen(4).await,
+        [
+            "start a",
+            "end a finished",
+            "error b the track failed",
+            empty.as_str(),
+        ]
+    );
+    running.stop().await;
+}

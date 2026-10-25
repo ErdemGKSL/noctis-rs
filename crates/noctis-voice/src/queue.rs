@@ -427,6 +427,12 @@ impl QueueCell {
         locked.timer = Some(task.abort_handle());
     }
 
+    /// Whether the connected, open call is idle (what arms the idle timer).
+    pub(crate) fn is_idle(&self) -> bool {
+        let locked = self.lock();
+        locked.connected && !locked.closed && locked.queue.is_idle()
+    }
+
     /// The call connected: the idle timer may arm.
     pub(crate) fn set_connected(&self) {
         let mut locked = self.lock();

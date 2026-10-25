@@ -71,6 +71,9 @@ impl Leave {
 /// `/play url`: queues a media URL in this server's call (join it first with `/join`).
 /// `Track::url` refuses non-http(s) URLs, credentials and Discord's API; the queue
 /// refuses more than `max_queue` tracks (`VoiceError::QueueFull`).
+/// Warning: the media client fetches any public or private host (loopback,
+/// `169.254.169.254`, ...), so a real bot should allow-list hosts (for example only
+/// `cdn.discordapp.com` attachments) before `Track::url`.
 #[derive(SlashCommand, Debug)]
 #[command("play", contexts = [Guild], response = ephemeral)]
 pub struct Play {

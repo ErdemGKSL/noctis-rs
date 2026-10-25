@@ -179,7 +179,7 @@ queue's current track. Every constructor checks its input and returns
 | Constructor | Source | Refused |
 | --- | --- | --- |
 | `Track::file(path)` | a local file (`TrackSource::File`) | an empty path. A missing file is found only at play time: `TrackError`, then the next track. |
-| `Track::url(url)` | an `http`/`https` media URL (`TrackSource::Url`), fetched with the App's media client (§9) | empty or malformed URLs, more than 4096 bytes, any other scheme (`ftp:`, `file:`, `data:`), credentials (`https://user:pass@host/..`; they are never sent), and Discord's API: host `discord.com` or `discordapp.com` or a subdomain (`ptb.discord.com`) with `api` as the first path segment, case-insensitive, trailing dot ignored. `https://cdn.discordapp.com/attachments/..` is fine. |
+| `Track::url(url)` | an `http`/`https` media URL (`TrackSource::Url`), fetched with the App's media client (§9) | empty or malformed URLs, more than 4096 bytes, any other scheme (`ftp:`, `file:`, `data:`), credentials (`https://user:pass@host/..`; they are never sent), and Discord's API: host `discord.com` or `discordapp.com` or a subdomain (`ptb.discord.com`) with `api` as the first path segment (percent-decoded once, so `%61pi` counts), case-insensitive, trailing dot ignored. `https://cdn.discordapp.com/attachments/..` is fine. Any other host is fetched, private ones too (loopback, `10.x`, `169.254.169.254`): when users supply URLs, allow-list hosts (for example only `cdn.discordapp.com` attachments) before `Track::url`. |
 | `Track::command(program, args)` | a child process whose stdout is the audio (`TrackSource::Command(program)`) | an empty program. It is spawned when the track becomes current (stdin and stderr closed) and killed and reaped when the track ends, is skipped or stopped, or the call is left. A program that does not start is a `TrackError` at play time. |
 
 Builders: `.title(impl Into<String>)` (at most 256 chars, a longer one is cut at a
@@ -191,8 +191,11 @@ use noctis::voice::Track;
 
 let a = Track::url("https://cdn.example.com/song.ogg")?.title("Song").requested_by(ctx.user_id());
 let b = Track::file("assets/intro.wav")?;
-let c = Track::command("yt-dlp", ["-f", "bestaudio[acodec=opus]", "-o", "-", url.as_str()])?;
+let c = Track::command("yt-dlp", ["-f", "bestaudio[acodec=opus]", "-o", "-", "--", url.as_str()])?;
 ```
+
+`Track::command` passes args verbatim with no shell, but the program still parses them
+as options (a user value like `--exec=...` would be one), so put `--` before user input.
 
 Tip: Ogg/WebM Opus at 48 kHz is the cheapest input (decoding Opus is light; a
 pass-through path that skips decode and re-encode arrives later). With `yt-dlp`,
@@ -316,8 +319,13 @@ pending call (join not resolved) never arms it. Default `None`: never.
 
 **Media HTTP.** URL tracks are fetched by the App's own media client, never by the
 Discord HTTP client:
-- connect timeout `media_connect_timeout` (default 10 s); no total timeout, because a
-  track streams for minutes;
+- connect timeout `media_connect_timeout` (default 10 s); no total or read timeout,
+  because a track streams for minutes and a paused one stops reading. A connection
+  that dies silently is detected by TCP keepalive and fails the track (`TrackError`);
+  a live server that stalls is ended with `skip`;
+- any public or private host is fetched (loopback, private ranges, `169.254.169.254`),
+  directly or through redirects: a bot that takes URLs from users should allow-list
+  hosts (for example only `cdn.discordapp.com` attachments) before `Track::url`;
 - at most `media_max_redirects` redirects (default 5); one more fails the track
   (`TrackError`);
 - a redirect to Discord's API (same rule as `Track::url`) is refused before

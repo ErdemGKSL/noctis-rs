@@ -167,14 +167,14 @@ impl Player for SongbirdPlayer {
 }
 
 /// Reports one driver event of `token`'s track to its queue.
-struct Report {
-    queue: Weak<QueueCell>,
-    token: u64,
-    event: TrackEvent,
+pub(crate) struct Report {
+    pub(crate) queue: Weak<QueueCell>,
+    pub(crate) token: u64,
+    pub(crate) event: TrackEvent,
 }
 
 impl Report {
-    fn report(&self, ctx: &EventContext<'_>) {
+    pub(crate) fn report(&self, ctx: &EventContext<'_>) {
         let Some(queue) = self.queue.upgrade() else {
             return;
         };
@@ -218,3 +218,6 @@ impl EventHandler for Report {
         Box::pin(ready(None))
     }
 }
+
+#[cfg(test)]
+mod tests;

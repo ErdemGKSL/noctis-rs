@@ -45,6 +45,9 @@ fn discord_api_hosts() {
         ("https://ptb.discord.com/api/x", true),
         ("https://discordapp.com/api", true),
         ("https://canary.discordapp.com/API/v9", true),
+        ("https://discord.com/%61pi/v10/x", true),
+        ("https://discord.com/%41PI/x", true),
+        ("https://discord.com/%2561pi/x", false),
         ("https://discord.com/apix", false),
         ("https://discord.com/", false),
         ("https://dïscord.com/api", false),
@@ -137,7 +140,7 @@ async fn connection_refused_fails_fast() {
 #[test]
 fn proxy_environment_is_ignored() {
     let exe = std::env::current_exe().unwrap_or_else(|e| panic!("{e}"));
-    let status = std::process::Command::new(exe)
+    let output = std::process::Command::new(exe)
         .args(["--exact", "media::tests::proxy_child", "--nocapture"])
         .env("NOCTIS_VOICE_PROXY_CHILD", "1")
         .env("HTTP_PROXY", "http://127.0.0.1:1")
@@ -148,9 +151,14 @@ fn proxy_environment_is_ignored() {
         .env("all_proxy", "http://127.0.0.1:1")
         .env_remove("NO_PROXY")
         .env_remove("no_proxy")
-        .status()
+        .output()
         .unwrap_or_else(|e| panic!("{e}"));
-    assert!(status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("1 passed"),
+        "the child ran no test: {stdout}"
+    );
 }
 
 /// The child half of `proxy_environment_is_ignored`; a no-op elsewhere.

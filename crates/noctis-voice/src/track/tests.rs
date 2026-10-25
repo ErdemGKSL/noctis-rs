@@ -27,6 +27,7 @@ fn urls_ok() {
         "http://127.0.0.1:8080/x.mp3",
         "https://dïscord.com/api",
         "https://discord.com/apix",
+        "https://discord.com/%2561pi/x",
     ] {
         let track = Track::url(url).unwrap_or_else(|e| panic!("{url}: {e}"));
         assert!(matches!(track.source(), TrackSource::Url(_)), "{url}");
@@ -41,6 +42,8 @@ fn urls_refused() {
         ("https://discord.com./api", "Discord's API"),
         ("https://ptb.discord.com/api/x", "Discord's API"),
         ("https://discordapp.com/api", "Discord's API"),
+        ("https://discord.com/%61pi/v10/x", "Discord's API"),
+        ("https://discord.com/%41PI/x", "Discord's API"),
         ("ftp://h/a.mp3", "scheme"),
         ("file:///a", "scheme"),
         ("data:audio/ogg;base64,AAAA", "scheme"),

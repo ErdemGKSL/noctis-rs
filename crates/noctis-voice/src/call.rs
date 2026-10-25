@@ -282,10 +282,13 @@ impl VoiceInner {
         }
     }
 
-    /// Idle leave: removes `guild`'s entry of `generation` and sends op 4
-    /// leave, like `CallHandle::leave`.
-    async fn idle_leave(&self, guild: Id<GuildMarker>, generation: u64) {
-        let Some(entry) = self.remove_generation(guild, generation) else {
+    /// Idle leave: removes `guild`'s entry of `generation` if its queue is
+    /// still idle and sends op 4 leave, like `CallHandle::leave`.
+    pub(crate) async fn idle_leave(&self, guild: Id<GuildMarker>, generation: u64) {
+        // Activity between the timer's sleep and this removal keeps the call.
+        let Some(entry) = self.remove_where(guild, |entry| {
+            entry.generation == generation && entry.queue.is_idle()
+        }) else {
             return;
         };
         tracing::debug!(target: "noctis::voice", guild = guild.get(), "idle leave");
