@@ -2,10 +2,10 @@
 title: 'Story 14.5: Usage Skill completeness and agent trial'
 type: 'chore'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '78b5c6eff1a22524db387d7df6e3873a653958ce'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/examples/project-template/AGENTS.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
@@ -114,6 +114,46 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 36 findings — high 0, medium 3, low 16, false 16, maybe-false 1
+- findings:
+  - `[false]` `[reject]` blind: `catalog_ids` is a second catalog parser; a bold id in an audit table breaks skill-check while rules-catalog stays green — `catalog::parse` also takes every table row whose first cell is a bold id (any section) and reports a duplicate as "duplicate catalog row", so both gates fail together; the spec mandates this parser plus the equality unit test.
+  - `[false]` `[reject]` blind: missing `docs/` silently skips Q19 — without `docs/` the catalog `docs/discord-rules.md` cannot be read and Q17 reports `cannot read`, so the run fails loudly.
+  - `[low]` `[reject]` blind: Q14 fix cell only needs a `.md` substring, not an existing reference — matches the spec's Q14 rule; resolving names against the reference set adds a check for a rare stale-name case.
+  - `[low]` `[reject]` blind: `Lexer::strip` mislexes `'\"'` and raw strings — real but no skill or docs fence uses them (real repo passes); the fix adds raw-string/escape branches for an unlikely case.
+  - `[low]` `[reject]` blind: index row `**CMD-01** name` gives a confusing "is not a catalog rule" — the spec's allowed id-cell forms are exact; rare, and fixing needs a new branch.
+  - `[low]` `[reject]` blind: index section ends only at `# `/`## `; a second header row inside it is read as an id row — the real index is the file's last section; bare `##`/setext headings and split tables are unlikely; the fix adds parsing.
+  - `[low]` `[reject]` blind: template `AGENTS.md`/`README.md` not covered by marker/UD-7 checks — tree is clean; widening scope is a new check for an unlikely regression.
+  - `[low]` `[patch]` blind: patterns.md §11 / Common mistakes / adapters.md §3 call the id index "capped" but never cap it, and the read-then-write race is not explained — doc correction in the three places.
+  - `[low]` `[patch]` blind: patterns.md snippets use undefined locale keys and helpers with no warning — one intro sentence that they are placeholders to add to the locales first.
+  - `[medium]` `[patch]` blind: components-v2.md "`derive(Choices)` enums have no options helper; map `Severity::ALL` yourself" contradicts `defaults(options = SomeChoicesEnum)` in §10a of the same file and suggests unlocalized `label()` — replace the sentence with a pointer to `defaults(options = …)`.
+  - `[low]` `[patch]` blind: CHANGELOG says the trial's gaps "are now covered" while the summary lists gaps no change addressed — reword CHANGELOG and add a "gaps not changed" list to the summary.
+  - `[false]` `[reject]` blind: honest trial count is 3/5 (trial 1 fails clippy) and needs a rerun — D5 sets success to the implementer's `cargo build --release --locked`; clippy is reported, not gated; the forced rebuilds give 4/5.
+  - `[false]` `[reject]` blind: summary commits absolute machine paths and a model/CLI string — the spec prescribes those paths and requires the model to be recorded; no personal data, no harm.
+  - `[low]` `[patch]` blind: CLI tests lack Q16, Q12, Q3/Q4 and duplicate-id cases — only the Q16 wiring is unreached (Q3/Q4 run through `references()` hit by `q1_missing_reference`, Q12 through `index()` hit by `q9_index_missing_id`, Q17 has a CLI test); grouped with the vgap Q16 entry.
+  - `[low]` `[reject]` blind: Q18 accepts relative link targets — the spec's Q18 row allows relative or absolute targets and the real skill uses the canonical URL; tightening is a new guard for an unlikely regression.
+  - `[false]` `[reject]` blind: `v0-alpha`, `v0)` flagged; edge cases untested — exactly the spec's Q6 rule (only `.`+digit exempts); flagging them is the intended behaviour.
+  - `[low]` `[reject]` edge: `md_lines` opens a fence on a prose line starting with inline triple backticks or a 4+-indented fence — every consequence is a loud problem (missing heading, no row), nothing in the skill triggers it; the fix adds guards.
+  - `[low]` `[reject]` edge: `Lexer::strip` raw strings / escaped char literal — same root cause as the blind Lexer finding; rejected with it.
+  - `[low]` `[reject]` edge: nested `/* /* */ */` comments — unlikely in skill examples; depth tracking adds state.
+  - `[low]` `[reject]` edge: any row followed by a separator is skipped as a header — a catalog id in a header row is unlikely, and the result is a loud "has no row".
+  - `[low]` `[reject]` edge: index section ends only at `# `/`## ` — same root cause as the blind section-end finding; rejected with it.
+  - `[false]` `[reject]` edge: cheatsheet compound/range ids reported missing — the spec's Q16 defines the `[A-Za-z0-9_-]` token rule (`OPT-141` must not count), and the failure is loud.
+  - `[false]` `[reject]` edge: Q18 rejects reference-style/autolinks and accepts `xdocs/discord-rules.mdx` — the spec's Q18 defines the `](…)` target containing `docs/discord-rules.md`; the real skill uses the canonical URL.
+  - `[false]` `[reject]` edge: literal `135` in `real_catalog_ids_match_rules_catalog`/`real_repo_passes` — the spec requires asserting 135; a catalog change must update the index anyway, so skill-check fails first.
+  - `[low]` `[reject]` edge: Q10 message uses the unwrapped id, not the raw cell — cosmetic; the matrix example message `ZZ-01 is not a catalog rule` matches.
+  - `[false]` `[reject]` intent: agents had filesystem access to Noctis source, only no reads — the spec settles the path dependency into `crates/noctis` and the forbidden-read rule checked by transcript scan.
+  - `[false]` `[reject]` intent: the trialed skill is not the shipped one — the spec allows skill fixes; the summary lists every post-round change (additive notes and rows), and the bar was met.
+  - `[false]` `[reject]` intent: "compiles" should include clippy — D5 settles build-only success; clippy is reported.
+  - `[false]` `[reject]` intent: shared `CARGO_TARGET_DIR` gave agents stale results — the spec's prompt prescribes the shared dir; the verdict rests on the implementer's forced rebuilds (D5), and the caveat is disclosed; stale success can only lower the agents' attempts, not raise the count.
+  - `[maybe-false]` `[reject]` intent: component set comes from `BUILDERS`, not the FR-23/FR-29 lists — pre-existing check from an earlier story, no missing component named; settle by diffing FR-23/FR-29 against `BUILDERS`; would be low (every public builder is still forced into the skill by the public-API mention check).
+  - `[false]` `[reject]` intent: AC2 checked by headings, not content — D1 settles "structure and coverage, not prose quality"; the content exists.
+  - `[false]` `[reject]` intent: Q19 skips `UD7_SPAWN`, untagged/`rs` fences and inline code — the spec's Q19 row defines the scope (rust fences, the three identifier families).
+  - `[false]` `[reject]` intent: Limits links point outside the template — the spec's Always clause mandates the canonical GitHub URL; rule meanings are local in the index and cheatsheet.
+  - `[false]` `[reject]` intent: `Kv` key listing answered by a documented limitation — `Kv` has no list API in the snapshot; FR-50 asks the skill to document the API as it is, which it now does.
+  - `[medium]` `[patch]` vgap: Q16 cheatsheet call in `completeness::check` is not reached by any CLI test — add `q16_cheatsheet_missing_id` (with the blind CLI-coverage finding).
+  - `[medium]` `[patch]` vgap: Q19 over skill files is CLI-tested only through `docs/` — add `q19_listener_in_skill_example`.
+
 ## Design Notes
 
 **Decisions:** D1 completeness is a skill-check gate (CI already runs it), checking structure and coverage, not prose quality. D2 the concept map and patterns/common mistakes live in new reference files; SKILL.md keeps its short anti-pattern table and best practices (always loaded) and points to them. D3 the agent trial is a one-off story deliverable, not a gate (it needs an agent and minutes per run); `xtask skill-check` guards the skill between trials. D4 the Kv/`Id` postcard guard (deferred by 14.2/14.4) stays out: no 14.5 AC needs it, it would be an additive post-0.1 API, and the trial measures compilation (the trap is runtime); the skill documents it as a common mistake. D5 trial success = the implementer's own `cargo build --release --locked` of the copy; first-attempt compile (UJ-5 wording) is reported, not gated.
@@ -138,3 +178,12 @@ deferred: []
 
 **Manual checks:**
 - `_bmad-output/implementation-artifacts/uj5-agent-trial-summary.md` shows ≥ 4/5 compiled in the final round; `/home/claude/lanes/d/uj5-trials/` is deleted.
+
+## Auto Run Result
+
+- **Summary:** `xtask skill-check` gains a completeness check (`xtask/src/skill_check/completeness.rs`): required references and headings, `[planned]`/`v0`/Epic-Story marker ban, rule-id troubleshooting index covering all 135 catalog ids, limits-cheatsheet coverage, component Limits links to `docs/discord-rules.md`, and a UD-7 scan of Rust examples in the skill and `docs/`. The Usage Skill was brought to pass it (new `concept-map.md`, `patterns.md` with Common mistakes, full troubleshooting index, every `[planned]` resolved against `xtask/public-api.txt`). The UJ-5 agent trial ran with 5 subagents on isolated template copies: 4/5 built (D5 criterion), recorded in `uj5-agent-trial-summary.md`.
+- **Files changed:** `xtask/src/skill_check/{completeness.rs (new), mod.rs, components.rs, doctrine.rs}`, `xtask/src/main.rs`, `xtask/src/rules_catalog/mod.rs` (completeness gate and wiring); `xtask/tests/skill_check.rs` (CLI tests incl. Q16/Q19); `examples/project-template/.claude/skills/noctis/` SKILL.md and references (concept-map, patterns, troubleshooting index, cheatsheet, Limits links, marker cleanup); `examples/project-template/AGENTS.md`; `CHANGELOG.md`; `_bmad-output/implementation-artifacts/uj5-agent-trial-summary.md`; architecture memlog.
+- **Review findings:** 36 total (high 0, medium 3, low 16, false 16, maybe-false 1). Patched 7 (medium 3, low 4): components-v2 Choices options contradiction replaced with `defaults(options = ...)` pointer; CLI tests `q16_cheatsheet_missing_id` and `q19_listener_in_skill_example` added; "capped" id-index wording corrected in patterns/Common mistakes/adapters; placeholder note for patterns snippets; CHANGELOG reworded and "gaps not changed" list added to the trial summary. Deferred 0. Rejected 29, each with its recorded reason in the Review Triage Log (lexer raw-string/escape edge cases, section-end parsing, Q14/Q18 strictness, trial methodology settled by D5 and spec prompt, literal 135 required by spec, etc.).
+- **Follow-up review recommended: true** (first pass, 3 medium patched). Named risk: the two new CLI tests and the corrected skill wording were not re-reviewed; a follow-up should confirm the tests exercise the Q16/Q19 paths and the Choices guidance matches `defaults(options = ...)` in the public API.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, xtask deps-check, tw-grammar, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV). CI paused by maintainer.
+- **Residual risks:** trial ran against a skill revised between rounds (changes listed in the summary); agents shared `CARGO_TARGET_DIR` (verdict rests on forced rebuilds); Kv/`Id` postcard runtime trap documented only, not guarded (D4); skill-check lexer ignores raw strings and nested comments.

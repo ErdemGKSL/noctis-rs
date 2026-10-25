@@ -573,9 +573,9 @@ let v2 = ctx.kv().schema(2);                                     // schema byte 
 
 `Kv` cannot list or scan keys, and it has no sorted sets: to rank or list entries
 (a leaderboard, every member with points), keep an index value of your own (a
-`Vec<u64>` of ids under one key, capped) next to the per-entry counters, or keep the data
-in your own database behind a custom Adapter. The index update is a read-then-write;
-counters stay atomic (`references/patterns.md` §11).
+`Vec<u64>` of ids under one key) next to the per-entry counters, or keep the data
+in your own database behind a custom Adapter. The index update is a read-then-write and not atomic: a concurrent add can lose an
+id, and the snippet re-adds it on that member's next `incr`; counters stay atomic (`references/patterns.md` §11).
 
 Values are postcard with a leading schema byte (`encode_value`/`decode_value`);
 counters are 8-byte big-endian `u64`s. Keep counters and typed values under different

@@ -28,7 +28,7 @@ everything else bumps the patch version.
   choices, no `FileFetcher` implementation, …). `SKILL.md` drops its v0 banner.
 - UJ-5 agent trial (SM-3): in one round, 4 of 5 isolated agents built a leaderboard
   feature on the first attempt, learning Noctis only from the template and the skill. The
-  gaps they hit are now covered: `Kv` key listing, YAML colon spacing, and `doc_markdown`
+  most frequent gaps (`Kv` key listing, YAML colon spacing, `doc_markdown`) are now covered
   (`_bmad-output/implementation-artifacts/uj5-agent-trial-summary.md`).
 
 ### Rules catalog (v1 audit)

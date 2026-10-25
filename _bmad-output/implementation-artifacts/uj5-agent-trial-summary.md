@@ -49,10 +49,27 @@ own package name, or build the copies one at a time.
 
 The round met the bar, so no further round ran. These gaps were still added to the skill:
 
-- `references/adapters.md` §3: `Kv` cannot list or scan keys. To rank entries, keep a
-  capped id index next to the `incr` counters, or use your own database Adapter. The
+- `references/adapters.md` §3: `Kv` cannot list or scan keys. To rank entries, keep an
+  id index next to the `incr` counters, or use your own database Adapter. The
   `incr` row now states its types (`by: u64`, `ttl: Option<Duration>`). Migrating a stored
   `Id<_>` now also mentions `Kv::schema(n)`.
 - `references/patterns.md` `## Common mistakes` gained three rows: no `Kv` key listing; the
   `i18n!` YAML error `simple key expect ':'` (no space after the colon); clippy's
   `doc_markdown` (identifiers in doc comments need backticks).
+
+### Gaps not changed
+
+- `noctis_route_width` doc line: already documented in `references/routes-payloads-refs.md`
+  (the generated `__noctis_route_width_<StructName>` test and its command) and in
+  `AGENTS.md`.
+- `color_rgb` argument type: already documented in `references/images.md` §4
+  (`0xRRGGBB`, the low 24 bits are used).
+- `view!` helper functions returning `Node`: `references/images.md` shows them
+  (`fn(&T) -> Node` components) only briefly; remains open.
+- `#[option(min_value, max_value)]` without `description`: `references/commands.md`
+  shows the arguments only together with `description`; whether it is optional remains
+  open.
+- `cmdword.*` for new words: already documented in `references/i18n.md` and
+  `references/concept-map.md`.
+- Copying `rate_limit`: already covered by `AGENTS.md` and `references/patterns.md`
+  (anti-patterns).

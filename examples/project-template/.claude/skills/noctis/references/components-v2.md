@@ -422,8 +422,9 @@ Shared fields of all five:
 - Empty list: render a disabled select with one explanatory option, or an empty-state
   Text Display, never nothing.
 - More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
-- `derive(Choices)` enums have no options helper in Noctis 0.1; map `Severity::ALL`
-  yourself: `SelectOption::new(s.label(), s.value())`.
+- A `derive(Choices)` enum fills a String Select through `defaults(options = SomeChoicesEnum)`
+  on `#[derive(StringSelectMenu)]` (§10a). Map `X::ALL` by hand only when the options change
+  per render, and localize each label's text.
 - Selected values in the handler: `ctx.values()` returns a `SelectedValues` typed by the
   select's kind: `.strings()` (every raw value, any kind), `.users()`, `.roles()` and
   `.channels()` (ids in the order sent, duplicates kept); a Mentionable Select's values

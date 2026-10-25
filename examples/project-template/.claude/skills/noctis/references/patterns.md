@@ -4,6 +4,9 @@ Proven shapes for Noctis features, the shapes to avoid, and a table of the mista
 come up most often (symptom → cause → fix). Every pattern links the reference with the
 complete, tested code; the snippets here are short and leave out imports (they come from
 `noctis::prelude::*`, `noctis::ui::*` and your `crate::strings::{Strings, keys}`).
+The `keys::*` names, types and helpers in the snippets (`NoteForm`, `BoardCard`, `top10`, …)
+are placeholders: add each key to `locales/en-US.yaml` (and `tr.yaml`) and define the types
+before use (in §8, `pager` is the `ActionRow` returned by §3's `pager(page, pages)`).
 
 ## Patterns
 
@@ -170,6 +173,9 @@ if !members.contains(&user.get()) {
 }
 ```
 
+The index update is not atomic: a concurrent add can lose an id, and the snippet re-adds it
+on that member's next `incr`.
+
 ### 12. Per-guild configuration with stored ids
 
 **When:** a channel, role or webhook chosen once. **Shape:** a serde struct with `u64`
@@ -245,6 +251,6 @@ of it:
 | an ephemeral answer turns public (or the reverse) on an edit | ephemerality is fixed at creation | declare `response = ephemeral` on the attribute | INT-10 |
 | a render returns `RenderError::QueueFull` | the render pool is busy | answer a "busy, try again" notice with your own key | — |
 | `Id::new` panics on a stored `0` | `Id::new` rejects `0` | `Id::new_checked(n)` and treat `None` as no value | — |
-| no way to find "the top 10" or every stored member in `ctx.kv()` | `Kv` cannot list or scan keys | keep a capped index (`Vec<u64>` of ids) under one key next to the `incr` counters (§11), or use your own database Adapter | — |
+| no way to find "the top 10" or every stored member in `ctx.kv()` | `Kv` cannot list or scan keys | keep an index (`Vec<u64>` of ids) under one key next to the `incr` counters (§11), or use your own database Adapter | — |
 | ``locale file `locales/en-US.yaml` has errors (see `i18n!`): simple key expect ':'`` | YAML syntax: `key:"value"` without a space after the colon, or bad indentation | write `key: "value"` (a space after `:`), indent nested keys by two spaces, quote values that start with `#`, `{` or contain `: ` | — |
 | `clippy -D warnings` fails with `item in documentation is missing backticks` | the template's clippy runs `pedantic`: identifiers in doc comments need backticks | write `` `render_board` ``, `` `ctx.kv()` `` in `///` and `//!` comments | — |

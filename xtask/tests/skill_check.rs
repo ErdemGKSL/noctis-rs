@@ -552,6 +552,14 @@ fn q9_index_missing_id() {
 }
 
 #[test]
+fn q16_cheatsheet_missing_id() {
+    let out = root("q16")
+        .with(CHEATSHEET, "| CMD-01 | name charset |\n")
+        .run();
+    assert_problems(&out, &[&format!("{CHEATSHEET}: REG-06 is missing")]);
+}
+
+#[test]
 fn q17_catalog_missing() {
     let out = root("q17").without(CATALOG).run();
     assert_exit(
@@ -573,6 +581,22 @@ fn q19_listener_in_markdown_example() {
     assert_problems(
         &out,
         &["docs/guides/events.md:5: [UD-7] inline listener; register a #[handler] for a Route"],
+    );
+}
+
+#[test]
+fn q19_listener_in_skill_example() {
+    let out = root("q19s")
+        .with(
+            PATTERNS,
+            "# Patterns\n\n## Patterns\n\n```rust\napp.on_listener(f);\n```\n\n## Anti-patterns\n\n## Common mistakes\n",
+        )
+        .run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{PATTERNS}:6: [UD-7] inline listener; register a #[handler] for a Route"
+        )],
     );
 }
 
