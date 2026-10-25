@@ -9,6 +9,9 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::GuildAccessList;
 
+/// The listed guild ids.
+type Guilds = HashSet<Id<GuildMarker>>; // keyed-map: holds only the guild ids the bot author lists
+
 /// A guild allow list or deny list for white-label Apps.
 ///
 /// [`GuildAccess::allow`] serves only the listed guilds (an empty allow list
@@ -43,7 +46,7 @@ use crate::GuildAccessList;
 /// ```
 pub struct GuildAccess {
     allow_list: bool,
-    guilds: RwLock<HashSet<Id<GuildMarker>>>,
+    guilds: RwLock<Guilds>,
 }
 
 impl GuildAccess {
@@ -92,11 +95,11 @@ impl GuildAccess {
     // A panic while the lock is held cannot leave the set half-updated
     // (every operation is one `HashSet` call), so a poisoned lock is
     // recovered.
-    fn read(&self) -> RwLockReadGuard<'_, HashSet<Id<GuildMarker>>> {
+    fn read(&self) -> RwLockReadGuard<'_, Guilds> {
         self.guilds.read().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn write(&self) -> RwLockWriteGuard<'_, HashSet<Id<GuildMarker>>> {
+    fn write(&self) -> RwLockWriteGuard<'_, Guilds> {
         self.guilds.write().unwrap_or_else(PoisonError::into_inner)
     }
 }

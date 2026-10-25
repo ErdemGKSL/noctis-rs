@@ -228,34 +228,7 @@ impl Registry {
             }
         }
 
-        // Keyed by dispatch type, never by `KIND`: an `UnavailableGuild`
-        // handler shares the `GUILD_DELETE` slot with `GuildDelete` handlers.
-        let mut by_dispatch: HashMap<EventType, Handlers> = HashMap::new();
-        let mut event_types = base_event_types(!entries.is_empty());
-        let mut intents = Intents::empty();
-        for entry in &entries {
-            let handler = &entry.handler;
-            event_types |= handler.parse();
-            // The privileged part must be requested (GW-05; the violation
-            // names only the missing bits); the rest is always derived.
-            let intent = handler.intent();
-            let missing = intent & PRIVILEGED & !requested;
-            if !missing.is_empty() {
-                violations.push(BuildViolation::MissingIntent {
-                    module: entry.module,
-                    handler: handler.name(),
-                    event: handler.kind().name().unwrap_or("UNKNOWN"),
-                    intent: missing,
-                });
-            }
-            intents |= intent - PRIVILEGED;
-            let slot = by_dispatch.entry(handler.dispatch()).or_default();
-            if handler.ordered() {
-                slot.ordered.push(Arc::clone(entry));
-            } else {
-                slot.concurrent.push(Arc::clone(entry));
-            }
-        }
+        let (by_dispatch, event_types, intents) = fold_events(&entries, requested, &mut violations);
         let droppable = droppable_events(&by_dispatch, !entries.is_empty());
         let (commands, command_violations) = Commands::fold(&folded, strings);
         violations.extend(command_violations);
@@ -497,6 +470,45 @@ fn check_module_ids(full: &[Mounted<'_>]) -> Vec<BuildViolation> {
         }
     }
     violations
+}
+
+/// Groups the event handlers by dispatch type and derives the event-type
+/// flags and the intents; a privileged intent `requested` lacks is one
+/// [`BuildViolation::MissingIntent`].
+fn fold_events(
+    entries: &[Arc<Entry>],
+    requested: Intents,
+    violations: &mut Vec<BuildViolation>,
+) -> (HashMap<EventType, Handlers>, EventTypeFlags, Intents) {
+    // Keyed by dispatch type, never by `KIND`: an `UnavailableGuild`
+    // handler shares the `GUILD_DELETE` slot with `GuildDelete` handlers.
+    let mut by_dispatch: HashMap<EventType, Handlers> = HashMap::new();
+    let mut event_types = base_event_types(!entries.is_empty());
+    let mut intents = Intents::empty();
+    for entry in entries {
+        let handler = &entry.handler;
+        event_types |= handler.parse();
+        // The privileged part must be requested (GW-05; the violation
+        // names only the missing bits); the rest is always derived.
+        let intent = handler.intent();
+        let missing = intent & PRIVILEGED & !requested;
+        if !missing.is_empty() {
+            violations.push(BuildViolation::MissingIntent {
+                module: entry.module,
+                handler: handler.name(),
+                event: handler.kind().name().unwrap_or("UNKNOWN"),
+                intent: missing,
+            });
+        }
+        intents |= intent - PRIVILEGED;
+        let slot = by_dispatch.entry(handler.dispatch()).or_default();
+        if handler.ordered() {
+            slot.ordered.push(Arc::clone(entry));
+        } else {
+            slot.concurrent.push(Arc::clone(entry));
+        }
+    }
+    (by_dispatch, event_types, intents)
 }
 
 /// Keeps the first handler of each Route id in fold order; each later one
