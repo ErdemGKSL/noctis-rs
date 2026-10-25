@@ -320,7 +320,9 @@ impl Registry {
         self.intents
     }
 
-    /// Whether any handler is ordered (the sub-queues exist only then).
+    /// Whether any handler is ordered (only then can the worker set queue
+    /// ordered jobs per guild; no task exists until one is queued).
+    #[cfg(test)]
     pub(crate) fn has_ordered(&self) -> bool {
         self.handlers.values().any(|h| !h.ordered.is_empty())
     }

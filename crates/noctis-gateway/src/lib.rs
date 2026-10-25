@@ -106,7 +106,9 @@
 //! [`DropObserver`] set in [`LaneConfig::drop_observer`]. Every drop is counted in
 //! `noctis_events_dropped_total{app, event_type}`, and the depths are the
 //! gauges `noctis_lane_depth{app, lane}` and `noctis_event_overflow_depth{app}`.
-//! The single [`LaneReceiver`] always takes interactions first.
+//! The [`LaneReceiver`] always takes interactions first. [`lanes_with`]
+//! partitions the lanes by shard, and [`LaneReceiver::into_partitions`] gives
+//! each partition its own consumer; the bounds and gauges stay global.
 //!
 //! ```
 //! use noctis_gateway::{LaneConfig, lanes};
@@ -153,7 +155,7 @@ pub use gateway::{CloseMode, Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use lanes::{
     DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, DropObserver, LaneConfig,
-    LaneDepths, LaneReceiver, LaneSender, lanes,
+    LaneDepths, LanePartition, LaneReceiver, LaneSender, MAX_LANE_PARTITIONS, lanes, lanes_with,
 };
 pub use presence::{Activity, LargeThreshold, Presence, Status};
 pub use shard_config::{ShardConfigError, shard_config};

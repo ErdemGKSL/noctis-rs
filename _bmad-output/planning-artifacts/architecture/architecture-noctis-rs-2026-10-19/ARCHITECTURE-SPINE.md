@@ -459,6 +459,21 @@ list in CI.
     hashed to a fixed sub-queue); all others run concurrently.
   - CPU-heavy work goes to the render pool or `spawn_blocking`. Nothing blocks the
     async runtime.
+- **Amended (Story 16.2):** the lanes are partitioned by shard (`shard % n`, n = the
+  runtime's worker count clamped to 1..=64, `noctis_gateway::lanes_with`), each
+  partition with its own lock and wake-up, so one shard's items keep their arrival
+  order and shard tasks of different partitions never contend. The event and
+  overflow bounds stay global (atomic totals reserved under the partition lock). A
+  droppable event on a full lane evicts the oldest droppable of its own partition in
+  O(1) (two FIFOs merged by entry sequence), else it is dropped; a partition with a
+  non-empty overflow queues new events behind it. Core runs one drain task per
+  partition, each popping up to 32 items under one lock (gauges once per batch, one
+  Registry lookup per event) and serving its partition's interactions first; the
+  shutdown drains every partition, the cancel logs one summary over all of them.
+  Ordered handlers run through per-guild FIFOs created on demand (guildless events
+  share one), whose map holds only guilds with a queued or running ordered job and
+  so at most `handler_concurrency` entries; no task exists for an idle guild. Lane
+  metrics keep their names and labels and report sums over the partitions.
 
 ### AD-11 — The Responder owns every reply
 - **Binds:** `noctis-core`, `noctis-ui`; FR-21 to FR-23, FR-29, FR-61, FR-65;

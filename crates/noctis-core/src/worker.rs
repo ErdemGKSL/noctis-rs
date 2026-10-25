@@ -1,17 +1,20 @@
-//! The worker set: the drain task, the event semaphore, the per-guild
-//! ordered sub-queues and panic-safe handler runs (FR-5, FR-6, AD-10,
-//! NFR-4).
+//! The worker set: one drain task per lane partition, the event
+//! semaphore, the per-guild ordered queues and panic-safe handler runs
+//! (FR-5, FR-6, AD-10, NFR-4).
 
 use std::any::Any;
+use std::collections::hash_map::Entry as MapEntry;
+use std::collections::{HashMap, VecDeque};
+use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
 use futures_util::FutureExt;
 use futures_util::future::join_all;
-use noctis_gateway::{Inbound, InboundKind, LaneReceiver};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
-use tokio::task::JoinHandle;
+use noctis_gateway::{Inbound, InboundKind, LanePartition, LaneReceiver};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::Instrument;
@@ -30,18 +33,11 @@ use crate::pipeline::{run_autocomplete, run_interaction};
 use crate::registry::{Entry, Handlers, Registry};
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 
-/// How many ordered sub-queues exist (a power of two: `subqueue` takes the
-/// top 6 bits of a multiplicative hash).
-pub(crate) const SUBQUEUES: usize = 64;
-
-/// The ordered sub-queue of `guild_id`; DMs and guildless events use 0.
-pub(crate) fn subqueue(guild_id: Option<Id<GuildMarker>>) -> usize {
-    match guild_id {
-        None => 0,
-        // The top 6 bits of the product always fit a `usize`.
-        Some(id) => (id.get().wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 58) as usize,
-    }
-}
+/// How many items a partition's drain takes from the lanes under one lock.
+pub(crate) const DRAIN_BATCH: NonZeroUsize = match NonZeroUsize::new(32) {
+    Some(batch) => batch,
+    None => panic!("32 is not zero"),
+};
 
 /// Aborts the task it holds when dropped, on every return path of `run`.
 pub(crate) struct AbortOnDrop(pub(crate) JoinHandle<()>);
@@ -79,52 +75,98 @@ struct Job {
     permit: OwnedSemaphorePermit,
 }
 
+/// The per-guild FIFOs of ordered jobs, created on demand.
+///
+/// An entry exists only while its guild (`None`: guildless events) has an
+/// ordered job queued or running, and one runner task per entry runs its
+/// jobs in arrival order, then removes the entry. Every job holds a worker
+/// permit, so the map never holds more than `handler_concurrency` entries.
+#[derive(Default)]
+struct OrderedQueues {
+    // keyed-map: only guilds with a queued or running ordered job, each holding a permit (<= handler_concurrency entries)
+    queues: Mutex<HashMap<Option<Id<GuildMarker>>, VecDeque<Job>>>,
+}
+
+impl OrderedQueues {
+    fn lock(&self) -> MutexGuard<'_, HashMap<Option<Id<GuildMarker>>, VecDeque<Job>>> {
+        self.queues.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Queues `job` behind its guild's running job; returns it when its
+    /// guild had none, so the caller starts a runner for it.
+    fn enqueue(&self, job: Job) -> Option<Job> {
+        let mut queues = self.lock();
+        match queues.entry(job.guild_id) {
+            MapEntry::Occupied(mut running) => {
+                running.get_mut().push_back(job);
+                None
+            }
+            MapEntry::Vacant(vacant) => {
+                vacant.insert(VecDeque::new());
+                Some(job)
+            }
+        }
+    }
+
+    /// The next job of `guild_id`, or `None` after removing its entry.
+    fn next(&self, guild_id: Option<Id<GuildMarker>>) -> Option<Job> {
+        let mut queues = self.lock();
+        let next = queues.get_mut(&guild_id).and_then(VecDeque::pop_front);
+        if next.is_none() {
+            queues.remove(&guild_id);
+        }
+        next
+    }
+}
+
+/// Removes its guild's entry (dropping the queued jobs and their permits)
+/// when a runner ends without emptying it: an aborted task.
+struct RunnerGuard {
+    ordered: Arc<OrderedQueues>,
+    guild_id: Option<Id<GuildMarker>>,
+    armed: bool,
+}
+
+impl Drop for RunnerGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let removed = self.ordered.lock().remove(&self.guild_id);
+            drop(removed);
+        }
+    }
+}
+
 /// Dispatches events to their handlers, at most `handler_concurrency` at
 /// a time.
 pub(crate) struct Workers {
     registry: Arc<Registry>,
     app: Arc<AppShared>,
     semaphore: Arc<Semaphore>,
-    /// One sender per ordered sub-queue; empty without ordered handlers.
-    ordered: Vec<mpsc::UnboundedSender<Job>>,
+    ordered: Arc<OrderedQueues>,
     shutdown: Shutdown,
 }
 
 impl Workers {
-    /// Builds the worker set; spawns the sub-queue tasks when `registry` has
-    /// an ordered handler. Must run inside a tokio runtime.
+    /// Builds the worker set.
     pub(crate) fn new(
         registry: Arc<Registry>,
         app: Arc<AppShared>,
         handler_concurrency: usize,
         shutdown: Shutdown,
     ) -> Self {
-        let ordered = if registry.has_ordered() {
-            (0..SUBQUEUES)
-                .map(|_| {
-                    let (tx, rx) = mpsc::unbounded_channel();
-                    shutdown
-                        .tracker
-                        .spawn(run_subqueue(rx, Arc::clone(&app), shutdown.clone()));
-                    tx
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
         Self {
             registry,
             app,
             semaphore: Arc::new(Semaphore::new(handler_concurrency)),
-            ordered,
+            ordered: Arc::default(),
             shutdown,
         }
     }
 
-    /// How many sub-queues run.
+    /// How many guilds have an ordered job queued or running.
     #[cfg(test)]
     pub(crate) fn subqueues(&self) -> usize {
-        self.ordered.len()
+        self.ordered.lock().len()
     }
 
     /// Hands one command interaction to the Command pipeline, one
@@ -188,14 +230,16 @@ impl Workers {
         }
     }
 
-    /// Hands one event to its handlers; never awaits.
-    fn dispatch(&self, shard: u32, event: Event, permit: OwnedSemaphorePermit) {
+    /// Hands one event to `handlers`, the Registry's handlers of its type;
+    /// never awaits.
+    fn dispatch(
+        &self,
+        shard: u32,
+        event: Event,
+        handlers: Arc<Handlers>,
+        permit: OwnedSemaphorePermit,
+    ) {
         let kind = event.kind();
-        let Some(handlers) = self.registry.handlers(kind) else {
-            tracing::trace!(target: "noctis::app", shard, kind = ?kind, "no handler registered");
-            drop(permit);
-            return;
-        };
         let guild_id = event.guild_id();
         // AD-23 stage 3: no handler runs for a guild the App does not serve
         // (the Discord cache and the guild record already saw the event).
@@ -208,7 +252,7 @@ impl Workers {
             shard,
             guild_id,
             event,
-            handlers: Arc::clone(handlers),
+            handlers,
             permit,
         };
         if job.handlers.ordered.is_empty() {
@@ -217,9 +261,13 @@ impl Workers {
                 Arc::clone(&self.app),
                 self.shutdown.cancel.clone(),
             ));
-        } else if let Some(tx) = self.ordered.get(subqueue(guild_id)) {
-            // A closed sub-queue only happens during runtime shutdown.
-            let _ = tx.send(job);
+        } else if let Some(job) = self.ordered.enqueue(job) {
+            self.shutdown.tracker.spawn(run_ordered(
+                job,
+                Arc::clone(&self.ordered),
+                Arc::clone(&self.app),
+                self.shutdown.clone(),
+            ));
         }
     }
 }
@@ -252,39 +300,139 @@ pub(crate) async fn observe<F: Future<Output = ()>>(run: F, end: Option<RunEnd>)
     run.await;
 }
 
-/// What the drain does next.
-enum Next {
-    Item(Inbound),
-    Done,
-    Cancelled,
+/// What the cancel token discarded: queued, batched and permit-waiting
+/// lane items.
+#[derive(Debug, Default, Clone, Copy)]
+struct Discarded {
+    interactions: usize,
+    events: usize,
+}
+
+impl Discarded {
+    /// The items of `partition`, of the drain's local `batch` and the
+    /// `waiting` event (0 or 1) that waited for a permit.
+    fn of(partition: &LanePartition, batch: &VecDeque<Inbound>, waiting: usize) -> Self {
+        let depths = partition.depths();
+        let batched = batch
+            .iter()
+            .filter(|inbound| matches!(inbound.kind, InboundKind::Event(..)))
+            .count();
+        Self {
+            interactions: depths.interaction + batch.len() - batched,
+            events: depths.event + depths.overflow + batched + waiting,
+        }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            interactions: self.interactions + other.interactions,
+            events: self.events + other.events,
+        }
+    }
+
+    /// Logs the one summary warning, if anything was discarded.
+    fn warn(self) {
+        let Self {
+            interactions,
+            events,
+        } = self;
+        if interactions + events > 0 {
+            tracing::warn!(
+                target: "noctis::app",
+                interactions,
+                events,
+                "lanes discarded at shutdown"
+            );
+        }
+    }
 }
 
 /// Takes every [`Inbound`] from the lanes until every sender has dropped,
 /// or until the shutdown token fires and the lanes are empty.
 ///
-/// An interaction never takes a permit. An event waits for one permit,
-/// serving interactions that arrive meanwhile first. When the cancel token
-/// fires, every queued item is discarded with one summary warning.
-pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
+/// Each lane partition has its own drain: one partition is drained inline,
+/// several by one task each in a `JoinSet` (aborted with this future). An
+/// interaction never takes a permit. An event waits for one permit, serving
+/// its partition's interactions that arrive meanwhile first. When the
+/// cancel token fires, every queued item is discarded with one summary
+/// warning over all partitions.
+pub(crate) async fn drain(receiver: LaneReceiver, workers: Workers) {
+    drain_shared(receiver, Arc::new(workers)).await;
+}
+
+/// [`drain`] over a worker set the caller may also hold.
+pub(crate) async fn drain_shared(receiver: LaneReceiver, workers: Arc<Workers>) {
+    let mut partitions = receiver.into_partitions();
+    let discarded = match partitions.pop() {
+        Some(partition) if partitions.is_empty() => drain_partition(partition, &workers).await,
+        Some(last) => {
+            let mut drains = JoinSet::new();
+            for partition in partitions.into_iter().chain([last]) {
+                let workers = Arc::clone(&workers);
+                drains.spawn(async move { drain_partition(partition, &workers).await });
+            }
+            let mut total = Discarded::default();
+            while let Some(done) = drains.join_next().await {
+                // A drain task only fails when the runtime shuts down.
+                if let Ok(discarded) = done {
+                    total = total.add(discarded);
+                }
+            }
+            total
+        }
+        None => Discarded::default(),
+    };
+    discarded.warn();
+}
+
+/// What a partition's drain waits for.
+enum Wait {
+    Cancelled,
+    Shutdown,
+    Popped(usize),
+}
+
+/// What a permit wait ends with.
+enum PermitWait {
+    Cancelled,
+    Interaction(Inbound),
+    Permit(Result<OwnedSemaphorePermit, tokio::sync::AcquireError>),
+}
+
+/// Drains one lane partition in batches of [`DRAIN_BATCH`] (the batch
+/// buffer is allocated once); returns what the cancel token discarded.
+async fn drain_partition(mut partition: LanePartition, workers: &Workers) -> Discarded {
     let shutdown = workers.shutdown.shutdown.clone();
     let cancel = workers.shutdown.cancel.clone();
+    let mut batch = VecDeque::with_capacity(DRAIN_BATCH.get());
     loop {
-        let next = if cancel.is_cancelled() {
-            Next::Cancelled
-        } else if shutdown.is_cancelled() {
-            receiver.try_recv().map_or(Next::Done, Next::Item)
-        } else {
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => Next::Cancelled,
-                () = shutdown.cancelled() => continue,
-                item = receiver.recv() => item.map_or(Next::Done, Next::Item),
+        if cancel.is_cancelled() {
+            return Discarded::of(&partition, &batch, 0);
+        }
+        if batch.is_empty() {
+            // Let the tasks this batch spawned on this worker thread run
+            // before the next batch: every worker may be running a drain.
+            tokio::task::yield_now().await;
+            let popped = if shutdown.is_cancelled() {
+                partition.try_recv_batch(&mut batch, DRAIN_BATCH)
+            } else {
+                let wait = tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => Wait::Cancelled,
+                    () = shutdown.cancelled() => Wait::Shutdown,
+                    popped = partition.recv_batch(&mut batch, DRAIN_BATCH) => Wait::Popped(popped),
+                };
+                match wait {
+                    Wait::Cancelled | Wait::Shutdown => continue,
+                    Wait::Popped(popped) => popped,
+                }
+            };
+            if popped == 0 {
+                return Discarded::default();
             }
-        };
-        let inbound = match next {
-            Next::Item(inbound) => inbound,
-            Next::Done => return,
-            Next::Cancelled => return discard(&receiver, 0),
+        }
+        let Some(inbound) = batch.pop_front() else {
+            continue;
         };
         let shard = inbound.shard.number();
         match inbound.kind {
@@ -299,41 +447,33 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
                     .event(&workers.app.app, &event)
                     .await;
                 // An unhandled event never waits on a permit.
-                if workers.registry.handlers(event.kind()).is_none() {
+                let Some(handlers) = workers.registry.handlers(event.kind()) else {
                     let kind = event.kind();
                     tracing::trace!(target: "noctis::app", shard, kind = ?kind, "no handler registered");
                     continue;
-                }
+                };
+                let handlers = Arc::clone(handlers);
                 let permit = loop {
-                    tokio::select! {
+                    let wait = tokio::select! {
                         biased;
-                        () = cancel.cancelled() => return discard(&receiver, 1),
-                        Some(interaction) = receiver.recv_interaction() => workers.interaction(interaction),
-                        permit = Arc::clone(&workers.semaphore).acquire_owned() => break permit,
+                        () = cancel.cancelled() => PermitWait::Cancelled,
+                        Some(interaction) = partition.recv_interaction() => PermitWait::Interaction(interaction),
+                        permit = Arc::clone(&workers.semaphore).acquire_owned() => PermitWait::Permit(permit),
+                    };
+                    match wait {
+                        PermitWait::Cancelled => return Discarded::of(&partition, &batch, 1),
+                        PermitWait::Interaction(interaction) => workers.interaction(interaction),
+                        PermitWait::Permit(permit) => break permit,
                     }
                 };
                 // The semaphore is never closed.
-                let Ok(permit) = permit else { return };
-                workers.dispatch(shard, *event, permit);
+                let Ok(permit) = permit else {
+                    return Discarded::default();
+                };
+                workers.dispatch(shard, *event, handlers, permit);
             }
             _ => workers.interaction(inbound),
         }
-    }
-}
-
-/// Logs the lane items the cancel token discards; `waiting` counts an event
-/// that was waiting for a permit. The receiver's drop clears the lanes.
-fn discard(receiver: &LaneReceiver, waiting: usize) {
-    let depths = receiver.depths();
-    let interactions = depths.interaction;
-    let events = depths.event + depths.overflow + waiting;
-    if interactions + events > 0 {
-        tracing::warn!(
-            target: "noctis::app",
-            interactions,
-            events,
-            "lanes discarded at shutdown"
-        );
     }
 }
 
@@ -365,46 +505,64 @@ fn interaction_unhandled(inbound: Inbound, app: &str) {
     drop(inbound);
 }
 
-/// Runs each job's ordered handlers in arrival order, then spawns its
-/// concurrent part.
-async fn run_subqueue(
-    mut jobs: mpsc::UnboundedReceiver<Job>,
+/// Runs the ordered jobs of one guild (`first`, then each job queued
+/// behind it) in arrival order, then removes the guild's entry.
+async fn run_ordered(
+    first: Job,
+    ordered: Arc<OrderedQueues>,
     app: Arc<AppShared>,
     shutdown: Shutdown,
 ) {
-    while let Some(Job {
+    let mut guard = RunnerGuard {
+        ordered,
+        guild_id: first.guild_id,
+        armed: true,
+    };
+    let mut job = first;
+    loop {
+        run_ordered_job(job, &app, &shutdown).await;
+        match guard.ordered.next(guard.guild_id) {
+            Some(next) => job = next,
+            None => break,
+        }
+    }
+    guard.armed = false;
+}
+
+/// Runs one job's ordered handlers in fold order, then spawns its
+/// concurrent part.
+async fn run_ordered_job(job: Job, app: &Arc<AppShared>, shutdown: &Shutdown) {
+    let Job {
         shard,
         guild_id,
         event,
         handlers,
         permit,
-    }) = jobs.recv().await
-    {
-        let total = handlers.ordered.len() + handlers.concurrent.len();
-        let mut event = Some(event);
-        for (index, entry) in handlers.ordered.iter().enumerate() {
-            let Some(next) = take_event(&mut event, index + 1 == total) else {
-                break;
+    } = job;
+    let total = handlers.ordered.len() + handlers.concurrent.len();
+    let mut event = Some(event);
+    for (index, entry) in handlers.ordered.iter().enumerate() {
+        let Some(next) = take_event(&mut event, index + 1 == total) else {
+            break;
+        };
+        run_handler(entry, shard, guild_id, next, app, &shutdown.cancel).await;
+    }
+    match event {
+        Some(event) if !handlers.concurrent.is_empty() => {
+            let job = Job {
+                shard,
+                guild_id,
+                event,
+                handlers,
+                permit,
             };
-            run_handler(entry, shard, guild_id, next, &app, &shutdown.cancel).await;
+            shutdown.tracker.spawn(run_concurrent(
+                job,
+                Arc::clone(app),
+                shutdown.cancel.clone(),
+            ));
         }
-        match event {
-            Some(event) if !handlers.concurrent.is_empty() => {
-                let job = Job {
-                    shard,
-                    guild_id,
-                    event,
-                    handlers,
-                    permit,
-                };
-                shutdown.tracker.spawn(run_concurrent(
-                    job,
-                    Arc::clone(&app),
-                    shutdown.cancel.clone(),
-                ));
-            }
-            _ => drop(permit),
-        }
+        _ => drop(permit),
     }
 }
 

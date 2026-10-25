@@ -494,13 +494,14 @@ max_concurrency` on every process.
   `noctis_events_dropped_total`.
 - Every event type whose handlers are **all** `#[event(droppable)]` joins the droppable
   set; `.event_lane(capacity, overflow)` changes both bounds.
-- **Worker set:** one task drains the lanes, interactions first. Each event takes one of
+- **Worker set:** the lanes are partitioned by shard (one partition per tokio worker
+  thread) and one task drains each partition, interactions first. Each event takes one of
   `.handler_concurrency(n)` permits (default 256) before its handlers run, and gives it
   back when they have all ended; while it waits for a permit, interactions that arrive
   are still taken at once (they never take a permit). An event's `ordered` handlers run
-  first, in per-guild order (64 guild-keyed sub-queues), then its other handlers run
-  concurrently. Every handler runs under `catch_unwind`: an error or panic is logged at
-  `error` and the shard keeps running.
+  first, in per-guild order (one FIFO per guild, created on demand), then its other
+  handlers run concurrently. Every handler runs under `catch_unwind`: an error or panic
+  is logged at `error` and the shard keeps running.
 - Intents and event deserialization are **derived from your handlers**: the gateway
   parses only interactions and the event types your `#[event]` handlers take, and each
   handler's non-privileged intent is added to the App's intents. A handler needing a

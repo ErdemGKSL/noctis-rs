@@ -1,9 +1,10 @@
-# Event pipeline baseline (Story 16.1)
+# Event pipeline baseline (Story 16.1) and Story 16.2
 
 The numbers below are the baseline of `crates/noctis-core/benches/pipeline.rs`:
 the path from a shard's parsed `Inbound` to a handler start, before any Epic 16
 optimization. Stories 16.2 and 16.3 compare against these numbers and update
-this file.
+this file; Story 16.2's numbers follow the baseline in
+[Story 16.2](#story-162-partitioned-lanes-parallel-drain-per-guild-fifos).
 
 **Not a gate.** No number here gates CI or the story loop: no gate runs the
 bench and `benches/budgets.toml` has no `[pipeline]` table. Story 14.3 sets
@@ -129,6 +130,171 @@ are the test's `RECORDED` constants.
 | `one_concurrent` (`MESSAGE_DELETE`, 1 concurrent handler) | 7 | 4496 |
 | `two_concurrent` (`MESSAGE_REACTION_REMOVE_ALL`, 2 concurrent handlers) | 12 | 9576 |
 | `ordered` (`CHANNEL_PINS_UPDATE`, 1 ordered handler) | 4 | 256 |
+
+## Story 16.2: partitioned lanes, parallel drain, per-guild FIFOs
+
+Same bench, unchanged measurement code, same command and columns as above.
+
+### Machine
+
+- CPUs: 4 (`nproc`), Intel(R) Xeon(R) Processor @ 2.10GHz (`/proc/cpuinfo`)
+- rustc: `rustc 1.97.0 (2d8144b78 2026-07-07)`
+- OS: Ubuntu 24.04.5 LTS, Linux 6.18.44 (cloud container, shared host)
+
+### Commit
+
+`0fbcf936b2b178a63441d7abe0dcd2b0d3d83759`, plus Story 16.2's working-tree
+changes (lanes partitioned by shard, one drain per partition with batched pops,
+on-demand per-guild ordered FIFOs).
+
+The bench runtime has 4 worker threads, so the App runs **4 lane partitions**
+and 4 drain tasks (partitions = runtime workers). Producer `i` of P pushes on
+`ShardId::new(i, P)`, so P = 1 fills one partition, P = 4 and P = 16 fill all
+four. Each drain yields to the runtime after every batch (up to 32 items):
+without it the 4 drains, one per worker thread, delayed the handler and
+interaction tasks they spawned, and (a) at P = 4/16 fell below the baseline
+(49 861-75 203 events/s over two runs).
+
+### Results
+
+#### (a) AD-25 mix, saturation
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 640000 | 148608 | 114671.4 | 196802.7 | 206602.9 | 51661.8 | 129888.9 | 239 | 32 runs × 20000 items |
+| 4 | 640000 | 137346 | 124040.9 | 173600.8 | 182974.1 | 47882.6 | 118612.0 | 623 | 32 runs × 20000 items |
+| 16 | 660000 | 108038 | 155384.3 | 287834.4 | 320913.5 | 60158.3 | 182880.9 | 815 | 33 runs × 20000 items |
+
+#### (a) AD-25 mix at a fixed 10 000 events/s
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 50000 | 9997 | 114.6 | 412.1 | 889.3 | 174.8 | 450.4 | — | achieved 9998/s, max lag 4920.8 µs |
+| 4 | 50000 | 10000 | 23.3 | 165.2 | 340.4 | 100.1 | 299.2 | — | achieved 10000/s, max lag 9271.0 µs |
+| 16 | 50000 | 9999 | 27.5 | 279.4 | 662.6 | 90.2 | 314.9 | — | achieved 10000/s, max lag 5017.4 µs |
+
+#### (b) `MESSAGE_DELETE`, 1 concurrent no-op handler, saturation
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 2220000 | 280423 | 35653.1 | 74824.6 | 85709.1 | — | — | 148 | 111 runs × 20000 items |
+| 4 | 2400000 | 444298 | 21581.9 | 42902.2 | 48008.1 | — | — | 414 | 120 runs × 20000 items |
+| 16 | 2440000 | 416899 | 22887.5 | 45364.0 | 67492.2 | — | — | 614 | 122 runs × 20000 items |
+
+#### (b) `MESSAGE_DELETE`, 4 concurrent no-op handlers, saturation
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 1220000 | 193446 | 52066.3 | 102649.5 | 109288.9 | — | — | 145 | 61 runs × 20000 items |
+| 4 | 1180000 | 212149 | 46300.1 | 92732.8 | 98405.9 | — | — | 434 | 59 runs × 20000 items |
+| 16 | 1180000 | 221607 | 44391.4 | 87722.9 | 91383.9 | — | — | 574 | 59 runs × 20000 items |
+
+#### (c) ordered handler, 1 guild, fixed 10 000 events/s
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 50000 | 9999 | 38.4 | 185.0 | 745.6 | — | — | — | achieved 9999/s, max lag 25560.7 µs |
+| 4 | 50000 | 9999 | 36.1 | 90.4 | 452.6 | — | — | — | achieved 10000/s, max lag 6295.3 µs |
+| 16 | 50000 | 10001 | 36.3 | 85.4 | 280.4 | — | — | — | achieved 10001/s, max lag 5804.7 µs |
+
+#### (c) ordered handler, 64 guilds, fixed 10 000 events/s
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 50000 | 10000 | 67.2 | 141.1 | 242.3 | — | — | — | achieved 10000/s, max lag 3575.9 µs |
+| 4 | 50000 | 9999 | 19.1 | 87.3 | 194.2 | — | — | — | achieved 9999/s, max lag 4172.8 µs |
+| 16 | 50000 | 9998 | 16.2 | 91.3 | 373.3 | — | — | — | achieved 9998/s, max lag 4165.6 µs |
+
+#### (c) ordered handler, 10 000 guilds, fixed 10 000 events/s
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 50000 | 10001 | 66.4 | 135.4 | 592.8 | — | — | — | achieved 10001/s, max lag 3726.9 µs |
+| 4 | 50000 | 10000 | 18.5 | 89.5 | 225.0 | — | — | — | achieved 10000/s, max lag 5013.9 µs |
+| 16 | 50000 | 9998 | 16.4 | 92.0 | 258.8 | — | — | — | achieved 9998/s, max lag 6741.6 µs |
+
+#### (d) flood with 1 % interactions, saturation
+
+| P | items | events/s | p50 µs | p99 µs | p99.9 µs | int. p50 µs | int. p99 µs | push ns/item | notes |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 2480000 | 462160 | 25188.4 | 43961.9 | 49470.0 | 5150.3 | 10146.8 | 215 | 124 runs × 20000 items |
+| 4 | 2480000 | 541774 | 21136.0 | 35842.6 | 42610.1 | 4879.1 | 9986.7 | 602 | 124 runs × 20000 items |
+| 16 | 2480000 | 505042 | 21865.5 | 37256.9 | 41948.4 | 4388.5 | 7213.0 | 746 | 124 runs × 20000 items |
+
+### Baseline vs 16.2
+
+| Scenario | P | events/s base | events/s 16.2 | ratio | p99 µs base | p99 µs 16.2 | int. p99 µs base | int. p99 µs 16.2 | push ns base | push ns 16.2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| (a) mix, saturation | 1 | 89572 | 148608 | 1.66× | 616816.9 | 196802.7 | 375061.5 | 129888.9 | 258 | 239 |
+| (a) mix, saturation | 4 | 101232 | 137346 | 1.36× | 437668.8 | 173600.8 | 258234.0 | 118612.0 | 1871 | 623 |
+| (a) mix, saturation | 16 | 88393 | 108038 | 1.22× | 514377.4 | 287834.4 | 353831.4 | 182880.9 | 1249 | 815 |
+| (a) mix @ 10k/s | 1 | 9999 | 9997 | 1.00× | 291.6 | 412.1 | 497.4 | 450.4 | — | — |
+| (a) mix @ 10k/s | 4 | 9997 | 10000 | 1.00× | 159.0 | 165.2 | 266.8 | 299.2 | — | — |
+| (a) mix @ 10k/s | 16 | 10001 | 9999 | 1.00× | 175.7 | 279.4 | 234.5 | 314.9 | — | — |
+| (b) delete, 1 handler | 1 | 284365 | 280423 | 0.99× | 78206.1 | 74824.6 | — | — | 117 | 148 |
+| (b) delete, 1 handler | 4 | 275313 | 444298 | 1.61× | 70315.2 | 42902.2 | — | — | 1475 | 414 |
+| (b) delete, 1 handler | 16 | 268244 | 416899 | 1.55× | 71147.4 | 45364.0 | — | — | 1417 | 614 |
+| (b) delete, 4 handlers | 1 | 200687 | 193446 | 0.96× | 100531.7 | 102649.5 | — | — | 115 | 145 |
+| (b) delete, 4 handlers | 4 | 190438 | 212149 | 1.11× | 100244.8 | 92732.8 | — | — | 1542 | 434 |
+| (b) delete, 4 handlers | 16 | 187111 | 221607 | 1.18× | 99852.8 | 87722.9 | — | — | 1548 | 574 |
+| (c) ordered, 1 guilds @ 10k/s | 1 | 10000 | 9999 | 1.00× | 50475.3 | 185.0 | — | — | — | — |
+| (c) ordered, 1 guilds @ 10k/s | 4 | 9999 | 9999 | 1.00× | 50013.9 | 90.4 | — | — | — | — |
+| (c) ordered, 1 guilds @ 10k/s | 16 | 9998 | 10001 | 1.00× | 50402.1 | 85.4 | — | — | — | — |
+| (c) ordered, 64 guilds @ 10k/s | 1 | 10001 | 10000 | 1.00× | 19319.1 | 141.1 | — | — | — | — |
+| (c) ordered, 64 guilds @ 10k/s | 4 | 9998 | 9999 | 1.00× | 19098.1 | 87.3 | — | — | — | — |
+| (c) ordered, 64 guilds @ 10k/s | 16 | 9997 | 9998 | 1.00× | 18776.3 | 91.3 | — | — | — | — |
+| (c) ordered, 10000 guilds @ 10k/s | 1 | 10000 | 10001 | 1.00× | 135.2 | 135.4 | — | — | — | — |
+| (c) ordered, 10000 guilds @ 10k/s | 4 | 9999 | 10000 | 1.00× | 77.7 | 89.5 | — | — | — | — |
+| (c) ordered, 10000 guilds @ 10k/s | 16 | 9999 | 9998 | 1.00× | 72.3 | 92.0 | — | — | — | — |
+| (d) flood, 1 % interactions | 1 | 562453 | 462160 | 0.82× | 38444.9 | 43961.9 | 8820.9 | 10146.8 | 177 | 215 |
+| (d) flood, 1 % interactions | 4 | 445161 | 541774 | 1.22× | 39882.7 | 35842.6 | 9949.1 | 9986.7 | 1765 | 602 |
+| (d) flood, 1 % interactions | 16 | 411379 | 505042 | 1.23× | 57922.4 | 37256.9 | 12535.8 | 7213.0 | 1429 | 746 |
+
+Push cost P = 16 / P = 1 for (a) saturation: baseline 1249 / 258 = 4.84×,
+16.2 815 / 239 = 3.41×. Across three full runs during the story the P = 1
+push cost of the saturation rows varied from 145 to 294 ns/item.
+
+### Allocation counts (`tests/pipeline_alloc.rs`)
+
+| Case | Blocks before | Bytes before | Blocks 16.2 | Bytes 16.2 |
+| --- | ---: | ---: | ---: | ---: |
+| `unhandled` | 0 | 0 | 0 | 0 |
+| `one_concurrent` | 7 | 4496 | 7 | 4496 |
+| `two_concurrent` | 12 | 9576 | 12 | 9576 |
+| `ordered` | 4 | 256 | 5 | 3328 |
+
+`ordered` gains one block: an ordered event of a guild without queued work
+spawns that guild's runner task (the 16.1 code reused one of 64 long-lived
+sub-queue tasks and an mpsc block).
+
+### Targets
+
+| Target | Measured | Verdict |
+| --- | --- | --- |
+| (a) saturation events/s at P = 16 ≥ 2 × 88 393 = 176 786 | 108 038 (1.22×) | missed |
+| (a) saturation push ns/item P = 16 ≤ 1.5 × P = 1 | 815 / 239 = 3.41× (baseline 4.84×) | missed |
+| (a) fixed 10k/s p99 ≤ 1 ms (NFR-3) | 412.1 / 165.2 / 279.4 µs | met |
+| (d) int. p99 ≤ baseline at every P | P1 10 146.8 > 8 820.9; P4 9 986.7 > 9 949.1; P16 7 213.0 < 12 535.8 | missed at P = 1 and P = 4 |
+| (c) 64 guilds p99 ≤ 1 ms, 0 order violations | 141.1 / 87.3 / 91.3 µs, 0 violations | met |
+
+Causes of the missed targets (recorded, not gating, per the epic):
+
+- **(a) throughput.** On 4 CPUs the 4 drains, the producers, the handler and
+  interaction tasks and the HTTP fake that acks 3 000 interactions per run share
+  the same 4 worker threads, so (a) is bound by handler and interaction CPU
+  work, not by the lane lock: the lane-bound scenario (b) with one handler
+  gains 1.61× / 1.55× at P = 4 / 16. 16.2 lifts (a) 1.22×-1.66× over the
+  baseline at every P, short of 2× at P = 16.
+- **Push ratio.** The P = 16 push cost fell from 1249 to 815 ns/item, but 16
+  producers share 4 partitions (4 per lock), every event push and pop updates
+  the one global event total that keeps the bound global, and the producers run
+  on the worker threads that also run the drains. The P = 1 denominator is
+  itself noisy (145-294 ns/item between runs).
+- **(d) interaction p99.** With one partition (P = 1) the per-batch yield adds
+  a scheduler round trip per 32 items; at P = 4 the value is within 0.4 % of
+  the baseline. The run before the yield measured 8 878.0 / 15 802.2 /
+  12 261.3 µs: on this shared host the P = 1 and P = 4 values move by more than
+  the margin between runs.
 
 ## Method notes
 

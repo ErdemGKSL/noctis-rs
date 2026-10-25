@@ -751,6 +751,8 @@ impl App {
     }
 
     /// The lane configuration `run` passes to the lanes.
+    ///
+    /// `run` splits the lanes into [`lane_partitions`] partitions.
     pub(crate) fn lane_config(&self) -> LaneConfig {
         LaneConfig {
             app: Arc::clone(&self.shared.app),
@@ -931,8 +933,9 @@ impl App {
     /// parsed item into the lanes without waiting: interactions into the
     /// never-dropped Interaction Lane, other events into the bounded event
     /// lane (AD-10). The gateway parses only interactions and the event
-    /// types the Module handlers take. One core task drains the lanes,
-    /// interactions first; each event waits for one of
+    /// types the Module handlers take. The lanes are partitioned by shard,
+    /// one partition per tokio worker thread, and one core task drains each
+    /// partition, interactions first; each event waits for one of
     /// [`handler_concurrency`](AppBuilder::handler_concurrency) worker
     /// permits (interactions never do) and runs its ordered handlers in
     /// per-guild order, then its concurrent handlers together. A shard
@@ -1091,7 +1094,7 @@ impl App {
         log_plan(&plan);
         let options = self.gateway_options(token, &plan);
         describe_metrics();
-        let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
+        let (sender, receiver) = noctis_gateway::lanes_with(self.lane_config(), lane_partitions());
         // The testkit's injection point (AD-10): it observes a clone of the
         // shard tasks' sender; production Apps install no tap.
         if let Some(tap) = &self.shared.lane_tap {
@@ -1383,6 +1386,16 @@ pub(crate) fn warn_cluster_without_proxy(range: Option<&Range<u32>>, total: Opti
          bot token can exceed Discord's global limit of 50 requests/s per token (RL-02); point every \
          process at one shared rate-limit proxy with NOCTIS_HTTP_PROXY or AppBuilder::http_proxy"
     );
+}
+
+/// How many lane partitions `run` creates: the worker threads of the
+/// current tokio runtime (1 outside a runtime or on a current-thread one),
+/// clamped to `1..=MAX_LANE_PARTITIONS`.
+pub(crate) fn lane_partitions() -> NonZeroUsize {
+    let workers =
+        tokio::runtime::Handle::try_current().map_or(1, |handle| handle.metrics().num_workers());
+    NonZeroUsize::new(workers.clamp(1, noctis_gateway::MAX_LANE_PARTITIONS))
+        .unwrap_or(NonZeroUsize::MIN)
 }
 
 /// Logs the plan's alignment warnings and the shards this process starts.

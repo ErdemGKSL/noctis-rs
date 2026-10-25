@@ -358,15 +358,15 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   automatically; request them with `.intents(..)` to receive DM messages, DM
   reactions or DM typing.
 - **Several handlers per event all run.** `ordered` handlers run first, sequentially in
-  fold order, and in **per-guild order**: events of one guild (guild id hashed onto 64
-  sub-queues; guildless events share one) run their ordered handlers one event at a
-  time, in arrival order. Then every non-ordered handler of the event runs
-  concurrently. Each handler gets its own copy of the payload.
-- **Ordered hang hazard:** a hung `ordered` handler blocks its whole sub-queue (every
-  guild that hashes to it, and all guildless events in sub-queue 0), and the events
-  queued behind it keep their worker permits, so it can eventually hold all
-  `handler_concurrency` permits and stop event handling. noctis adds no timeout: bound
-  slow work in ordered handlers yourself, e.g. with `tokio::time::timeout`.
+  fold order, and in **per-guild order**: events of one guild (each guild gets its own
+  FIFO, created on demand and removed when empty; guildless events share one) run their
+  ordered handlers one event at a time, in arrival order. Then every non-ordered
+  handler of the event runs concurrently. Each handler gets its own copy of the payload.
+- **Ordered hang hazard:** a hung `ordered` handler blocks only its own guild (or all
+  guildless events), but the events queued behind it keep their worker permits, so it
+  can eventually hold all `handler_concurrency` permits and stop event handling. noctis
+  adds no timeout: bound slow work in ordered handlers yourself, e.g. with
+  `tokio::time::timeout`.
 - **Bounded:** at most `.handler_concurrency(n)` events (default 256) run their handlers
   at once; further events wait in the event lane. Interactions never wait for this
   bound.

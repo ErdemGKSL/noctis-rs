@@ -166,18 +166,6 @@ fn logging(name: &'static str, ordered: bool, log: &Log) -> EventHandler {
     })
 }
 
-/// Matrix 38: the sub-queue hash.
-#[test]
-fn subqueue_hash() {
-    assert_eq!(subqueue(None), 0);
-    assert_eq!(subqueue(Some(Id::new(42))), subqueue(Some(Id::new(42))));
-    for id in [1, u64::MAX] {
-        assert!(subqueue(Some(Id::new(id))) < SUBQUEUES);
-    }
-    assert!((0_u64.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 58) < 64);
-    assert_ne!(subqueue(Some(Id::new(GA))), subqueue(Some(Id::new(GB))));
-}
-
 /// Matrix 25 and 6: every concurrent handler runs once with the payload;
 /// the same descriptor twice runs twice.
 #[tokio::test]
@@ -310,7 +298,7 @@ async fn no_guild_is_sequential() {
         })
     };
     let h = Harness::start(App::builder().module(Module::new("m").__add(o)));
-    assert_eq!(subqueue(user_update(1).guild_id()), 0);
+    assert_eq!(user_update(1).guild_id(), None);
     h.push(user_update(1));
     h.push(user_update(2));
     until("both", || log.count("end:2") == 1).await;
@@ -2142,4 +2130,394 @@ async fn guild_not_served_runs_no_handler() {
         capture.text()
     );
     h.close().await;
+}
+
+/// Story 16.2: one drain per lane partition and on-demand per-guild
+/// ordered FIFOs.
+mod partitions {
+    use std::num::NonZeroUsize;
+
+    use super::*;
+
+    /// A drain over `n` lane partitions whose worker set and shutdown
+    /// controls the test holds.
+    struct Multi {
+        _app: App,
+        sender: Option<LaneSender>,
+        workers: Arc<Workers>,
+        controls: Shutdown,
+        drain: Option<AbortOnDrop>,
+    }
+
+    impl Multi {
+        fn start(builder: &mut AppBuilder, partitions: usize) -> Self {
+            builder.runtime(&Runtime::for_test());
+            let app = builder.build().unwrap();
+            let controls = Shutdown::default();
+            let (sender, receiver) = noctis_gateway::lanes_with(
+                app.lane_config(),
+                NonZeroUsize::new(partitions).unwrap(),
+            );
+            let workers = Arc::new(app.workers(controls.clone()));
+            let drain = AbortOnDrop(tokio::spawn(drain_shared(receiver, Arc::clone(&workers))));
+            Self {
+                _app: app,
+                sender: Some(sender),
+                workers,
+                controls,
+                drain: Some(drain),
+            }
+        }
+
+        fn push_on(&self, shard: u32, kind: InboundKind) {
+            self.sender.as_ref().unwrap().push(Inbound {
+                shard: ShardId::new(shard, 16),
+                received_at: Instant::now(),
+                kind,
+            });
+        }
+
+        fn push(&self, shard: u32, event: Event) {
+            self.push_on(shard, InboundKind::Event(Box::new(event)));
+        }
+
+        /// Waits for the drain to return (after the senders dropped or the
+        /// shutdown fired).
+        async fn join(&mut self) {
+            let drain = self.drain.take().unwrap();
+            let abort = drain.0.abort_handle();
+            until("the drain returned", || abort.is_finished()).await;
+            drop(drain);
+        }
+    }
+
+    fn ping(id: u64) -> InboundKind {
+        let d = json!({
+            "id": id.to_string(),
+            "application_id": "1",
+            "type": 1,
+            "token": "t",
+            "version": 1,
+            "authorizing_integration_owners": {},
+            "entitlements": [],
+        });
+        let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+        InboundKind::Interaction(Box::new(serde_json::from_value(d).unwrap()), raw)
+    }
+
+    /// The 16.1-era sub-queue hash, to pick guild ids that used to share a
+    /// sub-queue.
+    fn old_subqueue(id: u64) -> u64 {
+        id.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 58
+    }
+
+    #[test]
+    fn lane_partitions_follow_the_runtime() {
+        assert_eq!(crate::app::lane_partitions().get(), 1);
+        for (workers, expected) in [(1, 1), (3, 3), (70, 64)] {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(workers)
+                .build()
+                .unwrap();
+            let got = runtime.block_on(async { crate::app::lane_partitions().get() });
+            assert_eq!(got, expected, "{workers} workers");
+        }
+        let current = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        assert_eq!(
+            current.block_on(async { crate::app::lane_partitions().get() }),
+            1
+        );
+    }
+
+    /// Two guilds that shared a 16.1 sub-queue no longer block each other.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn colliding_guilds_are_isolated() {
+        let collide = (2..u64::MAX)
+            .find(|id| old_subqueue(*id) == old_subqueue(GA))
+            .unwrap();
+        let log = Log::default();
+        let gate = Arc::new(Notify::new());
+        let m = Multi::start(
+            App::builder().module(Module::new("m").__add(ordered_logger(&log, &gate, Some(GA)))),
+            4,
+        );
+        m.push(0, message_delete(5, Some(GA)));
+        until("GA started", || log.count("start:5") == 1).await;
+        m.push(0, message_delete(6, Some(collide)));
+        m.push(1, message_delete(7, Some(collide)));
+        until("collider handled", || {
+            log.count("end:6") == 1 && log.count("end:7") == 1
+        })
+        .await;
+        assert_eq!(log.count("end:5"), 0);
+        gate.notify_one();
+        until("GA released", || log.count("end:5") == 1).await;
+        until("map empty", || m.workers.subqueues() == 0).await;
+    }
+
+    /// Ordered handlers of one guild start in arrival order, each after the
+    /// previous ended, while other shards' partitions run beside it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn same_guild_order_across_partitions() {
+        let log = Log::default();
+        let o = {
+            let log = log.clone();
+            handler("o", true, move |ctx, e: MessageDelete| {
+                let log = log.clone();
+                async move {
+                    log.push(format!("start:{}:{}", ctx.guild_id().unwrap(), e.id));
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                    log.push(format!("end:{}:{}", ctx.guild_id().unwrap(), e.id));
+                    Ok(())
+                }
+            })
+        };
+        let m = Multi::start(App::builder().module(Module::new("m").__add(o)), 4);
+        for id in 1..=20 {
+            for shard in 0..4_u32 {
+                let guild = u64::from(shard) + 10;
+                m.push(shard, message_delete(id, Some(guild)));
+            }
+        }
+        until("all ended", || {
+            log.lines().iter().filter(|l| l.starts_with("end:")).count() == 80
+        })
+        .await;
+        let lines = log.lines();
+        for guild in 10..14 {
+            let own: Vec<_> = lines
+                .iter()
+                .filter(|l| l.contains(&format!(":{guild}:")))
+                .cloned()
+                .collect();
+            let expected: Vec<_> = (1..=20)
+                .flat_map(|id| [format!("start:{guild}:{id}"), format!("end:{guild}:{id}")])
+                .collect();
+            assert_eq!(own, expected);
+        }
+        until("map empty", || m.workers.subqueues() == 0).await;
+    }
+
+    /// The per-guild map holds at most `handler_concurrency` guilds and is
+    /// empty, with no runner left, once the work is done.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ordered_map_is_bounded() {
+        let started = Arc::new(AtomicUsize::new(0));
+        let ended = Arc::new(AtomicUsize::new(0));
+        let release = Arc::new(Semaphore::new(0));
+        let o = {
+            let (started, ended, release) = (
+                Arc::clone(&started),
+                Arc::clone(&ended),
+                Arc::clone(&release),
+            );
+            handler("o", true, move |_, _: MessageDelete| {
+                let (started, ended, release) = (
+                    Arc::clone(&started),
+                    Arc::clone(&ended),
+                    Arc::clone(&release),
+                );
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    release.acquire().await?.forget();
+                    ended.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            })
+        };
+        let m = Multi::start(
+            App::builder()
+                .handler_concurrency(3)
+                .module(Module::new("m").__add(o)),
+            4,
+        );
+        for guild in 1..=10_u64 {
+            m.push(
+                u32::try_from(guild % 4).unwrap(),
+                message_delete(guild + 100, Some(guild)),
+            );
+        }
+        until("three started", || started.load(Ordering::SeqCst) == 3).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(started.load(Ordering::SeqCst), 3);
+        assert_eq!(m.workers.subqueues(), 3);
+        release.add_permits(10);
+        until("all ended", || ended.load(Ordering::SeqCst) == 10).await;
+        until("map empty", || m.workers.subqueues() == 0).await;
+        until("no runner", || m.controls.tracker.is_empty()).await;
+    }
+
+    /// An interaction queued behind a 10 000-event flood is handed to its
+    /// pipeline before the event after it starts.
+    #[tokio::test(flavor = "current_thread")]
+    async fn interaction_before_later_event_under_flood() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let seen = Arc::new(Mutex::new(None));
+        let h = {
+            let (seen, capture) = (Arc::clone(&seen), capture.clone());
+            handler("h", false, move |_, e: MessageDelete| {
+                let (seen, capture) = (Arc::clone(&seen), capture.clone());
+                async move {
+                    if e.id.get() == 99_999 {
+                        let traced = !capture
+                            .lines_with(&["no handler registered", "kind=Interaction"])
+                            .is_empty();
+                        *seen.lock().unwrap() = Some(traced);
+                    }
+                    Ok(())
+                }
+            })
+        };
+        let m = Multi::start(App::builder().module(Module::new("m").__add(h)), 4);
+        for id in 1..=10_000 {
+            m.push(2, user_update(id));
+        }
+        m.push_on(2, ping(9));
+        m.push(2, message_delete(99_999, Some(GA)));
+        until("E started", || seen.lock().unwrap().is_some()).await;
+        assert_eq!(*seen.lock().unwrap(), Some(true));
+    }
+
+    /// At most `handler_concurrency` events hold permits with 4 drains.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrency_bound_with_partitions() {
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+        let done = Arc::new(AtomicUsize::new(0));
+        let h = {
+            let (in_flight, max, done) =
+                (Arc::clone(&in_flight), Arc::clone(&max), Arc::clone(&done));
+            handler("h", false, move |_, _: MessageDelete| {
+                let (in_flight, max, done) =
+                    (Arc::clone(&in_flight), Arc::clone(&max), Arc::clone(&done));
+                async move {
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    max.fetch_max(now, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                    done.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            })
+        };
+        let m = Multi::start(
+            App::builder()
+                .handler_concurrency(2)
+                .module(Module::new("m").__add(h)),
+            4,
+        );
+        for id in 1..=10_u64 {
+            m.push(u32::try_from(id % 4).unwrap(), message_delete(id, Some(id)));
+        }
+        until("all ten", || done.load(Ordering::SeqCst) == 10).await;
+        assert_eq!(max.load(Ordering::SeqCst), 2);
+    }
+
+    /// `shutdown` drains every partition until empty.
+    #[tokio::test(flavor = "current_thread")]
+    async fn shutdown_drains_all_partitions() {
+        let log = Log::default();
+        let mut m = Multi::start(
+            App::builder().module(Module::new("m").__add(logging("h", false, &log))),
+            4,
+        );
+        for id in 1..=12_u64 {
+            m.push(u32::try_from(id % 4).unwrap(), message_delete(id, Some(id)));
+        }
+        m.controls.shutdown.cancel();
+        m.join().await;
+        until("every item", || log.lines().len() == 12).await;
+        for id in 1..=12 {
+            assert_eq!(log.count(&format!("h:{id}")), 1);
+        }
+    }
+
+    /// `cancel` discards the queued items of every partition with one
+    /// summary warning.
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancel_warns_once_with_totals() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let mut m = Multi::start(
+            App::builder().module(Module::new("m").__add(logging("h", false, &log))),
+            4,
+        );
+        for id in 1..=8_u64 {
+            m.push(u32::try_from(id % 4).unwrap(), message_delete(id, Some(id)));
+        }
+        m.push_on(3, ping(1));
+        m.controls.shutdown.cancel();
+        m.controls.cancel.cancel();
+        m.join().await;
+        assert!(log.lines().is_empty());
+        let lines = capture.lines_with(&["lanes discarded at shutdown"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("WARN"), "{}", lines[0]);
+        assert!(lines[0].contains("interactions=1"), "{}", lines[0]);
+        assert!(lines[0].contains("events=8"), "{}", lines[0]);
+    }
+
+    /// Batched and permit-waiting events of several partitions count in the
+    /// one summary.
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancel_counts_batched_and_waiting() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut m = Multi::start(
+            App::builder()
+                .handler_concurrency(1)
+                .module(Module::new("ops").__add(shutdown_gated(&log, &gate))),
+            4,
+        );
+        m.push(0, message_delete(1, Some(GA)));
+        until("first started", || log.count("start:1") == 1).await;
+        // Partition 0: 2 waits for a permit, 3 stays batched; partitions 1
+        // and 2 each wait for a permit.
+        m.push(0, message_delete(2, Some(GA)));
+        m.push(0, message_delete(3, Some(GA)));
+        m.push(1, message_delete(4, Some(GB)));
+        m.push(2, message_delete(5, Some(GB)));
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        m.controls.shutdown.cancel();
+        m.controls.cancel.cancel();
+        m.join().await;
+        let lines = capture.lines_with(&["lanes discarded at shutdown"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("interactions=0"), "{}", lines[0]);
+        assert!(lines[0].contains("events=4"), "{}", lines[0]);
+        assert_eq!(log.count("start:2"), 0);
+    }
+
+    fn shutdown_gated(log: &Log, gate: &Arc<Semaphore>) -> EventHandler {
+        let log = log.clone();
+        let gate = Arc::clone(gate);
+        handler("b", false, move |_, e: MessageDelete| {
+            let log = log.clone();
+            let gate = Arc::clone(&gate);
+            async move {
+                log.push(format!("start:{}", e.id));
+                let _permit = gate.acquire().await;
+                Ok(())
+            }
+        })
+    }
+
+    /// Dropping the supervisor's `AbortOnDrop` aborts every partition drain.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abort_aborts_partition_drains() {
+        let mut m = Multi::start(&mut App::builder(), 4);
+        // The test, `drain_shared` and the four partition drains.
+        until("drains started", || Arc::strong_count(&m.workers) == 6).await;
+        drop(m.drain.take());
+        until("drains aborted", || Arc::strong_count(&m.workers) == 1).await;
+        drop(m.sender.take());
+    }
 }

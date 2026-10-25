@@ -1254,13 +1254,14 @@ pub use noctis_macros::MessageCommand;
 /// The optional `#[event(..)]` takes, in any order, each at most once:
 ///
 /// - `ordered`: the handler runs before the concurrent handlers of the
-///   event, one event at a time per guild. Ordered handlers share 64
-///   sub-queues keyed by a hash of the guild id (guildless events use
-///   sub-queue 0). A hung ordered handler blocks its whole sub-queue, and
-///   the events queued behind it keep their worker permits, so it can
-///   eventually hold every `handler_concurrency` permit and stop all event
-///   handling. noctis adds no timeout: bound slow work in ordered handlers
-///   yourself, for example with `tokio::time::timeout`.
+///   event, one event at a time per guild: each guild gets its own FIFO,
+///   created when an ordered event of it arrives and removed once it is
+///   empty (guildless events share one FIFO). A hung ordered handler blocks
+///   only its own guild (or every guildless event), but the events queued
+///   behind it keep their worker permits, so it can eventually hold every
+///   `handler_concurrency` permit and stop all event handling. noctis adds
+///   no timeout: bound slow work in ordered handlers yourself, for example
+///   with `tokio::time::timeout`.
 /// - `droppable`: the event may be dropped when the event lane is full, if
 ///   every handler of its type is droppable. `TYPING_START` and
 ///   `PRESENCE_UPDATE` are always droppable, whatever the flag says.
