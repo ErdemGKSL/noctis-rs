@@ -2,7 +2,8 @@
 title: 'Story 16.1: Event pipeline throughput bench and baseline'
 type: 'chore'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '4c5220fc62dfb8fd7742a53ab96ad28423c7dc73'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
