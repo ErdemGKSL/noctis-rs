@@ -318,6 +318,11 @@ impl fmt::Display for PublishReport {
 
 /// A pending Publish, from [`App::publish`]; `.await` it.
 ///
+/// When it resolves, the App's
+/// [`PublishCompleted`](crate::lifecycle::PublishCompleted) or
+/// [`PublishFailed`](crate::lifecycle::PublishFailed) Lifecycle Hooks run:
+/// queued while `App::run` runs, else before the result is returned.
+///
 /// ```no_run
 /// use noctis_core::publish::PublishScope;
 ///
@@ -370,7 +375,32 @@ impl<'a> IntoFuture for Publish<'a> {
             dry_run = self.dry_run,
             clear = self.clear,
         );
-        Box::pin(execute(self).instrument(span))
+        let (app, scope, dry_run, clear) = (self.app, self.scope, self.dry_run, self.clear);
+        Box::pin(async move {
+            let result = execute(self).instrument(span).await;
+            // FR-54: every resolved Publish fires its Lifecycle Hook.
+            let shared = app.shared();
+            match &result {
+                Ok(report) => {
+                    crate::lifecycle::fire(shared, || crate::lifecycle::PublishCompleted {
+                        scope,
+                        clear,
+                        report: report.clone(),
+                    })
+                    .await;
+                }
+                Err(error) => {
+                    crate::lifecycle::fire(shared, || crate::lifecycle::PublishFailed {
+                        scope,
+                        dry_run,
+                        clear,
+                        error: error.clone(),
+                    })
+                    .await;
+                }
+            }
+            result
+        })
     }
 }
 

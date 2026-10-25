@@ -640,6 +640,11 @@ list in CI.
     `catch_unwind` on the render pool. A panic becomes an error-sink event and, for
     an interaction, an error response; the Shard keeps running.
   - Library code never uses `unwrap`/`expect` on external input.
+  - Amended (2026-10-24, Story 13.5): Lifecycle Hook failures have their own origin,
+    `ErrorOrigin::Hook` (`"hook"`, appended last to `ErrorOrigin::ALL`, now six; `LogSink`
+    target `noctis::hook`); a report carries the Module, the handler, `event_type` = the
+    hook event's `NAME` and the shard of a shard event, never a guild. A hook still
+    running when its run's drain deadline passes is reported once as `Cancelled`.
 
 ### AD-14 — Port shape
 - **Binds:** `noctis-ports`, `noctis-core`, `noctis-testkit`, all adapter
@@ -996,6 +1001,18 @@ list in CI.
     until empty or the grace period ends, with the Responder and HTTP still live;
     await `gateway.closed()`; drop ports. Handlers still running at the deadline are
     cancelled and reported to the Error Sink.
+  - Amended (2026-10-24, Story 13.5): core fires every Lifecycle Hook event into one
+    per-run ordered queue (an unbounded `mpsc`, never the lagging internal
+    `broadcast`) read by one runner task: per event in arrival order, every hook of it
+    in Registry fold order, one at a time; firing never blocks the shard tasks. Outside
+    a run (no runner attached) the same hooks run inline in the caller (`Publish`'s
+    future, `Modules::set_enabled`/`reset`). `ShutdownStarted` pairs with `AppStarted`:
+    exactly once per run in which `AppStarted` fired (the shutdown sequence, the early
+    shutdown before `GET /gateway/bot`, or `StartupFailed` on an error return). At every
+    return of `run`, after the shard events are flushed, the queue closes and the
+    runner gets until `max(ShutdownStarted + shutdown_grace, now + 1 s)`; then the
+    running hook is cancelled and queued events are discarded with one warning.
+    Dropping the `run_until` future aborts the runner.
 
 ### AD-22 — Attachments are content-addressed; renders are awaited in handlers
 - **Binds:** `noctis-ui`, `noctis-image`, `noctis-core`, `noctis-ports`; FR-30,

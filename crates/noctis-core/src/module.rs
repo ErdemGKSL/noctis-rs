@@ -8,6 +8,7 @@ use crate::boot_flags::BootFlags;
 use crate::command::CommandHandler;
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
+use crate::lifecycle::LifecycleHook;
 use crate::menu::ContextMenuHandler;
 use crate::metadata::BaseMeta;
 use crate::middleware::{AfterMiddleware, BeforeMiddleware};
@@ -31,7 +32,8 @@ pub(crate) mod sealed {
 
 /// A descriptor a Module stores: an [`EventHandler`], a
 /// [`CommandHandler`], a [`ContextMenuHandler`], a
-/// [`ComponentHandler`] or a [`ModalHandler`]. Sealed; what
+/// [`ComponentHandler`], a [`ModalHandler`] or a [`LifecycleHook`].
+/// Sealed; what
 /// [`Register`] impls push with [`Module::__add`].
 #[doc(hidden)]
 pub trait Descriptor: sealed::Sealed {}
@@ -101,13 +103,26 @@ impl sealed::Sealed for ModalHandler {
 
 impl Descriptor for ModalHandler {}
 
+impl sealed::Sealed for LifecycleHook {
+    fn register(
+        self,
+        module: &mut Module,
+        flags: &'static [&'static str],
+        apps: &'static [&'static str],
+    ) {
+        module.hooks.push(self, flags, apps);
+    }
+}
+
+impl Descriptor for LifecycleHook {}
+
 /// An interaction struct [`Module::add::<T>()`](Module::add) registers: a
 /// struct with a kind derive (`SlashCommand`, `UserCommand`,
-/// `MessageCommand`, `EventHandler`, `Button`, a select kind or `Modal`)
-/// and a `#[handler]` method. Its only item is hidden, so only the derives
+/// `MessageCommand`, `EventHandler`, `Button`, a select kind, `Modal` or
+/// `Hook`) and a `#[handler]` method. Its only item is hidden, so only the derives
 /// implement it.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a Noctis interaction: derive SlashCommand, UserCommand, MessageCommand, EventHandler, Button, a select kind or Modal and add a #[handler] method",
+    message = "`{Self}` is not a Noctis interaction: derive SlashCommand, UserCommand, MessageCommand, EventHandler, Button, a select kind, Modal or Hook and add a #[handler] method",
     label = "not a Noctis interaction",
     note = "`Module::add::<T>()` registers one struct per interaction"
 )]
@@ -252,6 +267,7 @@ pub struct Module {
     menus: Flagged<ContextMenuHandler>,
     components: Flagged<ComponentHandler>,
     modals: Flagged<ModalHandler>,
+    hooks: Flagged<LifecycleHook>,
     uses: Vec<UsedRoute>,
     nodes: Vec<NodeDecl>,
     before: Vec<BeforeMiddleware>,
@@ -346,6 +362,7 @@ impl Module {
             menus: Flagged::new(),
             components: Flagged::new(),
             modals: Flagged::new(),
+            hooks: Flagged::new(),
             uses: Vec::new(),
             nodes: Vec::new(),
             before: Vec::new(),
@@ -700,6 +717,11 @@ impl Module {
         &self.modals.items
     }
 
+    /// Its own Lifecycle Hooks, in `add` order.
+    pub(crate) fn hooks(&self) -> &[LifecycleHook] {
+        &self.hooks.items
+    }
+
     /// The Routes it declared with [`Module::uses`], in call order.
     pub(crate) fn used_routes(&self) -> &[UsedRoute] {
         &self.uses
@@ -765,11 +787,13 @@ impl Module {
         let menus = self.menus.flags.iter();
         let components = self.components.flags.iter();
         let modals = self.modals.flags.iter();
+        let hooks = self.hooks.flags.iter();
         handlers
             .chain(commands)
             .chain(menus)
             .chain(components)
             .chain(modals)
+            .chain(hooks)
             .flat_map(|flags| flags.iter().copied())
     }
 
@@ -793,6 +817,7 @@ impl Module {
             menus: self.menus.selected(selection, app),
             components: self.components.selected(selection, app),
             modals: self.modals.selected(selection, app),
+            hooks: self.hooks.selected(selection, app),
             uses: self.uses.clone(),
             nodes: self.nodes.clone(),
             before: self.before.clone(),
@@ -849,6 +874,7 @@ impl fmt::Debug for Module {
             .map(ComponentHandler::route)
             .collect();
         let modals: Vec<&str> = self.modals.items.iter().map(ModalHandler::route).collect();
+        let hooks: Vec<&str> = self.hooks.items.iter().map(LifecycleHook::name).collect();
         // The flagged registrations: (name or Route id, flags).
         let flagged: Vec<(&str, &[&str])> = self
             .handlers
@@ -858,6 +884,7 @@ impl fmt::Debug for Module {
             .chain(self.menus.iter().map(|(h, f)| (h.menu_name(), f)))
             .chain(self.components.iter().map(|(h, f)| (h.route(), f)))
             .chain(self.modals.iter().map(|(h, f)| (h.route(), f)))
+            .chain(self.hooks.iter().map(|(h, f)| (h.name(), f)))
             .filter(|(_, f)| !f.is_empty())
             .collect();
         // The App-restricted registrations: (name or Route id, App ids).
@@ -888,6 +915,7 @@ impl fmt::Debug for Module {
             .field("menus", &menus)
             .field("components", &components)
             .field("modals", &modals)
+            .field("hooks", &hooks)
             .field("flagged", &flagged)
             .field("apps", &self.apps)
             .field("restricted", &restricted)

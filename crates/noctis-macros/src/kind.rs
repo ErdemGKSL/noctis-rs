@@ -30,6 +30,8 @@ pub(crate) enum Family {
     Component,
     /// `#[derive(Modal)]`.
     Modal,
+    /// `#[derive(Hook)]` (a Lifecycle Hook).
+    Hook,
 }
 
 impl Family {
@@ -42,6 +44,7 @@ impl Family {
             Self::Event => quote!(#core::__EventKind),
             Self::Component => quote!(#core::__ComponentKind),
             Self::Modal => quote!(#core::__ModalKind),
+            Self::Hook => quote!(#core::__LifecycleKind),
         }
     }
 
@@ -54,6 +57,7 @@ impl Family {
             Self::Event => quote!(#core::EventHandler),
             Self::Component => quote!(#core::ComponentHandler),
             Self::Modal => quote!(#core::ModalHandler),
+            Self::Hook => quote!(#core::LifecycleHook),
         }
     }
 
@@ -75,6 +79,9 @@ impl Family {
             Self::Modal => format!(
                 "add impl {name} {{ #[handler] async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> }}"
             ),
+            Self::Hook => format!(
+                "add impl {name} {{ #[handler] async fn handle(self, ctx: HookCtx, event: AppStarted) -> HandlerResult<()> }}"
+            ),
         }
     }
 
@@ -84,7 +91,7 @@ impl Family {
             Self::Component | Self::Modal => format!(
                 "[CID-04] `{name}` has no #[handler] method, so no component can be built for it"
             ),
-            Self::Slash | Self::Menu | Self::Event => {
+            Self::Slash | Self::Menu | Self::Event | Self::Hook => {
                 format!("`{name}` has no #[handler] method, so it cannot be registered")
             }
         };
@@ -291,6 +298,11 @@ mod tests {
         let s = Family::Slash.missing_handler("Ping");
         assert!(s.starts_with("`Ping` has no #[handler] method"), "{s}");
         assert!(!s.contains("CID-04"));
+        let h = Family::Hook.missing_handler("Up");
+        assert!(
+            h.starts_with("`Up` has no #[handler] method, so it cannot be registered\n  = help: add impl Up { #[handler] async fn handle(self, ctx: HookCtx, event: AppStarted) -> HandlerResult<()> }"),
+            "{h}"
+        );
         assert!(panic_lit("{x}").to_string().contains("{{x}}"));
     }
 

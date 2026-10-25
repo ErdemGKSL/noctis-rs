@@ -77,7 +77,14 @@ fn origin_names() {
     let names: Vec<_> = ErrorOrigin::ALL.iter().map(|o| o.as_str()).collect();
     assert_eq!(
         names,
-        ["command", "component", "autocomplete", "event", "render"]
+        [
+            "command",
+            "component",
+            "autocomplete",
+            "event",
+            "render",
+            "hook"
+        ]
     );
     for origin in ErrorOrigin::ALL {
         assert_eq!(origin.to_string(), origin.as_str());
@@ -124,7 +131,7 @@ fn override_and_last_wins() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].origin, ErrorOrigin::Event);
     assert!(capture.lines_with(&["event handler panicked"]).is_empty());
-    assert_eq!(capture.lines_with(&["handler panicked"]).len(), 4);
+    assert_eq!(capture.lines_with(&["handler panicked"]).len(), 5);
 }
 
 /// Matrix 4: one `Arc` serves every origin; each report arrives once.

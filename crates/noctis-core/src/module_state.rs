@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
@@ -372,13 +372,14 @@ impl State {
     }
 
     /// Reads, changes and (when changed) writes the record of `id`, then
-    /// updates the snapshot from it.
+    /// updates the snapshot from it. Returns the Module's id and its own
+    /// state in `scope` when the record changed, `None` when it did not.
     async fn write(
         &self,
         id: &str,
         scope: ModuleScope,
         change: impl FnOnce(&mut Record),
-    ) -> Result<(), ModuleStateError> {
+    ) -> Result<Option<(&'static str, bool)>, ModuleStateError> {
         let Some(index) = self.index.index(id) else {
             return Err(ModuleStateError::UnknownModule { id: id.to_owned() });
         };
@@ -396,16 +397,18 @@ impl State {
         let mut next = Snapshot::clone(&self.snapshot.load());
         next.apply(words, index, &record);
         self.snapshot.store(Arc::new(next));
-        if changed {
-            tracing::info!(
-                target: "noctis::modules",
-                module = id,
-                scope = %scope,
-                enabled = record.own(scope),
-                "Module state changed"
-            );
+        if !changed {
+            return Ok(None);
         }
-        Ok(())
+        let enabled = record.own(scope);
+        tracing::info!(
+            target: "noctis::modules",
+            module = id,
+            scope = %scope,
+            enabled,
+            "Module state changed"
+        );
+        Ok(Some((id, enabled)))
     }
 }
 
@@ -477,6 +480,9 @@ async fn poll_loop(state: &State, mut ticks: tokio::time::Interval) {
 pub struct Modules {
     /// The App's state; `None` without an App.
     state: Option<Arc<State>>,
+    /// The App whose `ModuleToggled` hooks a change fires; weak, so a
+    /// handle kept in the App's own state makes no cycle.
+    app: Weak<crate::handler::AppShared>,
 }
 
 impl Modules {
@@ -484,7 +490,28 @@ impl Modules {
     pub(crate) fn of(app: Option<&Arc<crate::handler::AppShared>>) -> Self {
         Self {
             state: app.map(|app| Arc::clone(&app.module_state)),
+            app: app.map_or_else(Weak::new, Arc::downgrade),
         }
+    }
+
+    /// Fires `ModuleToggled` for a write that changed the record (after the
+    /// write mutex is released).
+    async fn toggled(
+        &self,
+        changed: Option<(&'static str, bool)>,
+        scope: ModuleScope,
+        reset: bool,
+    ) {
+        let (Some((module, enabled)), Some(app)) = (changed, self.app.upgrade()) else {
+            return;
+        };
+        crate::lifecycle::fire(&app, || crate::lifecycle::ModuleToggled {
+            module,
+            scope,
+            enabled,
+            reset,
+        })
+        .await;
     }
 
     fn state(&self) -> Result<&Arc<State>, PortError> {
@@ -503,7 +530,9 @@ impl Modules {
     }
 
     /// Sets the Module's own state in `scope`: its global state, or the
-    /// guild's override. An unchanged record is not written.
+    /// guild's override. An unchanged record is not written. A change fires
+    /// the App's [`ModuleToggled`](crate::lifecycle::ModuleToggled) hooks
+    /// (queued while `App::run` runs, else before this returns).
     ///
     /// # Errors
     ///
@@ -516,14 +545,17 @@ impl Modules {
         enabled: bool,
     ) -> Result<(), ModuleStateError> {
         let scope = scope.into();
-        self.state()?
+        let changed = self
+            .state()?
             .write(module, scope, |record| record.set(scope, enabled))
-            .await
+            .await?;
+        self.toggled(changed, scope, false).await;
+        Ok(())
     }
 
     /// Resets the Module's own state in `scope`: removes the guild's
     /// override, or sets the global state back to enabled (overrides
-    /// kept).
+    /// kept). A change fires `ModuleToggled` with `reset: true`.
     ///
     /// # Errors
     ///
@@ -534,9 +566,12 @@ impl Modules {
         scope: impl Into<ModuleScope>,
     ) -> Result<(), ModuleStateError> {
         let scope = scope.into();
-        self.state()?
+        let changed = self
+            .state()?
             .write(module, scope, |record| record.reset(scope))
-            .await
+            .await?;
+        self.toggled(changed, scope, true).await;
+        Ok(())
     }
 
     /// Reloads the whole snapshot from the store now.
@@ -556,6 +591,10 @@ impl Modules {
     }
 }
 
+#[expect(
+    clippy::missing_fields_in_debug,
+    reason = "the App back-reference is a handle, not state"
+)]
 impl fmt::Debug for Modules {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (modules, version) = self

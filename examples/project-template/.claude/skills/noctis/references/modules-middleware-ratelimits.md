@@ -37,14 +37,14 @@ Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
 `i18n.md` §5), `.flags([..])` (Boot Flags, §2), `.id()`, `Clone`, `Debug`, and
 `AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
 kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
-the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the
-derives implement).
+the select kinds, `Modal`, `Hook`) and a `#[handler]` method (the `noctis::Register`
+trait the derives implement).
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
-- Commands, context menus, event handlers, components and modals run today, components
-  and modals with their responses (see `routes-payloads-refs.md` §1 and `responder.md`
-  §3b); `#[hook]` joins later [planned].
+- Commands, context menus, event handlers, components, modals and Lifecycle Hooks
+  (`#[derive(Hook)]`, `app-and-sharding.md` §7) run today, components and modals with
+  their responses (see `routes-payloads-refs.md` §1 and `responder.md` §3b).
 - One handler per Route id per App: add each component or modal struct to exactly one
   mounted Module, or `build()` fails with ``[CID-04] Route `…` has two handlers``.
 - `.uses::<R>()` (`#[must_use]`) declares that this Module's Views build components of
@@ -277,8 +277,10 @@ ctx.modules().refresh().await?;                                     // reload th
   `ids()` is empty, writes and `refresh()` return `ModuleStateError::Port(Unavailable)`.
 - The template's `/dashboard` Modules tab toggles `setup` and `profile` per guild
   (`src/modules/dashboard/handlers.rs`, `ToggleModule`).
-- **Hook.** [planned, Story 13.5] a toggle fires the `ModuleToggled { module, scope,
-  enabled }` Lifecycle Hook; today it only logs `info!` on `noctis::modules`.
+- **Hook.** A write that changed the record fires the `ModuleToggled { module, scope,
+  enabled, reset }` Lifecycle Hook once (and logs `info!` on `noctis::modules`); an
+  unchanged write, an error and a change another process wrote fire nothing here
+  (`app-and-sharding.md` §7). Hooks run even while their own Module is disabled.
 
 ## 4. Gateway Event Handlers (FR-6)
 
@@ -627,8 +629,9 @@ builder
 
 - **`ErrorOrigin`** (`#[non_exhaustive]`, `Copy`): `Command`, `Component` (component
   interactions and modal submits), `Autocomplete`, `Event` (event handlers, and events
-  dropped by a full overflow), `Render`. `ErrorOrigin::ALL` lists them; `as_str()` /
-  `Display` give `command`, `component`, `autocomplete`, `event`, `render`. `Event`,
+  dropped by a full overflow), `Render`, `Hook` (Lifecycle Hooks). `ErrorOrigin::ALL`
+  lists the six; `as_str()` / `Display` give `command`, `component`, `autocomplete`,
+  `event`, `render`, `hook`. `Event`,
   `Command` and `Autocomplete` reports are produced today; `Component` and `Render`
   report once their handlers land (Epics 7 and 10).
 - **`ErrorReport<'_>`** (`#[non_exhaustive]`, `Copy`, built only by noctis): `origin`,
@@ -659,7 +662,9 @@ builder
   `"<origin> handler panicked"`, `"<origin> handler cancelled at shutdown"` (no `error`
   or `panic` field), `"event overflow is full; event dropped"`.
 - A cancelled handler also counts in `noctis_handler_errors_total{kind="event"}`.
-- Hook errors (Story 13.5) will report as `Event`. The user-facing localized ephemeral error for interactions arrives with
+- Lifecycle Hook errors, panics and end-of-run cancellations report as `Hook`
+  (`LogSink` target `noctis::hook`, `event_type` = the hook event's `NAME`;
+  `app-and-sharding.md` §7). The user-facing localized ephemeral error for interactions arrives with
   Epic 6 [planned].
 
 ## 7. Rate limits (FR-46)

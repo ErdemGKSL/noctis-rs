@@ -1,5 +1,6 @@
 //! The hidden traits the kind derives (`SlashCommand`, `UserCommand`,
-//! `MessageCommand`, `EventHandler`, `Button`, the select derives, `Modal`)
+//! `MessageCommand`, `EventHandler`, `Button`, the select derives, `Modal`,
+//! `Hook`)
 //! implement and `#[handler]` binds through (AD-6, AD-26). Not public API.
 //!
 //! A derive implements [`__Kind`] (the kind marker, the declared defer
@@ -23,6 +24,7 @@ use crate::component::{
 };
 use crate::events::{EventCtx, EventHandler, EventPayload};
 use crate::handler::{HandlerError, HandlerResult};
+use crate::lifecycle::{HookCtx, HookEvent, LifecycleHook};
 use crate::menu::ContextMenuHandler;
 use crate::metadata::CommandMetadata;
 use crate::middleware::{Ext, ExtensionMissing, Extensions};
@@ -39,11 +41,11 @@ use crate::responder::{
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no kind derive, so `#[handler]` cannot bind it",
     label = "not a kind-derived struct",
-    note = "derive SlashCommand, UserCommand, MessageCommand, EventHandler, Button, a select kind or Modal on `{Self}`"
+    note = "derive SlashCommand, UserCommand, MessageCommand, EventHandler, Button, a select kind, Modal or Hook on `{Self}`"
 )]
 pub trait __Kind: Sized + Send + Sync + 'static {
     /// The kind marker: [`__SlashKind`], [`__MenuKind`], [`__EventKind`],
-    /// [`__ComponentKind`] or [`__ModalKind`].
+    /// [`__ComponentKind`], [`__ModalKind`] or [`__LifecycleKind`].
     type Kind;
     /// The declared defer mode (`auto_defer = false` is [`Manual`]).
     type Defer: DeferMode;
@@ -74,6 +76,10 @@ pub enum __ComponentKind {}
 #[doc(hidden)]
 #[derive(Debug)]
 pub enum __ModalKind {}
+/// The kind marker of `#[derive(Hook)]` (a Lifecycle Hook).
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum __LifecycleKind {}
 
 /// The shape `(self, ctx)`.
 #[doc(hidden)]
@@ -97,7 +103,7 @@ pub struct __CXR<X, R>(PhantomData<(X, R)>);
 #[diagnostic::on_unimplemented(
     message = "the parameters of this `#[handler]` method do not fit `{S}`",
     label = "unexpected parameters",
-    note = "commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`"
+    note = "commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, lifecycle hooks `(self, ctx: HookCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`"
 )]
 pub trait __Bind<Shape, S: __Kind, F> {
     /// The descriptor of the method `f`.
@@ -446,6 +452,65 @@ where
             S::DROPPABLE,
             move |ctx: EventCtx, event: E| f(S::__new(), ctx, event),
         )
+    }
+}
+
+// --- Lifecycle Hooks ----------------------------------------------------------
+
+/// A `#[derive(Hook)]` unit struct.
+#[doc(hidden)]
+pub trait __LifecycleHook: __Kind<Kind = __LifecycleKind, Descriptor = LifecycleHook> {
+    /// The unit struct.
+    fn __new() -> Self;
+}
+
+/// Never implemented: a lifecycle hook takes its event and nothing else.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "lifecycle hooks take (self, ctx: HookCtx, event: <lifecycle event>)",
+    label = "not a lifecycle hook's parameters",
+    note = "the event is a type from `noctis::lifecycle`; hooks take no responder"
+)]
+pub trait __HookParams {}
+
+impl<S, F> __Bind<__C, S, F> for __LifecycleKind
+where
+    S: __LifecycleHook + __HookParams,
+{
+    fn __bind(_: &'static str, _: F) -> LifecycleHook {
+        unreachable!("`__HookParams` is never implemented")
+    }
+}
+
+impl<S, R, F> __Bind<__CR<R>, S, F> for __LifecycleKind
+where
+    S: __LifecycleHook + __HookParams,
+{
+    fn __bind(_: &'static str, _: F) -> LifecycleHook {
+        unreachable!("`__HookParams` is never implemented")
+    }
+}
+
+impl<S, X, R, F> __Bind<__CXR<X, R>, S, F> for __LifecycleKind
+where
+    S: __LifecycleHook + __HookParams,
+{
+    fn __bind(_: &'static str, _: F) -> LifecycleHook {
+        unreachable!("`__HookParams` is never implemented")
+    }
+}
+
+impl<S, E, F, Fut> __Bind<__CX<E>, S, F> for __LifecycleKind
+where
+    S: __LifecycleHook,
+    E: HookEvent,
+    F: Fn(S, HookCtx, E) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+{
+    fn __bind(name: &'static str, f: F) -> LifecycleHook {
+        LifecycleHook::__new::<E, _, _>(name, move |ctx: HookCtx, event: E| {
+            f(S::__new(), ctx, event)
+        })
     }
 }
 
@@ -806,7 +871,7 @@ macro_rules! no_hooks {
     )*};
 }
 
-no_hooks!(__SlashKind, __MenuKind, __EventKind);
+no_hooks!(__SlashKind, __MenuKind, __EventKind, __LifecycleKind);
 
 /// The fallback of a struct without an `#[on_stale]` or `#[on_expired]`
 /// method: the inherent items of the same names (which the attributes
@@ -860,7 +925,12 @@ macro_rules! attach_nothing {
     )*};
 }
 
-attach_nothing!(CommandHandler, ContextMenuHandler, EventHandler);
+attach_nothing!(
+    CommandHandler,
+    ContextMenuHandler,
+    EventHandler,
+    LifecycleHook
+);
 
 macro_rules! attach_none {
     ($($descriptor:ty),*) => {$(
@@ -956,6 +1026,24 @@ pub trait __NoRateLimitedSlot {}
 impl __NoRateLimitedSlot for __Absent {}
 
 impl<H: __NoRateLimitedSlot> __AttachRateLimited<H> for EventHandler {
+    fn __attach_rate_limited(self, _: H) -> Self {
+        self
+    }
+}
+
+/// What a lifecycle hook descriptor attaches: nothing; a
+/// `#[on_rate_limited]` method on a hook struct fails on this bound.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[INT-14] #[on_rate_limited] needs a Command, context-menu, component or modal struct",
+    label = "a lifecycle hook has no rate limits",
+    note = "lifecycle hooks are never rate-limited: remove the `#[on_rate_limited]` method"
+)]
+pub trait __NoHookRateLimitedSlot {}
+
+impl __NoHookRateLimitedSlot for __Absent {}
+
+impl<H: __NoHookRateLimitedSlot> __AttachRateLimited<H> for LifecycleHook {
     fn __attach_rate_limited(self, _: H) -> Self {
         self
     }
@@ -1089,7 +1177,13 @@ impl fmt::Debug for __ExtType {
 
 /// Sets the Extension types a descriptor's handler requires; what
 /// `#[handler]` wraps a descriptor in when the method takes `Ext<T>`.
+/// A lifecycle hook descriptor has none.
 #[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "lifecycle hooks run no Middleware, so they take no `Ext<T>` parameter",
+    label = "remove the `Ext<T>` parameter",
+    note = "a lifecycle hook takes (self, ctx: HookCtx, event: <lifecycle event>)"
+)]
 pub trait __RequireExtensions: Sized {
     /// The descriptor requiring `types`.
     #[must_use]
@@ -1116,6 +1210,10 @@ require_extensions!(
 
 /// A handler context that carries its run's frozen Extensions.
 #[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` carries no Middleware Extensions: lifecycle hooks run no Middleware, so they take no `Ext<T>` or `Option<Ext<T>>` parameter",
+    label = "remove the `Ext` parameter"
+)]
 pub trait __Extensions {
     /// The frozen Extensions (an empty map while no chain froze one).
     fn __extensions(&self) -> &Extensions;

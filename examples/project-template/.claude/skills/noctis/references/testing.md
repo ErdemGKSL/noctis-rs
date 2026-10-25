@@ -229,6 +229,56 @@ anything else (Create Webhook, Execute Webhook, a raw REST call) before the run:
   re-exported from `http`.
 - A webhook recipe (create, execute, assert the query and body) is in `responder.md` §7.
 
+### Lifecycle Hooks
+
+A `TestApp` runs the real App, so its Lifecycle Hooks (`app-and-sharding.md` §7) fire
+as in production: `AppStarted`, `ShardReady`, `AllShardsReady` while `TestApp::build`
+waits for the shard, `ShardDisconnected`/`ShardResumed` after
+`app.gateway_fake().close(4000, "test")`, `ShutdownStarted { reason: Requested }` in
+`app.stop()`, which returns after the hook queue drained. There is no Publish (the
+TestApp sets `.publisher(false)`). Record what a hook saw through your own state and
+assert after `stop()`:
+
+```rust
+use std::sync::{Arc, Mutex};
+use noctis::lifecycle::{HookCtx, HookEvent, ShutdownStarted};
+
+#[derive(Default)]
+struct Seen(Mutex<Vec<&'static str>>);
+
+#[derive(Hook)]
+struct RecordShutdown;
+
+impl RecordShutdown {
+    #[handler]
+    async fn handle(self, ctx: HookCtx, _ev: ShutdownStarted) -> HandlerResult<()> {
+        ctx.state::<Arc<Seen>>().expect("registered").0.lock().unwrap().push(ShutdownStarted::NAME);
+        Ok(())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_hook_runs() -> anyhow::Result<()> {
+    let seen = Arc::new(Seen::default());
+    let app = TestApp::build(
+        configure(&mut App::builder())
+            .state(Arc::clone(&seen))
+            .module(Module::new("probe").add::<RecordShutdown>()),
+    )
+    .await?;
+    app.stop().await?;
+    assert_eq!(*seen.0.lock().unwrap(), [ShutdownStarted::NAME]);
+    Ok(())
+}
+```
+
+Outside a run the hooks run inline, so a plain built App is enough for the toggle and
+Publish hooks: `let app = configure(&mut App::builder()).build()?;` then
+`app.modules().set_enabled("profile", ModuleScope::Global, false).await?` has run every
+`ModuleToggled` hook when it returns (an unchanged write runs none). A hook's `Err` or
+panic goes to the `ErrorOrigin::Hook` sink: register a recording `ErrorSink` with
+`.error_sink(ErrorOrigin::Hook, Arc::clone(&sink))` to assert on it.
+
 ## 5. Unit-testing a render function without an App
 
 A View is a plain function, so call it:

@@ -20,7 +20,8 @@ use crate::worker::panic_message;
 ///
 /// assert_eq!(ErrorOrigin::Event.as_str(), "event");
 /// assert_eq!(ErrorOrigin::Component.to_string(), "component");
-/// assert_eq!(ErrorOrigin::ALL.len(), 5);
+/// assert_eq!(ErrorOrigin::Hook.as_str(), "hook");
+/// assert_eq!(ErrorOrigin::ALL.len(), 6);
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -36,20 +37,24 @@ pub enum ErrorOrigin {
     Event,
     /// An image render.
     Render,
+    /// A Lifecycle Hook (`#[derive(Hook)]`, `noctis::lifecycle`).
+    Hook,
 }
 
 impl ErrorOrigin {
     /// Every origin, in declaration order.
-    pub const ALL: [ErrorOrigin; 5] = [
+    pub const ALL: [ErrorOrigin; 6] = [
         Self::Command,
         Self::Component,
         Self::Autocomplete,
         Self::Event,
         Self::Render,
+        Self::Hook,
     ];
 
     /// The lowercase name: `"command"`, `"component"`, `"autocomplete"`,
-    /// `"event"` or `"render"` (also the `kind` metric label value).
+    /// `"event"`, `"render"` or `"hook"` (also the `kind` metric label
+    /// value).
     ///
     /// ```
     /// assert_eq!(noctis_core::ErrorOrigin::Render.as_str(), "render");
@@ -61,6 +66,7 @@ impl ErrorOrigin {
             Self::Autocomplete => "autocomplete",
             Self::Event => "event",
             Self::Render => "render",
+            Self::Hook => "hook",
         }
     }
 
@@ -72,6 +78,7 @@ impl ErrorOrigin {
             Self::Autocomplete => 2,
             Self::Event => 3,
             Self::Render => 4,
+            Self::Hook => 5,
         }
     }
 }
@@ -315,6 +322,7 @@ impl ErrorSink for LogSink {
             }
             ErrorOrigin::Event => log_report!(report, "noctis::event", "event"),
             ErrorOrigin::Render => log_report!(report, "noctis::render", "render"),
+            ErrorOrigin::Hook => log_report!(report, "noctis::hook", "hook"),
         }
     }
 }

@@ -28,7 +28,8 @@
 //! interaction is one struct with a kind derive and a `#[handler]` method in
 //! `noctis`, registered by type with [`Module::add::<T>()`](Module::add)
 //! ([`Register`]). Typed event handlers ([`EventHandler`]) come from
-//! `#[derive(EventHandler)]`;
+//! `#[derive(EventHandler)]`, Lifecycle Hooks ([`LifecycleHook`], see
+//! [`lifecycle`]) from `#[derive(Hook)]`;
 //! [`AppBuilder::module`] mounts a tree. `build()` folds every tree once,
 //! parent before child, into an immutable Registry: the gateway then parses
 //! only interactions and the handled event types, and the handlers'
@@ -230,7 +231,7 @@ mod guild_record;
 mod handler;
 mod kind;
 mod kv;
-mod lifecycle;
+pub mod lifecycle;
 mod locale;
 mod menu;
 mod metadata;
@@ -299,7 +300,8 @@ pub use handler::{HandlerError, HandlerResult};
 #[doc(hidden)]
 pub use kind::{
     __AttachHooks, __AttachRateLimited, __BindExpired, __BindStale, __H, __HE, __HER, __HR,
-    __HookKind, __NoHookCtx, __NoHookSlot, __NoHooks, __NoRateLimitedSlot, __NotAHookStruct,
+    __HookKind, __NoHookCtx, __NoHookRateLimitedSlot, __NoHookSlot, __NoHooks, __NoRateLimitedSlot,
+    __NotAHookStruct,
 };
 #[doc(hidden)]
 pub use kind::{
@@ -311,7 +313,10 @@ pub use kind::{
 };
 #[doc(hidden)]
 pub use kind::{__ExtType, __Extensions, __RequireExtensions, __ext, __ext_opt};
+#[doc(hidden)]
+pub use kind::{__HookParams, __LifecycleHook, __LifecycleKind};
 pub use kv::Kv;
+pub use lifecycle::{HookCtx, LifecycleHook};
 pub use locale::{LocaleRequest, LocaleResolver, Locales};
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};

@@ -80,8 +80,8 @@ const fn row(
 /// | `noctis_lane_depth` | gauge | `app`, `lane` (`interaction`, `event`) |
 /// | `noctis_event_overflow_depth` | gauge | `app` |
 /// | `noctis_events_dropped_total` | counter | `app`, `event_type` |
-/// | `noctis_handler_duration_seconds` | histogram | `app`, `kind` |
-/// | `noctis_handler_errors_total` | counter | `app`, `kind` |
+/// | `noctis_handler_duration_seconds` | histogram | `app`, `kind` (`command`, `component`, `autocomplete`, `event`, `hook`) |
+/// | `noctis_handler_errors_total` | counter | `app`, `kind` (`command`, `component`, `autocomplete`, `event`, `hook`) |
 /// | `noctis_autodefer_total` | counter | `app` |
 /// | `noctis_ack_latency_seconds` | histogram | `app` |
 /// | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit`, `miss`, `stale`, `forged`) |

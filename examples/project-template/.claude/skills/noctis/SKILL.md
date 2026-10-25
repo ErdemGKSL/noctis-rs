@@ -468,6 +468,7 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
 | `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
 | `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
+| lifecycle listeners (`ready`, shard state, shutdown) | `#[derive(Hook)] struct X;` + `impl X { #[handler] async fn handle(self, ctx: HookCtx, event: AllShardsReady) }` (`noctis::lifecycle`; `references/app-and-sharding.md` §7) |
 | `renderSetupMenu(..)` + `deferUpdate()` + `editReply({ components, flags })` | `render_x(..) -> V2Message` + `ctx.update(render_x(..))` (flags and deferral are automatic) |
 | `data[i] as number` | typed Payload fields |
 | dbi references / store | `by_ref` Routes + `RefStore` |
@@ -484,7 +485,7 @@ Read only what the task touches.
 
 | File | Read when you… |
 | --- | --- |
-| `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), lifecycle hooks, shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps (`apps = [..]`, `Module::apps`, `GuildAccess` allow/deny lists, pipeline stage 3) and `Runtime` |
+| `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), Lifecycle Hooks (`#[derive(Hook)]`, `noctis::lifecycle`, `HookCtx`, `ErrorOrigin::Hook`), shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps (`apps = [..]`, `Module::apps`, `GuildAccess` allow/deny lists, pipeline stage 3) and `Runtime` |
 | `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `CommandInput::with_error`, `OptionError::Constraint`) |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |

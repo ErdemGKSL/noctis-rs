@@ -40,6 +40,7 @@ mod handler;
 mod hook;
 mod i18n;
 mod kind;
+mod lifecycle;
 mod literal;
 mod menu;
 mod meta;
@@ -224,6 +225,15 @@ pub fn derive_message_command(input: TokenStream) -> TokenStream {
 pub fn derive_event_handler(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     event::derive_or_fallback(&input).into()
+}
+
+/// `#[derive(Hook)]` on a unit struct, with an optional
+/// `#[hook(flags = [..])]`: a Lifecycle Hook whose `#[handler]` method takes
+/// `(self, ctx: HookCtx, event: <noctis::lifecycle type>)` (FR-54).
+#[proc_macro_derive(Hook, attributes(hook))]
+pub fn derive_hook(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    lifecycle::derive_or_fallback(&input).into()
 }
 
 macro_rules! component_derives {

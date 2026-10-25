@@ -956,9 +956,10 @@ pub noctis::ErrorOrigin::Autocomplete
 pub noctis::ErrorOrigin::Command
 pub noctis::ErrorOrigin::Component
 pub noctis::ErrorOrigin::Event
+pub noctis::ErrorOrigin::Hook
 pub noctis::ErrorOrigin::Render
 impl noctis::ErrorOrigin
-pub const noctis::ErrorOrigin::ALL: [noctis::ErrorOrigin; 5]
+pub const noctis::ErrorOrigin::ALL: [noctis::ErrorOrigin; 6]
 pub const fn noctis::ErrorOrigin::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::ErrorOrigin
 pub fn noctis::ErrorOrigin::clone(&self) -> Self
@@ -1145,6 +1146,7 @@ pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::HandlerError
 pub fn noctis::HandlerError::from(E) -> Self
 pub type noctis::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
+pub proc macro noctis::#[derive(Hook)]
 #[non_exhaustive] pub struct noctis::HttpConfig
 pub noctis::HttpConfig::connect_timeout: core::time::Duration
 pub noctis::HttpConfig::dns_ttl_cap: core::time::Duration
@@ -3956,6 +3958,220 @@ pub fn noctis::image::unstable::ViewFn::clone(&self) -> Self
 impl core::fmt::Debug for noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::image::unstable::ViewFn
+pub mod noctis::lifecycle
+#[non_exhaustive] pub struct noctis::lifecycle::AllShardsReady
+pub noctis::lifecycle::AllShardsReady::shards: core::ops::range::Range<u32>
+pub noctis::lifecycle::AllShardsReady::total: u32
+impl core::clone::Clone for noctis::lifecycle::AllShardsReady
+pub fn noctis::lifecycle::AllShardsReady::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::AllShardsReady
+impl core::cmp::PartialEq for noctis::lifecycle::AllShardsReady
+pub fn noctis::lifecycle::AllShardsReady::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::AllShardsReady
+pub fn noctis::lifecycle::AllShardsReady::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::AllShardsReady
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::AllShardsReady
+pub const noctis::lifecycle::AllShardsReady::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::AllShardsReady
+pub const noctis::lifecycle::AllShardsReady::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::AppStarted
+pub noctis::lifecycle::AppStarted::publisher: bool
+impl core::clone::Clone for noctis::lifecycle::AppStarted
+pub fn noctis::lifecycle::AppStarted::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::AppStarted
+impl core::cmp::PartialEq for noctis::lifecycle::AppStarted
+pub fn noctis::lifecycle::AppStarted::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::AppStarted
+pub fn noctis::lifecycle::AppStarted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::AppStarted
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
+pub const noctis::lifecycle::AppStarted::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
+pub const noctis::lifecycle::AppStarted::NAME: &'static str
+pub struct noctis::lifecycle::HookCtx(_)
+impl noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
+pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
+pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
+pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
+pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl core::clone::Clone for noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::lifecycle::HookCtx(_)
+impl noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
+pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
+pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
+pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
+pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl core::clone::Clone for noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::lifecycle::HookEvent: noctis::__private::core::lifecycle::sealed::Sealed + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::lifecycle::HookEvent::NAME: &'static str
+pub struct noctis::lifecycle::LifecycleHook
+impl core::clone::Clone for noctis::lifecycle::LifecycleHook
+pub fn noctis::lifecycle::LifecycleHook::clone(&self) -> Self
+impl core::fmt::Debug for noctis::lifecycle::LifecycleHook
+pub fn noctis::lifecycle::LifecycleHook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::lifecycle::LifecycleHook
+impl core::clone::Clone for noctis::lifecycle::LifecycleHook
+pub fn noctis::lifecycle::LifecycleHook::clone(&self) -> Self
+impl core::fmt::Debug for noctis::lifecycle::LifecycleHook
+pub fn noctis::lifecycle::LifecycleHook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::lifecycle::ModuleToggled
+pub noctis::lifecycle::ModuleToggled::enabled: bool
+pub noctis::lifecycle::ModuleToggled::module: &'static str
+pub noctis::lifecycle::ModuleToggled::reset: bool
+pub noctis::lifecycle::ModuleToggled::scope: noctis::ModuleScope
+impl core::clone::Clone for noctis::lifecycle::ModuleToggled
+pub fn noctis::lifecycle::ModuleToggled::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ModuleToggled
+impl core::cmp::PartialEq for noctis::lifecycle::ModuleToggled
+pub fn noctis::lifecycle::ModuleToggled::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ModuleToggled
+pub fn noctis::lifecycle::ModuleToggled::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ModuleToggled
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ModuleToggled
+pub const noctis::lifecycle::ModuleToggled::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ModuleToggled
+pub const noctis::lifecycle::ModuleToggled::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::PublishCompleted
+pub noctis::lifecycle::PublishCompleted::clear: bool
+pub noctis::lifecycle::PublishCompleted::report: noctis::publish::PublishReport
+pub noctis::lifecycle::PublishCompleted::scope: noctis::publish::PublishScope
+impl core::clone::Clone for noctis::lifecycle::PublishCompleted
+pub fn noctis::lifecycle::PublishCompleted::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::PublishCompleted
+impl core::cmp::PartialEq for noctis::lifecycle::PublishCompleted
+pub fn noctis::lifecycle::PublishCompleted::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::PublishCompleted
+pub fn noctis::lifecycle::PublishCompleted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::PublishCompleted
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishCompleted
+pub const noctis::lifecycle::PublishCompleted::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishCompleted
+pub const noctis::lifecycle::PublishCompleted::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::PublishFailed
+pub noctis::lifecycle::PublishFailed::clear: bool
+pub noctis::lifecycle::PublishFailed::dry_run: bool
+pub noctis::lifecycle::PublishFailed::error: noctis::publish::PublishError
+pub noctis::lifecycle::PublishFailed::scope: noctis::publish::PublishScope
+impl core::clone::Clone for noctis::lifecycle::PublishFailed
+pub fn noctis::lifecycle::PublishFailed::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::PublishFailed
+impl core::cmp::PartialEq for noctis::lifecycle::PublishFailed
+pub fn noctis::lifecycle::PublishFailed::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::PublishFailed
+pub fn noctis::lifecycle::PublishFailed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::PublishFailed
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishFailed
+pub const noctis::lifecycle::PublishFailed::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishFailed
+pub const noctis::lifecycle::PublishFailed::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::ShardDisconnected
+pub noctis::lifecycle::ShardDisconnected::close_code: core::option::Option<u16>
+pub noctis::lifecycle::ShardDisconnected::shard: u32
+impl core::clone::Clone for noctis::lifecycle::ShardDisconnected
+pub fn noctis::lifecycle::ShardDisconnected::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShardDisconnected
+impl core::cmp::PartialEq for noctis::lifecycle::ShardDisconnected
+pub fn noctis::lifecycle::ShardDisconnected::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShardDisconnected
+pub fn noctis::lifecycle::ShardDisconnected::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardDisconnected
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardDisconnected
+pub const noctis::lifecycle::ShardDisconnected::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardDisconnected
+pub const noctis::lifecycle::ShardDisconnected::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::ShardFatal
+pub noctis::lifecycle::ShardFatal::close_code: core::option::Option<u16>
+pub noctis::lifecycle::ShardFatal::shard: u32
+impl core::clone::Clone for noctis::lifecycle::ShardFatal
+pub fn noctis::lifecycle::ShardFatal::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShardFatal
+impl core::cmp::PartialEq for noctis::lifecycle::ShardFatal
+pub fn noctis::lifecycle::ShardFatal::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShardFatal
+pub fn noctis::lifecycle::ShardFatal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardFatal
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardFatal
+pub const noctis::lifecycle::ShardFatal::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardFatal
+pub const noctis::lifecycle::ShardFatal::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::ShardReady
+pub noctis::lifecycle::ShardReady::shard: u32
+impl core::clone::Clone for noctis::lifecycle::ShardReady
+pub fn noctis::lifecycle::ShardReady::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShardReady
+impl core::cmp::PartialEq for noctis::lifecycle::ShardReady
+pub fn noctis::lifecycle::ShardReady::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShardReady
+pub fn noctis::lifecycle::ShardReady::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardReady
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardReady
+pub const noctis::lifecycle::ShardReady::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardReady
+pub const noctis::lifecycle::ShardReady::NAME: &'static str
+#[non_exhaustive] pub struct noctis::lifecycle::ShardResumed
+pub noctis::lifecycle::ShardResumed::shard: u32
+impl core::clone::Clone for noctis::lifecycle::ShardResumed
+pub fn noctis::lifecycle::ShardResumed::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShardResumed
+impl core::cmp::PartialEq for noctis::lifecycle::ShardResumed
+pub fn noctis::lifecycle::ShardResumed::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShardResumed
+pub fn noctis::lifecycle::ShardResumed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardResumed
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardResumed
+pub const noctis::lifecycle::ShardResumed::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardResumed
+pub const noctis::lifecycle::ShardResumed::NAME: &'static str
+#[non_exhaustive] pub enum noctis::lifecycle::ShutdownReason
+pub noctis::lifecycle::ShutdownReason::AllShardsEnded
+pub noctis::lifecycle::ShutdownReason::Requested
+pub noctis::lifecycle::ShutdownReason::Signal
+pub noctis::lifecycle::ShutdownReason::StartupFailed
+impl noctis::lifecycle::ShutdownReason
+pub const fn noctis::lifecycle::ShutdownReason::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::lifecycle::ShutdownReason
+pub fn noctis::lifecycle::ShutdownReason::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShutdownReason
+impl core::cmp::PartialEq for noctis::lifecycle::ShutdownReason
+pub fn noctis::lifecycle::ShutdownReason::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShutdownReason
+pub fn noctis::lifecycle::ShutdownReason::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::lifecycle::ShutdownReason
+pub fn noctis::lifecycle::ShutdownReason::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::lifecycle::ShutdownReason
+pub fn noctis::lifecycle::ShutdownReason::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::lifecycle::ShutdownReason
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShutdownReason
+#[non_exhaustive] pub struct noctis::lifecycle::ShutdownStarted
+pub noctis::lifecycle::ShutdownStarted::reason: noctis::lifecycle::ShutdownReason
+impl core::clone::Clone for noctis::lifecycle::ShutdownStarted
+pub fn noctis::lifecycle::ShutdownStarted::clone(&self) -> Self
+impl core::cmp::Eq for noctis::lifecycle::ShutdownStarted
+impl core::cmp::PartialEq for noctis::lifecycle::ShutdownStarted
+pub fn noctis::lifecycle::ShutdownStarted::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::lifecycle::ShutdownStarted
+pub fn noctis::lifecycle::ShutdownStarted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::lifecycle::ShutdownStarted
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
+pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
+impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
+pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
 pub mod noctis::observe
 pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
 #[non_exhaustive] pub struct noctis::observe::MetricInfo
@@ -5129,9 +5345,10 @@ pub noctis::prelude::ErrorOrigin::Autocomplete
 pub noctis::prelude::ErrorOrigin::Command
 pub noctis::prelude::ErrorOrigin::Component
 pub noctis::prelude::ErrorOrigin::Event
+pub noctis::prelude::ErrorOrigin::Hook
 pub noctis::prelude::ErrorOrigin::Render
 impl noctis::prelude::ErrorOrigin
-pub const noctis::prelude::ErrorOrigin::ALL: [noctis::prelude::ErrorOrigin; 5]
+pub const noctis::prelude::ErrorOrigin::ALL: [noctis::prelude::ErrorOrigin; 6]
 pub const fn noctis::prelude::ErrorOrigin::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::prelude::ErrorOrigin
 pub fn noctis::prelude::ErrorOrigin::clone(&self) -> Self
@@ -5239,6 +5456,37 @@ pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::from(E) -> Self
 pub type noctis::prelude::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
+pub proc macro noctis::prelude::#[derive(Hook)]
+pub struct noctis::prelude::HookCtx(_)
+impl noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
+pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
+pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
+pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
+pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl core::clone::Clone for noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::HookCtx(_)
+impl noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
+pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
+pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
+pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
+pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
+pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl core::clone::Clone for noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::InputOverrides
 pub noctis::prelude::InputOverrides::description: core::option::Option<noctis::prelude::Text>
 pub noctis::prelude::InputOverrides::label: core::option::Option<noctis::prelude::Text>

@@ -1,0 +1,50 @@
+error[E0277]: `HookCtx` carries no Middleware Extensions: lifecycle hooks run no Middleware, so they take no `Ext<T>` or `Option<Ext<T>>` parameter
+  --> tests/types/hook_ext_param.rs:10:5
+   |
+10 |     #[handler]
+   |     ^^^^^^^^^^ remove the `Ext` parameter
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__Extensions` is not implemented for `HookCtx`
+help: the following other types implement trait `noctis::__private::noctis_core::kind::__Extensions`
+  --> $WORKSPACE/crates/noctis-core/src/handler.rs
+   |
+   | impl crate::kind::__Extensions for EventCtx {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `EventCtx`
+   |
+  ::: $WORKSPACE/crates/noctis-core/src/component.rs
+   |
+   | impl crate::kind::__Extensions for ComponentCtx {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ComponentCtx`
+...
+   | impl crate::kind::__Extensions for ModalSubmitCtx {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ModalSubmitCtx`
+   |
+  ::: $WORKSPACE/crates/noctis-core/src/command.rs
+   |
+   | impl crate::kind::__Extensions for CommandCtx {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `CommandCtx`
+note: required by a bound in `noctis::__private::noctis_core::kind::__ext`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | pub fn __ext<T, C>(ctx: &C, handler: &'static str) -> HandlerResult<Ext<T>>
+   |        ----- required by a bound in this function
+...
+   |     C: __Extensions,
+   |        ^^^^^^^^^^^^ required by this bound in `__ext`
+   = note: this error originates in the attribute macro `handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: lifecycle hooks run no Middleware, so they take no `Ext<T>` parameter
+  --> tests/types/hook_ext_param.rs:10:5
+   |
+10 |     #[handler]
+   |     ^^^^^^^^^^ remove the `Ext<T>` parameter
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__RequireExtensions` is not implemented for `LifecycleHook`
+   = note: a lifecycle hook takes (self, ctx: HookCtx, event: <lifecycle event>)
+   = help: the following other types implement trait `noctis::__private::noctis_core::kind::__RequireExtensions`:
+             CommandHandler
+             ComponentHandler
+             ContextMenuHandler
+             EventHandler
+             ModalHandler
+   = note: this error originates in the attribute macro `handler` (in Nightly builds, run with -Z macro-backtrace for more info)

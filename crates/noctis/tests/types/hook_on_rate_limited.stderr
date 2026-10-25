@@ -1,0 +1,15 @@
+error[E0277]: [INT-14] #[on_rate_limited] needs a Command, context-menu, component or modal struct
+ --> tests/types/hook_on_rate_limited.rs:9:5
+  |
+9 |     #[handler]
+  |     ^^^^^^^^^^ a lifecycle hook has no rate limits
+  |
+  = help: the trait `noctis::__private::noctis_core::kind::__NoHookRateLimitedSlot` is not implemented for `noctis::__private::noctis_core::rate_limits::__RateLimitedHook`
+  = note: lifecycle hooks are never rate-limited: remove the `#[on_rate_limited]` method
+help: the trait `noctis::__private::noctis_core::kind::__NoHookRateLimitedSlot` is implemented for `noctis::__private::noctis_core::component::__Absent`
+ --> $WORKSPACE/crates/noctis-core/src/kind.rs
+  |
+  | impl __NoHookRateLimitedSlot for __Absent {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: required for `LifecycleHook` to implement `noctis::__private::noctis_core::kind::__AttachRateLimited<noctis::__private::noctis_core::rate_limits::__RateLimitedHook>`
+  = note: this error originates in the attribute macro `handler` (in Nightly builds, run with -Z macro-backtrace for more info)

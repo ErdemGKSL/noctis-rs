@@ -19,6 +19,7 @@ use crate::boot_flags::{BootFlagError, BootFlags};
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::kind::__ExtType;
+use crate::lifecycle::{HookEntry, Hooks};
 use crate::middleware::Chain;
 use crate::module::{self, Module, NodeDecl};
 use crate::module_state::ModuleIndex;
@@ -133,6 +134,8 @@ pub(crate) struct Registry {
     templates: Vec<TemplateDescriptor>,
     /// The kept Modules in pre-order, behind the runtime Module state.
     modules: Arc<ModuleIndex>,
+    /// Every Lifecycle Hook by event, in fold order (FR-54).
+    hooks: Arc<Hooks>,
 }
 
 impl Registry {
@@ -178,9 +181,7 @@ impl Registry {
         check_app_restrictions(&full, &mut violations);
         let kept = select(roots, selection, app.as_str());
         let roots: &[Module] = &kept;
-        let mut entries = Vec::new();
-        let mut folded = Vec::new();
-        let mut route_entries = Vec::new();
+        let (mut entries, mut folded, mut route_entries) = (Vec::new(), Vec::new(), Vec::new());
         let mut modules = ModuleIndex::default();
         let mut stack: Vec<(&Module, Arc<[&'static str]>, Chain)> = roots
             .iter()
@@ -250,8 +251,14 @@ impl Registry {
             droppable,
             intents,
             modules: Arc::new(modules),
+            hooks: Arc::new(fold_hooks(roots)),
         };
         (registry, violations)
+    }
+
+    /// Every Lifecycle Hook by event, in fold order.
+    pub(crate) fn hooks(&self) -> &Arc<Hooks> {
+        &self.hooks
     }
 
     /// The kept Modules, in pre-order.
@@ -325,6 +332,21 @@ type Mounted<'m> = (&'m Module, Option<&'static str>);
 
 /// Every Module of `roots`, pre-order (parent before children, children in
 /// `module` order).
+/// Every Lifecycle Hook of the kept trees `roots`, by event, in fold order
+/// (pre-order, `add` order).
+fn fold_hooks(roots: &[Module]) -> Hooks {
+    let mut hooks = Hooks::default();
+    for (module, _) in pre_order(roots) {
+        for hook in module.hooks() {
+            hooks.push(HookEntry {
+                module: module.id(),
+                hook: hook.clone(),
+            });
+        }
+    }
+    hooks
+}
+
 fn pre_order(roots: &[Module]) -> Vec<Mounted<'_>> {
     let mut out = Vec::new();
     let mut stack: Vec<Mounted<'_>> = roots.iter().rev().map(|root| (root, None)).collect();

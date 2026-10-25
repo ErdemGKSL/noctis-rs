@@ -2637,7 +2637,7 @@ async fn startup_broadcasts_lifecycle() {
 async fn app_lifecycle_channel() {
     let app = App::builder().build().unwrap();
     let mut rx = app.subscribe_lifecycle();
-    app.lifecycle.send(LifecycleEvent::ShutdownStarted);
+    app.shared.lifecycle.send(LifecycleEvent::ShutdownStarted);
     assert_eq!(rx.try_recv(), Ok(LifecycleEvent::ShutdownStarted));
     assert!(rx.try_recv().is_err());
 }
@@ -2686,17 +2686,18 @@ async fn shutdown_sequence_order() {
     let watch = Watch {
         events: &mut events,
         status: &status,
-        lifecycle: &app.lifecycle,
+        lifecycle: &app.shared.lifecycle,
     };
     tokio::time::timeout(
         Duration::from_secs(15),
         app.shut_down(
             Stop::Requested,
-            "requested",
+            ShutdownReason::Requested,
             gateway,
             watch,
             &controls,
             &mut drain,
+            &HookRun::start(app.shared()),
         ),
     )
     .await

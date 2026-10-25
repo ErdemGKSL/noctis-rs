@@ -5,7 +5,7 @@ error[E0277]: the parameters of this `#[handler]` method do not fit `Buy`
   |              ^^^^^^ unexpected parameters
   |
   = help: the trait `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::Command>>, Buy, _>` is not implemented for `noctis::__private::noctis_core::kind::__ComponentKind`
-  = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
+  = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, lifecycle hooks `(self, ctx: HookCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
 help: `noctis::__private::noctis_core::kind::__ComponentKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
  --> $WORKSPACE/crates/noctis-core/src/kind.rs
   |
@@ -53,7 +53,7 @@ error[E0277]: the parameters of this `#[handler]` method do not fit `BioForm`
    |              ^^^^^^ unexpected parameters
    |
    = help: the trait `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::Component>>, BioForm, _>` is not implemented for `noctis::__private::noctis_core::kind::__ModalKind`
-   = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
+   = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, lifecycle hooks `(self, ctx: HookCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
 help: `noctis::__private::noctis_core::kind::__ModalKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
   --> $WORKSPACE/crates/noctis-core/src/kind.rs
    |

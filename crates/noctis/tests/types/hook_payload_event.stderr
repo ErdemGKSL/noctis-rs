@@ -1,0 +1,19 @@
+error[E0277]: `noctis::events::MessageCreate` is not a lifecycle event
+  --> tests/types/hook_payload_event.rs:10:14
+   |
+10 |     async fn handle(self, _ctx: HookCtx, _ev: MessageCreate) -> HandlerResult<()> {
+   |              ^^^^^^ not a lifecycle event
+   |
+   = help: the trait `HookEvent` is not implemented for `noctis::events::MessageCreate`
+   = note: use a type from `noctis::lifecycle`; gateway events are handled by `#[derive(EventHandler)]`
+   = help: the following other types implement trait `HookEvent`:
+             AllShardsReady
+             AppStarted
+             ModuleToggled
+             PublishCompleted
+             PublishFailed
+             ShardDisconnected
+             ShardFatal
+             ShardReady
+           and $N others
+   = note: required for `noctis::__private::noctis_core::kind::__LifecycleKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<noctis::events::MessageCreate>, Up, _>`

@@ -1,0 +1,5 @@
+error: `#[derive(Hook)]` needs a unit struct
+ --> tests/types/hook_not_unit.rs:5:8
+  |
+5 | struct Up {
+  |        ^^

@@ -1,0 +1,6 @@
+error[E0080]: evaluation panicked: `Up` has no #[handler] method, so it cannot be registered
+                = help: add impl Up { #[handler] async fn handle(self, ctx: HookCtx, event: AppStarted) -> HandlerResult<()> }
+ --> tests/types/hook_no_handler.rs:4:8
+  |
+4 | struct Up;
+  |        ^^ evaluation of `_` failed here

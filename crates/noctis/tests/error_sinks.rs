@@ -51,7 +51,14 @@ fn origins_and_names() {
     let names: Vec<_> = ErrorOrigin::ALL.iter().map(ToString::to_string).collect();
     assert_eq!(
         names,
-        ["command", "component", "autocomplete", "event", "render"]
+        [
+            "command",
+            "component",
+            "autocomplete",
+            "event",
+            "render",
+            "hook"
+        ]
     );
 }
 
@@ -66,12 +73,12 @@ async fn shared_sink_on_every_origin() {
     }
     let debug = format!("{builder:?}");
     assert!(
-        debug.contains("error_sinks: {Command, Component, Autocomplete, Event, Render}"),
+        debug.contains("error_sinks: {Command, Component, Autocomplete, Event, Render, Hook}"),
         "{debug}"
     );
     let app = builder.build().unwrap();
     assert!(format!("{app:?}").contains("error_sinks: {Command, Component"));
-    assert_eq!(Arc::strong_count(&shared), 6);
+    assert_eq!(Arc::strong_count(&shared), 7);
 }
 
 /// Matrix 7: a plugin sets the `Event` sink in `install`.

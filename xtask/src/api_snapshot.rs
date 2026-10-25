@@ -62,7 +62,7 @@ const TARGET_DIR: &str = "target/public-api";
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
-/// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, the static
+/// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, `HookEvent`, the static
 /// placement traits, `Ownership`, `IntoNodes` and `AppBuilderImageExt`, and
 /// the const-generic bounds of `LargeThreshold::new` and `MemberRequest::users`,
 /// and the `__SlashCommand` bound of `PrefixPlugin::command`.
@@ -117,6 +117,12 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_image::plugin::sealed",
         "noctis::__private::image::plugin::sealed",
+    ),
+    // The sealed supertrait of `HookEvent` (Story 13.5: the ten lifecycle
+    // payloads).
+    (
+        "noctis_core::lifecycle::sealed",
+        "noctis::__private::core::lifecycle::sealed",
     ),
     // The sealed supertrait of `RawHttp` (AD-24: only `twilight_http::Client`).
     (

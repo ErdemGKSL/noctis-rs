@@ -261,6 +261,9 @@ pub(crate) struct AppShared {
     /// The App's gateway command handle: attached while `run` runs the
     /// shards, detached otherwise (`App::gateway`, `ctx.gateway()`).
     pub(crate) gateway: noctis_gateway::GatewayHandle,
+    /// The App's lifecycle: the internal tap, the Lifecycle Hooks and the
+    /// hook queue of a running run (FR-54).
+    pub(crate) lifecycle: crate::lifecycle::Lifecycle,
 }
 
 /// The hidden run-end observer of [`AppShared::run_observer`].

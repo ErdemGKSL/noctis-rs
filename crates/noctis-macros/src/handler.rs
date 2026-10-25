@@ -112,6 +112,8 @@ fn struct_form(item: &ImplItemFn) -> &'static str {
         .unwrap_or_default();
     if ctx.contains("ModalSubmitCtx") {
         "#[derive(Modal)] #[modal(\"bio\", defaults(title = \"Bio\"))] struct Bio { #[text_input(\"Bio\")] bio: String } impl Bio { #[handler] async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> { .. } }"
+    } else if ctx.contains("HookCtx") {
+        "#[derive(Hook)] struct Online; impl Online { #[handler] async fn handle(self, ctx: HookCtx, event: AllShardsReady) -> HandlerResult<()> { .. } }"
     } else if ctx.contains("EventCtx") {
         "#[derive(EventHandler)] struct AwardXp; impl AwardXp { #[handler] async fn handle(self, ctx: EventCtx, event: MessageCreate) -> HandlerResult<()> { .. } }"
     } else if ctx.contains("CommandCtx") {

@@ -69,7 +69,9 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         })
         .module(modules::setup::module())
         .module(modules::dashboard::module())
-        .module(modules::profile::module());
+        .module(modules::profile::module())
+        // Lifecycle Hooks: App start, shards, Publish, Module toggles, shutdown.
+        .module(modules::ops::module());
     // Prefix commands (template feature `prefix`, off by default): `!profile @user` and
     // `!badge gold` run the same handlers as `/profile` and `/badge`. Message text needs
     // the privileged MESSAGE_CONTENT intent (enable it in the Developer Portal too);

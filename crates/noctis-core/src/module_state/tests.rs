@@ -71,6 +71,7 @@ fn modules_over(store: &Arc<Counting>) -> Modules {
     let store: Arc<dyn ModuleStateStore> = Arc::clone(store) as _;
     Modules {
         state: Some(Arc::new(State::new(store, index()))),
+        app: Weak::new(),
     }
 }
 
@@ -327,7 +328,7 @@ async fn s17_keys_of_unmounted_ids_are_never_read() {
 
 #[tokio::test]
 async fn s18_detached_handle() {
-    let modules = Modules { state: None };
+    let modules = Modules::of(None);
     assert!(modules.is_enabled("anything", G1));
     assert!(modules.is_enabled("", None));
     assert_eq!(modules.ids().count(), 0);

@@ -791,29 +791,111 @@ carry the token, nonce or payloads):
 
 ## 7. Lifecycle Hooks
 
+React to the App's own lifecycle with a hook: a unit struct with `#[derive(Hook)]`
+(in the prelude) whose `#[handler]` takes the event as its typed parameter. The event
+type selects what the hook reacts to; register it like every handler.
+
 ```rust
-use noctis::lifecycle::{AllShardsReady, ShardFatal};
+use noctis::lifecycle::{AllShardsReady, HookCtx, ModuleToggled, ShardFatal};
+use noctis::prelude::*;
 
-#[derive(Hook)]                       // one struct per handler, like commands and events
-#[hook]
-pub struct Ready;
+#[derive(Hook)]                       // one struct per hook, like commands and events
+pub struct Online;
 
-impl Ready {
+impl Online {
     #[handler]
     async fn handle(self, ctx: HookCtx, ev: AllShardsReady) -> HandlerResult<()> {
-        tracing::info!(shards = ev.shard_count, "online");
+        tracing::info!(module = ctx.module(), shards = ev.shards.len(), total = ev.total, "online");
         Ok(())
     }
 }
 
-Module::new("ops").add::<Ready>();
+#[derive(Hook)]
+#[hook(flags = ["audit"])]            // optional: Boot Flags, the only argument
+pub struct ModuleAudit;
+
+impl ModuleAudit {
+    #[handler]
+    async fn handle(self, _ctx: HookCtx, ev: ModuleToggled) -> HandlerResult<()> {
+        tracing::info!(module = ev.module, scope = %ev.scope, enabled = ev.enabled, "toggled");
+        Ok(())
+    }
+}
+
+Module::new("ops").add::<Online>().add::<ModuleAudit>();   // src/modules/ops/mod.rs
 ```
 
-Events (`noctis::lifecycle`): `AppStarted`, `ShardReady`, `ShardResumed`,
-`ShardDisconnected`, `ShardFatal`, `AllShardsReady`, `PublishCompleted { diff }`,
-`PublishFailed`, `ModuleToggled { module, scope, enabled }`, `ShutdownStarted`. Each
-fires exactly once per occurrence; a failing hook goes to the Error Sink and never
-stops the App.
+**Signature.** Exactly `async fn <any>(self, ctx: HookCtx, event: E) -> HandlerResult<()>`
+with `E` one of the ten types below. Anything else does not compile: another payload
+(``` `MessageCreate` is not a lifecycle event```), a missing or extra parameter or a
+responder (`lifecycle hooks take (self, ctx: HookCtx, event: <lifecycle event>)`), an
+`Ext<T>` (`lifecycle hooks run no Middleware ..`), a non-unit or generic struct
+(`` `#[derive(Hook)]` needs a unit struct``), a struct without `#[handler]`, and any
+`#[hook(..)]` argument other than `flags = [..]` (``unknown `#[hook]` argument ..``).
+`#[on_stale]`, `#[on_expired]` and `#[on_rate_limited]` do not apply to hooks.
+
+**Events** (`noctis::lifecycle`; each a `#[non_exhaustive]` struct with `pub` fields,
+`Debug + Clone + PartialEq + Eq`, and a `NAME` through the sealed `HookEvent` trait):
+
+| Event (`NAME`) | Fires | Data |
+| --- | --- | --- |
+| `AppStarted` (`APP_STARTED`) | once per run, after the locale overlays and the startup Module-state load, before the startup Publish | `publisher: bool` |
+| `PublishCompleted` (`PUBLISH_COMPLETED`) | every `App::publish(..)` that resolves `Ok`: the startup Publish, the CLI `--publish*` modes, your own calls; dry runs and clears included | `scope: PublishScope`, `clear: bool`, `report: PublishReport` (`report.targets()[i].diff()`, `report.is_dry_run()`) |
+| `PublishFailed` (`PUBLISH_FAILED`) | every `App::publish(..)` that resolves `Err` | `scope`, `dry_run: bool`, `clear: bool`, `error: PublishError` |
+| `ShardReady` (`SHARD_READY`) | a shard received READY | `shard: u32` |
+| `ShardResumed` (`SHARD_RESUMED`) | a shard received RESUMED | `shard` |
+| `ShardDisconnected` (`SHARD_DISCONNECTED`) | a shard's connection closed; it reconnects (also just before a `ShardFatal`) | `shard`, `close_code: Option<u16>` (`None`: no close frame) |
+| `ShardFatal` (`SHARD_FATAL`) | a shard stopped for good (a fatal close such as 4014, or retries ran out) | `shard`, `close_code: Option<u16>` |
+| `AllShardsReady` (`ALL_SHARDS_READY`) | once per run, after the last shard of this process's range was first ready; never again after reconnects | `shards: Range<u32>`, `total: u32` |
+| `ModuleToggled` (`MODULE_TOGGLED`) | `Modules::set_enabled`/`reset` through this App changed a record (an unchanged write fires nothing; changes other processes wrote, seen through the poll, fire nothing here) | `module: &'static str`, `scope: ModuleScope`, `enabled: bool` (the Module's own state in `scope` after the change), `reset: bool` |
+| `ShutdownStarted` (`SHUTDOWN_STARTED`) | once per run in which `AppStarted` fired, at step 1 of §8 | `reason: ShutdownReason` (`Signal`, `Requested`, `AllShardsEnded`, `StartupFailed`; `as_str()`/`Display`: `"signal"`, `"requested"`, `"all shards ended"`, `"startup failed"`) |
+
+Each occurrence fires exactly once. A publisher's run reads `AppStarted`,
+`PublishCompleted` (the startup Publish runs before `GET /gateway/bot`), `ShardReady`
+per shard, `AllShardsReady`, then whatever happens, then `ShutdownStarted` last (shard
+events of the closing shards may still follow it). A startup that fails after
+`AppStarted` (for example close 4014 before every shard was ready) fires
+`ShutdownStarted { reason: StartupFailed }` and `run` still returns its `StartError`; a
+missing token or a bad locale overlay fails before `AppStarted`, so nothing fires.
+
+**Delivery.** While `run`/`run_until` runs, every occurrence goes into one ordered
+queue drained by one task: per event, in arrival order, every hook registered for it in
+Registry fold order (parent before child, `add` order, plugins' Modules included), one
+at a time; the next event's hooks start only after the previous event's returned. So a
+slow hook delays every later one: keep hooks short and `tokio::spawn` slow work (an
+HTTP call, a webhook post). Outside a run (`App::publish(..)` or `app.modules()` before
+`run`, the CLI `--publish*` modes) the hooks run inline and the call returns after them.
+A hook's own `ctx.modules().set_enabled(..)` fires `ModuleToggled` after it (in a run)
+or nested inside it (outside one); it never deadlocks.
+
+**What runs and what does not.** No Middleware, no locale stage, no rate limit, no
+timeout. A hook runs whether or not its Module is enabled at runtime (enablement gates
+interactions and events only), so an `ops` Module keeps alerting and a Module can
+observe its own re-enable. Boot Flags filter hooks like every registration: an
+unselected hook is never registered and never fires.
+
+**`HookCtx`** (cheap clone; `Debug` prints the Module and the states, never the HTTP
+client): `module()`, `app_id()`, `state::<T>()`, `http()`, `gateway()` (detached outside
+a run), `kv()`, `cache()`, `modules()`, `webhooks()`.
+
+**`LifecycleHook`** is the hook's descriptor (`X::descriptor()`, what `Module::add::<X>()`
+stores); its `Debug` names the handler and the event. Bot code never builds one by hand.
+
+**Failures.** Every hook runs in span `noctis.hook` (`app`, `module`, `handler`,
+`hook_event` = `NAME`, `shard` for shard events) under `catch_unwind`. An `Err` (user
+conditions included) or a panic is counted in `noctis_handler_errors_total{kind="hook"}`
+and reported to the `ErrorOrigin::Hook` Error Sink (`module`, `handler`,
+`event_type` = `NAME`, `shard` for shard events, no `guild_id`); the default `LogSink`
+logs `"hook handler failed"` / `"hook handler panicked"` on `noctis::hook`. The later
+hooks and the App keep running. Durations go to
+`noctis_handler_duration_seconds{kind="hook"}`.
+
+**End of a run.** After the shutdown sequence (§8), `run` waits for the queued hooks
+until `shutdown_grace` after `ShutdownStarted`, at least 1 s; then the hook still
+running is cancelled and reported once as `ReportKind::Cancelled` (`"hook handler
+cancelled at shutdown"`), and queued events are discarded with one `warn` on
+`noctis::hook` (`lifecycle hooks discarded at shutdown`, field `events`). Dropping the
+`run_until` future stops the queue at once (no `ShutdownStarted`).
 
 ## 8. Shutdown
 
@@ -822,7 +904,8 @@ resolves, and both also when every shard has ended (then they return
 `RunError::AllShardsEnded`). A second signal does nothing extra. The order:
 
 1. `info` log `shutdown started` (`reason = "signal"` from `run()`,
-   `"requested"` from `run_until` or `"all shards ended"`, `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
+   `"requested"` from `run_until` or `"all shards ended"`, `grace`); the
+   `ShutdownStarted` Lifecycle Hook fires here (§7).
 2. Every shard closes with code 4000 (resumable; Discord keeps the session); once
    Discord acknowledges the close, the shard's session id, last received sequence and
    resume URL are written to the `SessionStore` (§4 Session resume). With

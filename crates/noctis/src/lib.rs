@@ -11,7 +11,8 @@
 //!   [`UserCommand`](macro@UserCommand),
 //!   [`MessageCommand`](macro@MessageCommand),
 //!   [`EventHandler`](macro@EventHandler), [`Button`](macro@Button), the
-//!   select derives and [`Modal`](macro@Modal)), the [`handler`](macro@handler),
+//!   select derives, [`Modal`](macro@Modal) and [`Hook`](macro@Hook)), the
+//!   [`handler`](macro@handler),
 //!   [`autocomplete`](macro@autocomplete), [`on_stale`](macro@on_stale),
 //!   [`on_expired`](macro@on_expired) and
 //!   [`on_rate_limited`](macro@on_rate_limited) method attributes,
@@ -32,6 +33,9 @@
 //!   [`AckDeadlineMissed`]).
 //! - [`events`]: the gateway event payloads `#[derive(EventHandler)]`
 //!   handlers take, and [`events::EventCtx`].
+//! - [`lifecycle`]: the Lifecycle Hook events `#[derive(Hook)]` handlers
+//!   take (App started, shards, Publish, Module toggles, shutdown), and
+//!   [`lifecycle::HookCtx`].
 //! - [`gateway`]: the bot's presence (identify and run time), the
 //!   `large_threshold`, and Request Guild Members sent to the owning shard.
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
@@ -75,6 +79,7 @@
 //! | [`EventHandler`](macro@EventHandler) | optional `#[event(ordered, droppable)]` | `(self, ctx: EventCtx, event: <payload>)` |
 //! | [`Button`](macro@Button), the select derives | `#[button("id", <codec args>, response = .., auto_defer = .., defaults(..))]`, … | `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` |
 //! | [`Modal`](macro@Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx[, r: ModalResponder])` |
+//! | [`Hook`](macro@Hook) | optional `#[hook(flags = [..])]` | `(self, ctx: HookCtx, event: <lifecycle event>)` |
 //!
 //! A component struct is a Route: its fields are the Payload of its
 //! `custom_id`, and the derive proves at compile time that every id fits
@@ -1261,6 +1266,38 @@ pub use noctis_macros::MessageCommand;
 ///   `PRESENCE_UPDATE` are always droppable, whatever the flag says.
 pub use noctis_macros::EventHandler;
 
+/// Derives a Lifecycle Hook from a unit struct, whose `#[handler]` method
+/// takes `(self, ctx: HookCtx, event: E) -> HandlerResult<()>`; the event
+/// type `E`, one of [`lifecycle`]'s ten payloads, selects what it reacts
+/// to. See [`lifecycle`] for every event, when it fires and its data.
+///
+/// The optional `#[hook(flags = ["beta"])]` declares Boot Flags, as on every
+/// kind attribute; a hook takes no other argument. Hooks run no
+/// Middleware, no locale stage and no rate limit, run whether or not their
+/// Module is enabled at runtime, and report an `Err` or a panic to the
+/// [`ErrorOrigin::Hook`] Error Sink.
+///
+/// ```
+/// use noctis::lifecycle::{AllShardsReady, HookCtx};
+/// use noctis::prelude::*;
+///
+/// #[derive(Hook)]
+/// pub struct Online;
+///
+/// impl Online {
+///     #[handler]
+///     async fn handle(self, ctx: HookCtx, ev: AllShardsReady) -> HandlerResult<()> {
+///         println!("{}: {} of {} shards online", ctx.module(), ev.shards.len(), ev.total);
+///         Ok(())
+///     }
+/// }
+///
+/// let debug = format!("{:?}", Online::descriptor());
+/// assert!(debug.contains("ALL_SHARDS_READY"), "{debug}");
+/// let _ops = Module::new("ops").add::<Online>();
+/// ```
+pub use noctis_macros::Hook;
+
 /// Derives an interactive button (styles 1-4) from a struct: the struct is
 /// a Route whose fields are the Payload of its `custom_id`, and its
 /// `#[handler]` method `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])
@@ -1666,6 +1703,90 @@ pub mod events {
         UnavailableGuild, UserUpdate, VoiceServerUpdate, VoiceStateUpdate, WebhooksUpdate,
     };
     pub use noctis_core::{EventCtx, EventHandler, EventPayload};
+}
+
+pub mod lifecycle {
+    //! Lifecycle Hooks (FR-54): typed events of the App's own lifecycle,
+    //! handled by `#[derive(Hook)]` structs whose `#[handler]` method takes
+    //! `(self, ctx: HookCtx, event: E) -> HandlerResult<()>`; the event type
+    //! `E` selects the event.
+    //!
+    //! | Event (`NAME`) | Fires | Data |
+    //! | --- | --- | --- |
+    //! | [`AppStarted`] (`APP_STARTED`) | once per run, after the locale overlays and the startup Module-state load, before the startup Publish | `publisher` |
+    //! | [`PublishCompleted`] (`PUBLISH_COMPLETED`) | whenever `App::publish(..)` resolves `Ok`: the startup Publish, the CLI `--publish*` modes, author code; dry runs and clears included | `scope`, `clear`, `report` (`report.targets()[i].diff()`, `report.is_dry_run()`) |
+    //! | [`PublishFailed`] (`PUBLISH_FAILED`) | whenever `App::publish(..)` resolves `Err` | `scope`, `dry_run`, `clear`, `error` |
+    //! | [`ShardReady`] (`SHARD_READY`) | a shard received READY | `shard` |
+    //! | [`ShardResumed`] (`SHARD_RESUMED`) | a shard received RESUMED | `shard` |
+    //! | [`ShardDisconnected`] (`SHARD_DISCONNECTED`) | a shard's connection closed; it reconnects | `shard`, `close_code` (`None` without a close frame) |
+    //! | [`ShardFatal`] (`SHARD_FATAL`) | a shard stopped for good (a fatal close such as 4014) | `shard`, `close_code` |
+    //! | [`AllShardsReady`] (`ALL_SHARDS_READY`) | once per run, after the last shard of the range was first ready | `shards` (the range), `total` |
+    //! | [`ModuleToggled`] (`MODULE_TOGGLED`) | `Modules::set_enabled`/`reset` through this App changed a record (an unchanged write and changes other Apps wrote fire nothing) | `module`, `scope`, `enabled` (its own state in `scope` after the change), `reset` |
+    //! | [`ShutdownStarted`] (`SHUTDOWN_STARTED`) | once per run in which `AppStarted` fired: a stop, a signal, the last shard ended, or a startup failure after `AppStarted` | `reason` ([`ShutdownReason`]) |
+    //!
+    //! Each occurrence fires exactly once. A publisher's run reads
+    //! `AppStarted`, `PublishCompleted`, `ShardReady`.., `AllShardsReady`, ..,
+    //! `ShutdownStarted` (shard events of the closing shards may follow it).
+    //!
+    //! **Delivery.** While `App::run` runs, every occurrence goes into one
+    //! ordered queue: one task runs, per event in arrival order, every hook
+    //! registered for it in Registry fold order (pre-order, `add` order,
+    //! plugins included), one at a time; an event's hooks start after the
+    //! previous event's returned. A slow hook delays the later ones, so
+    //! `tokio::spawn` long work. Outside a run (`App::publish` or
+    //! `App::modules()` before `run`, the CLI `--publish*` modes) the hooks
+    //! run inline and the call returns after them; a hook's own
+    //! `ctx.modules().set_enabled(..)` is queued after it in a run and nested
+    //! outside one.
+    //!
+    //! **What runs.** No Middleware, no locale stage, no rate limit; a hook
+    //! runs whether or not its Module is enabled at runtime. Boot Flags filter
+    //! hooks like every registration (an unselected hook never fires). An
+    //! `Err` or a panic is reported to the
+    //! [`ErrorOrigin::Hook`](crate::ErrorOrigin::Hook) Error Sink (by default
+    //! logged on `noctis::hook`) with the Module, handler and event name; the
+    //! later hooks and the App keep running.
+    //!
+    //! **End of a run.** After the shutdown sequence the queue is drained
+    //! until `shutdown_grace` after `ShutdownStarted` (at least 1 s); then
+    //! the running hook is cancelled (reported as `Cancelled`) and queued
+    //! events are discarded with one warning.
+    //!
+    //! ```
+    //! use noctis::lifecycle::{HookCtx, ModuleToggled, ShardFatal};
+    //! use noctis::prelude::*;
+    //!
+    //! #[derive(Hook)]
+    //! pub struct ShardDown;
+    //!
+    //! impl ShardDown {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: HookCtx, ev: ShardFatal) -> HandlerResult<()> {
+    //!         eprintln!("shard {} down: {:?}", ev.shard, ev.close_code);
+    //!         Ok(())
+    //!     }
+    //! }
+    //!
+    //! #[derive(Hook)]
+    //! #[hook(flags = ["audit"])]
+    //! pub struct ModuleAudit;
+    //!
+    //! impl ModuleAudit {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: HookCtx, ev: ModuleToggled) -> HandlerResult<()> {
+    //!         println!("{} in {}: enabled = {}", ev.module, ev.scope, ev.enabled);
+    //!         Ok(())
+    //!     }
+    //! }
+    //!
+    //! let _ops = Module::new("ops").add::<ShardDown>().add::<ModuleAudit>();
+    //! ```
+
+    pub use noctis_core::lifecycle::{
+        AllShardsReady, AppStarted, HookEvent, ModuleToggled, PublishCompleted, PublishFailed,
+        ShardDisconnected, ShardFatal, ShardReady, ShardResumed, ShutdownReason, ShutdownStarted,
+    };
+    pub use noctis_core::{HookCtx, LifecycleHook};
 }
 
 pub mod http {
@@ -2340,9 +2461,10 @@ pub mod prelude {
     //!   [`UserSelectMenu`](macro@UserSelectMenu),
     //!   [`RoleSelectMenu`](macro@RoleSelectMenu),
     //!   [`MentionableSelectMenu`](macro@MentionableSelectMenu),
-    //!   [`ChannelSelectMenu`](macro@ChannelSelectMenu) and
+    //!   [`ChannelSelectMenu`](macro@ChannelSelectMenu),
     //!   [`Modal`](macro@Modal) (implementing [`ModalForm`], see
-    //!   [`ui`](crate::ui#modal-forms)); [`handler`](macro@handler) marks the
+    //!   [`ui`](crate::ui#modal-forms)) and [`Hook`](macro@Hook) (a Lifecycle
+    //!   Hook); [`handler`](macro@handler) marks the
     //!   method that handles the interaction and
     //!   [`autocomplete`](macro@autocomplete) an option's suggestion method;
     //!   [`on_stale`](macro@on_stale) and [`on_expired`](macro@on_expired)
@@ -2354,8 +2476,8 @@ pub mod prelude {
     //!   [`AppBuilder`] and [`State`]: building an App and reading its typed
     //!   state.
     //! - The contexts [`CommandCtx`], [`EventCtx`], [`AutocompleteCtx`],
-    //!   [`ComponentCtx`], [`ModalSubmitCtx`] and [`ExpiredCtx`] (the App's
-    //!   `expired_handler`); [`HandlerError`] and
+    //!   [`ComponentCtx`], [`ModalSubmitCtx`], [`ExpiredCtx`] (the App's
+    //!   `expired_handler`) and [`HookCtx`] (Lifecycle Hooks); [`HandlerError`] and
     //!   [`HandlerResult`].
     //! - [`CommandResponder`], [`ComponentResponder`], [`ModalResponder`],
     //!   [`Manual`], [`Responded`], [`IntoResponse`], [`Ephemerality`] and
@@ -2397,6 +2519,7 @@ pub mod prelude {
     #[cfg(feature = "image")]
     pub use crate::image::AppBuilderImageExt;
     pub use noctis_codec::{Payload, Route};
+    pub use noctis_core::HookCtx;
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
         Access, AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
@@ -2407,9 +2530,9 @@ pub mod prelude {
         Visibility,
     };
     pub use noctis_macros::{
-        Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
-        Modal, Payload, PayloadEnum, RoleSelectMenu, SlashCommand, StringSelectMenu, UserCommand,
-        UserSelectMenu,
+        Button, ChannelSelectMenu, Choices, EventHandler, Hook, MentionableSelectMenu,
+        MessageCommand, Modal, Payload, PayloadEnum, RoleSelectMenu, SlashCommand,
+        StringSelectMenu, UserCommand, UserSelectMenu,
     };
     /// Withdrawn forms: each fails with a `= help:` showing the struct form.
     #[doc(hidden)]

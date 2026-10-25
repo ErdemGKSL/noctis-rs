@@ -35,7 +35,7 @@ use crate::component::{AppExpiredFn, Expired, ExpiredCtx, app_expired};
 use crate::edge::{Edge, HttpConfig, KeeperHandle, Upstream, is_edge_failure};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
-use crate::lifecycle::{Lifecycle, LifecycleEvent};
+use crate::lifecycle::{AllShardsReady, HookRun, Lifecycle, LifecycleEvent, ShutdownReason};
 use crate::module::Module;
 use crate::namespace::{AppId, IntoPort, fallback_app_id};
 use crate::observe::{describe_metrics, set_shard_status};
@@ -175,8 +175,6 @@ pub struct App {
     boot_flags: BootFlags,
     /// How often a running App polls the `ModuleStateStore` version.
     module_state_poll: Duration,
-    /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
-    lifecycle: Lifecycle,
 }
 
 /// Keeps the App's [`GatewayHandle`] attached to a running [`Gateway`];
@@ -743,7 +741,7 @@ impl App {
     /// A receiver of the App's lifecycle broadcast.
     #[cfg(test)]
     pub(crate) fn subscribe_lifecycle(&self) -> tokio::sync::broadcast::Receiver<LifecycleEvent> {
-        self.lifecycle.subscribe()
+        self.shared.lifecycle.subscribe()
     }
 
     /// The handler concurrency.
@@ -867,7 +865,7 @@ impl App {
                 tracing::info!(target: "noctis::app", "session resume disabled (--no-resume)");
             }
             let signals = Signals::install()?;
-            app.run_with(signals.recv(), "signal").await
+            app.run_with(signals.recv(), ShutdownReason::Signal).await
         }
     }
 
@@ -964,7 +962,15 @@ impl App {
     /// [`ReportKind::Cancelled`](crate::ReportKind::Cancelled), queued lane
     /// items are discarded with one warning) and wait up to 1 s more; wait
     /// up to 6 s for the shards to close; log `shutdown complete`. Every
-    /// session write has finished when this returns. A shutdown that
+    /// session write has finished when this returns. Lifecycle Hooks
+    /// ([`lifecycle`](crate::lifecycle)) run on one ordered queue for the
+    /// whole run: `AppStarted` after the Module-state load, then the
+    /// startup Publish's hook, the shard events, `AllShardsReady` once, and
+    /// `ShutdownStarted` when the sequence starts (also on an error return
+    /// after `AppStarted`, as `StartupFailed`); before returning, the queue
+    /// is drained until `shutdown_grace` after `ShutdownStarted` (at least
+    /// 1 s), then the running hook is cancelled and reported to the `Hook`
+    /// Error Sink and the queued rest is discarded. A shutdown that
     /// resolves before `GET /gateway/bot` answered has no shard plan, so it
     /// writes and clears nothing. Dropping the returned future cancels every
     /// handler too.
@@ -1007,21 +1013,42 @@ impl App {
     /// # Ok(()) }
     /// ```
     pub async fn run_until(self, shutdown: impl Future<Output = ()> + Send) -> Result<(), Error> {
-        self.run_with(shutdown, "requested").await
+        self.run_with(shutdown, ShutdownReason::Requested).await
     }
 
     /// [`run_until`](Self::run_until), logging `reason` when `shutdown`
-    /// resolves (`"signal"` from [`run`](Self::run), else `"requested"`).
+    /// resolves ([`ShutdownReason::Signal`] from [`run`](Self::run), else
+    /// [`ShutdownReason::Requested`]). Runs the Lifecycle Hook queue of the
+    /// run: closed and drained on every return (FR-54).
     async fn run_with(
         self,
         shutdown: impl Future<Output = ()> + Send,
-        reason: &'static str,
+        reason: ShutdownReason,
     ) -> Result<(), Error> {
         check_runtime(true)?;
         ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
         let Some(token) = &self.token else {
             return Err(StartError::MissingToken.into());
         };
+        // Dropping the `run_until` future aborts the runner.
+        let hooks = HookRun::start(&self.shared);
+        let result = self.run_started(token, shutdown, reason, &hooks).await;
+        if result.is_err() {
+            // A no-op after `AllShardsEnded` or before `AppStarted`.
+            hooks.shutdown_started(ShutdownReason::StartupFailed);
+        }
+        hooks.finish(self.shutdown_grace).await;
+        result
+    }
+
+    /// The body of [`run_with`](Self::run_with) once its hook queue runs.
+    async fn run_started(
+        &self,
+        token: &Token,
+        shutdown: impl Future<Output = ()> + Send,
+        reason: ShutdownReason,
+        hooks: &HookRun,
+    ) -> Result<(), Error> {
         self.warn_cluster_without_proxy();
         let controls = Shutdown::default();
         // Cancels every handler on every return path, including a dropped
@@ -1035,11 +1062,13 @@ impl App {
         let info = tokio::select! {
             biased;
             () = &mut shutdown => {
-                // No gateway or drain exists yet: only the log lines and
-                // the lifecycle broadcast of the shutdown sequence apply.
+                // No gateway or drain exists yet: only the log lines, the
+                // lifecycle broadcast and (after `AppStarted`) the hook of
+                // the shutdown sequence apply.
                 let grace = self.shutdown_grace;
-                tracing::info!(target: "noctis::app", reason, grace = ?grace, "shutdown started");
-                self.lifecycle.send(LifecycleEvent::ShutdownStarted);
+                tracing::info!(target: "noctis::app", reason = reason.as_str(), grace = ?grace, "shutdown started");
+                self.shared.lifecycle.send(LifecycleEvent::ShutdownStarted);
+                hooks.shutdown_started(reason);
                 tracing::info!(target: "noctis::app", "shutdown complete");
                 return Ok(());
             }
@@ -1048,6 +1077,7 @@ impl App {
                 // Discord request.
                 self.load_locale_overlays().await?;
                 let poller = self.start_module_state().await;
+                hooks.app_started(self.publisher);
                 self.publish_at_startup().await;
                 self.warm_up(warmed).await;
                 Ok::<_, Error>((self.gateway_info().await?, poller))
@@ -1080,16 +1110,20 @@ impl App {
         let started = tokio::select! {
             biased;
             () = &mut shutdown => None,
-            result = await_startup(&mut events, &status, &self.lifecycle) => Some(result),
+            result = await_startup(&mut events, &status, &self.shared.lifecycle) => Some(result),
         };
         let stop = match started {
             Some(result) => {
                 result?;
                 tracing::info!(target: "noctis::app", "all {} shards ready", status.count());
+                self.shared.lifecycle.emit(|| AllShardsReady {
+                    shards: status.shards.clone(),
+                    total,
+                });
                 supervise(
                     &mut events,
                     &status,
-                    &self.lifecycle,
+                    &self.shared.lifecycle,
                     Some(&keeper),
                     &mut shutdown,
                 )
@@ -1100,9 +1134,9 @@ impl App {
         let watch = Watch {
             events: &mut events,
             status: &status,
-            lifecycle: &self.lifecycle,
+            lifecycle: &self.shared.lifecycle,
         };
-        self.shut_down(stop, reason, gateway, watch, &controls, &mut drain)
+        self.shut_down(stop, reason, gateway, watch, &controls, &mut drain, hooks)
             .await;
         match stop {
             Stop::Requested => Ok(()),
@@ -1137,22 +1171,28 @@ impl App {
     }
 
     /// The AD-21 shutdown sequence; see [`run_until`](Self::run_until).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the pieces of one run the AD-21 sequence winds down"
+    )]
     async fn shut_down(
         &self,
         stop: Stop,
-        requested: &'static str,
+        requested: ShutdownReason,
         mut gateway: Gateway,
         mut watch: Watch<'_>,
         controls: &Shutdown,
         drain: &mut AbortOnDrop,
+        hooks: &HookRun,
     ) {
         let reason = match stop {
             Stop::Requested => requested,
-            Stop::AllEnded => "all shards ended",
+            Stop::AllEnded => ShutdownReason::AllShardsEnded,
         };
         let grace = self.shutdown_grace;
-        tracing::info!(target: "noctis::app", reason, grace = ?grace, "shutdown started");
-        self.lifecycle.send(LifecycleEvent::ShutdownStarted);
+        tracing::info!(target: "noctis::app", reason = reason.as_str(), grace = ?grace, "shutdown started");
+        self.shared.lifecycle.send(LifecycleEvent::ShutdownStarted);
+        hooks.shutdown_started(reason);
         gateway.close_all(if self.resume_sessions {
             CloseMode::Resumable
         } else {
@@ -3102,6 +3142,7 @@ impl AppBuilder {
                 run_observer: config.run_observer,
                 gateway: GatewayHandle::detached(),
                 guild_access: Arc::clone(&ports.guild_access),
+                lifecycle: Lifecycle::with_hooks(Arc::clone(registry.hooks())),
             }),
             strings,
             http_timeout: config.http_timeout,
@@ -3126,7 +3167,6 @@ impl AppBuilder {
             dev_guild: config.dev_guild,
             boot_flags: config.boot_flags,
             module_state_poll: config.module_state_poll,
-            lifecycle: Lifecycle::new(),
         })
     }
 

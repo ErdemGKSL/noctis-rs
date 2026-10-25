@@ -1,0 +1,38 @@
+error[E0277]: lifecycle hooks take (self, ctx: HookCtx, event: <lifecycle event>)
+ --> tests/types/hook_shape.rs:9:14
+  |
+9 |     async fn handle(self, _ctx: HookCtx) -> HandlerResult<()> {
+  |              ^^^^^^ not a lifecycle hook's parameters
+  |
+help: the trait `noctis::__private::noctis_core::kind::__HookParams` is not implemented for `Up`
+ --> tests/types/hook_shape.rs:5:1
+  |
+5 | struct Up;
+  | ^^^^^^^^^
+  = note: the event is a type from `noctis::lifecycle`; hooks take no responder
+help: `noctis::__private::noctis_core::kind::__LifecycleKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
+ --> $WORKSPACE/crates/noctis-core/src/kind.rs
+  |
+  | / impl<S, F> __Bind<__C, S, F> for __LifecycleKind
+  | | where
+  | |     S: __LifecycleHook + __HookParams,
+  | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, S, F>`
+...
+  | / impl<S, R, F> __Bind<__CR<R>, S, F> for __LifecycleKind
+  | | where
+  | |     S: __LifecycleHook + __HookParams,
+  | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<R>, S, F>`
+...
+  | / impl<S, X, R, F> __Bind<__CXR<X, R>, S, F> for __LifecycleKind
+  | | where
+  | |     S: __LifecycleHook + __HookParams,
+  | |______________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CXR<X, R>, S, F>`
+...
+  | / impl<S, E, F, Fut> __Bind<__CX<E>, S, F> for __LifecycleKind
+  | | where
+  | |     S: __LifecycleHook,
+  | |     E: HookEvent,
+  | |     F: Fn(S, HookCtx, E) -> Fut + Send + Sync + 'static,
+  | |     Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+  | |_____________________________________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<E>, S, F>`
+  = note: required for `noctis::__private::noctis_core::kind::__LifecycleKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Up, _>`
