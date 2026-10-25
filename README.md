@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 87 of 103" src="https://img.shields.io/badge/stories-87%20%2F%20103-3B2F8F">
+  <img alt="Stories done: 91 of 103" src="https://img.shields.io/badge/stories-91%20%2F%20103-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,13 +25,13 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–9, 11 and 12 are done
+> **Noctis is under active development and not yet published.** Epics 1–13 and 15 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
-> attachments and webhooks, localization, clusters and scale). Epics 10 (generated images
-> and GIFs), 13 (module operations) and 15 (opt-in extras) are in progress,
-> and Epic 14 (launch readiness) is next. Nothing is on crates.io yet, and the public API can still change.
+> attachments and webhooks, generated images and GIFs, localization, clusters and scale,
+> module operations, opt-in extras). Epic 14 (launch readiness) is next.
+> Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
 ## Why Noctis?
@@ -246,12 +246,12 @@ done. Live per-story status is in
 | 7 | Routed components, Refs and modals | P0 | ✅ Done |
 | 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ✅ Done |
 | 9 | Attachments, webhooks and advanced component surfaces | P1 | ✅ Done |
-| 10 | Generated images and GIFs | P1 | 🔨 In progress (10 / 11) |
+| 10 | Generated images and GIFs | P1 | ✅ Done |
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
-| 13 | Module operations | P1 | 🔨 In progress (4 / 5) |
+| 13 | Module operations | P1 | ✅ Done |
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
-| 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | 🔨 In progress (2 / 4) |
+| 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 
 **What already works**
 
@@ -316,7 +316,7 @@ done. Live per-story status is in
   - `RawComponent` and `ctx.http().raw(..)` for what the typed API does not cover.
   - Route component defaults with per-render overrides, and modal pre-fill.
   - Views over owned and foreign webhooks via `ctx.webhooks()`.
-- **Generated images and GIFs (in progress).**
+- **Generated images and GIFs.**
   - A strict Tailwind v4 class grammar generated from takumi, with a drift gate and a
     cross-check against takumi's own parser.
   - `derive(Template)`, `view!` and `theme!` with compile-time class validation.
@@ -327,6 +327,10 @@ done. Live per-story status is in
     fetched through an allow-listed, capped AssetFetcher.
   - Discord custom emoji drawn inline, with a bundled Twemoji fallback font (feature `emoji`).
   - A render cache behind the `RenderCache` port with single-flight de-duplication.
+  - Pixel snapshots in the testkit (`assert_render_snapshot!`, `Tolerance`) and a
+    reference-card render benchmark.
+  - A Renderer seam: `AppBuilder::renderer(..)` takes a custom Renderer
+    (types under `noctis::image::unstable`), with the Upload Budget checked at the render boundary.
 - **Localization.**
   - `i18n!` compiles YAML locale files into typed `Strings` accessors, with
     compile-time checks; App and Module catalogs merge at `App::build`.
@@ -345,14 +349,18 @@ done. Live per-story status is in
     cache and Renderer cache memory against `budgets.toml`.
 - **Module trees.** Module ids are tree paths (`profile/badges`), validated for grammar
   and uniqueness at `App::build`.
-- **Module operations (in progress).**
+- **Module operations.**
   - Boot-time feature flags (`flags = [..]`, `--features`, `NOCTIS_FEATURES`) that prune
     registrations before build.
   - Runtime Module enable and disable per guild or globally with `ctx.modules()`, over the
     `ModuleStateStore` port and propagated across processes.
   - Declarative `rate_limit(..)` on commands, components and modals over the
     `RateLimitStore` port, with `#[on_rate_limited]` and `ctx.rate_limits()`.
-- **Opt-in extras (in progress).**
+  - Lifecycle hooks with `derive(Hook)` for App, shard, Publish, Module-toggle and
+    shutdown events, run in order with failures sent to the Error Sink.
+- **Opt-in extras.**
+  - Several Apps in one process sharing a Runtime, with per-App registrations
+    (`apps = [..]`, `Module::apps`) and a `GuildAccessList` port.
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
   - Prefix commands through `PrefixPlugin` (feature `prefix`), reusing slash Commands.
