@@ -1,7 +1,9 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
 
 //! Our custom Adapter must pass the same conformance suite as Noctis's memory default
-//! (FR-39): TTL, overwrite, delete, missing key, and atomicity under concurrent callers.
+//! (FR-39): missing keys, verbatim keys and values, overwrite, delete, counters, App
+//! namespacing, races of 32 concurrent callers (one `put_if_absent` winner, no lost
+//! increments) and TTL expiry. The suite panics on the first failing case.
 
 use noctis::App;
 use noctis::bytes::Bytes;

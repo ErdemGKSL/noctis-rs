@@ -4,7 +4,7 @@ Covers: the testkit (`noctis::testkit`): `TestApp`, seeds, simulated commands, c
 selects, modal submits and autocomplete, assertions on rendered messages, response
 kind and ephemerality, message JSON snapshots (`render_json`), Limit cost,
 `assert_memory_flat`, Template pixel snapshots (`assert_render_snapshot!`, `Tolerance`,
-`app.renderer()`); Adapter conformance is planned. FR-51. Enable the `testkit`
+`app.renderer()`), Adapter conformance (`noctis::testkit::conformance`). FR-51. Enable the `testkit`
 feature in `[dev-dependencies]` only:
 
 ```toml
@@ -369,7 +369,7 @@ async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
   size. Runtime class strings with unknown Tailwind classes are errors on a test Runtime,
   so they fail tests too.
 
-## 7. Adapter conformance [planned, Story 14.1]
+## 7. Adapter conformance
 
 ```rust
 #[tokio::test]
@@ -378,7 +378,13 @@ async fn bounded_cache_store_conforms() {
 }
 ```
 
-See `adapters.md` §5 for all suites.
+Each suite is an `async fn` returning `()`: it passes, or it panics on the first failing
+case with `` conformance::<suite>: case `<case>` failed: <detail> `` (an unexpected
+`Err(PortError)` is a failure whose detail includes the error's text). The factory is
+called once per case and must return a fresh, empty store. The suites use the real
+clock: run them in `#[tokio::test]` (either flavor), never with `start_paused`. A
+byte-store suite takes about 3 s (one 2.5 s wait for 1 s TTLs), `identify_queue` about
+5 s. See `adapters.md` §5 for every suite and its cases.
 
 ## 8. Memory flatness (NFR-2)
 

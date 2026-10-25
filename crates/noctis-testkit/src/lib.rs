@@ -29,11 +29,15 @@
 //!   `127.0.0.1`) speaking HELLO, IDENTIFY/READY, RESUME/RESUMED and heartbeats,
 //!   with scripted dispatches and close codes and a frame log. Point an App at
 //!   it with `AppBuilder::gateway_url(fake.url())`.
+//! - [`conformance`]: one async suite per store port, `IdentifyQueue` and
+//!   `DiscordCache` (FR-39), proving a custom Adapter keeps the semantics
+//!   core relies on (`conformance::cache_store(|| MyStore::new()).await`).
 //!
 //! The end-to-end tests for Epics 5-8 live in this crate's `tests/` directory
 //! (`crates/noctis-testkit/tests/`), driving real Apps against the fakes.
 
 mod app;
+pub mod conformance;
 mod error;
 pub mod fake;
 mod memory;

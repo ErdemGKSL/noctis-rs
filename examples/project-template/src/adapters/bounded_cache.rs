@@ -1,4 +1,4 @@
-// NOTE: Compiles against the real `noctis::ports` API (checked by noctis-rs `crates/noctis/tests/template_adapter.rs`); only `noctis::testkit::conformance` is still planned.
+// NOTE: Compiles against the real `noctis::ports` API (checked by noctis-rs `crates/noctis/tests/template_adapter.rs`) and passes `noctis::testkit::conformance::cache_store` (run in noctis-rs `crates/noctis-testkit/tests/conformance.rs`).
 
 //! A custom `CacheStore` Adapter: a bounded in-process map with TTL.
 //!

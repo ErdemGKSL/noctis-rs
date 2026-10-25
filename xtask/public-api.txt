@@ -7665,6 +7665,16 @@ pub async fn noctis::testkit::assert_memory_flat<'a, F, Fut>(&'a noctis::testkit
 pub macro noctis::testkit::assert_render_snapshot!
 pub use noctis::testkit::dhat
 pub fn noctis::testkit::render_json(&noctis::ui::V2Message) -> core::result::Result<serde_json::value::Value, noctis::testkit::TestError>
+pub mod noctis::testkit::conformance
+pub async fn noctis::testkit::conformance::asset_store<P: noctis::ports::AssetStore, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::cache_store<P: noctis::ports::CacheStore, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::discord_cache<C: noctis::ports::DiscordCache, F: core::ops::function::Fn(noctis::ports::memory::DiscordCacheResources) -> C>(F)
+pub async fn noctis::testkit::conformance::identify_queue<P: noctis::ports::IdentifyQueue, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::module_state_store<P: noctis::ports::ModuleStateStore, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::rate_limit_store<P: noctis::ports::RateLimitStore, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::ref_store<P: noctis::ports::RefStore, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::render_cache<P: noctis::ports::RenderCache, F: core::ops::function::Fn() -> P>(F)
+pub async fn noctis::testkit::conformance::session_store<P: noctis::ports::SessionStore, F: core::ops::function::Fn() -> P>(F)
 pub mod noctis::testkit::fake
 pub struct noctis::testkit::fake::FakeDiscordHttp
 impl noctis::testkit::fake::FakeDiscordHttp

@@ -3877,6 +3877,10 @@ pub mod testkit {
     //!   `<name>.new.png` and panics; `NOCTIS_UPDATE_SNAPSHOTS=1` rewrites
     //!   it; on `CI` a missing snapshot fails. Use it inside
     //!   `#[tokio::test(flavor = "multi_thread")]`.
+    //! - [`conformance`]: one async suite per store port, `IdentifyQueue` and
+    //!   `DiscordCache` (FR-39). A custom Adapter proves it keeps the
+    //!   semantics core relies on with
+    //!   `conformance::cache_store(|| MyStore::new()).await`.
     //!
     //! ```no_run
     //! use noctis::prelude::*;
@@ -3899,6 +3903,46 @@ pub mod testkit {
     //! app.stop().await
     //! # }
     //! ```
+
+    pub mod conformance {
+        //! Adapter conformance suites (FR-39): one async function per port
+        //! that proves a custom Adapter keeps the semantics core relies on.
+        //!
+        //! - Byte stores: [`ref_store`], [`session_store`],
+        //!   [`module_state_store`], [`rate_limit_store`], [`cache_store`],
+        //!   [`render_cache`] and [`asset_store`] take a factory
+        //!   `Fn() -> P` and check missing keys, verbatim keys and values,
+        //!   overwrite, delete, `take` once, `touch`, counters, the
+        //!   `ModuleStateStore` version, namespacing, races of 32 concurrent
+        //!   callers and TTL expiry (~3 s each).
+        //! - [`identify_queue`] takes a factory `Fn() -> P` of at least 2
+        //!   buckets and checks bucket Leases, the 5 s spacing and parallel
+        //!   buckets (~5 s).
+        //! - [`discord_cache`] takes a factory
+        //!   `Fn(DiscordCacheResources) -> C` and checks owned reads, updates
+        //!   in order and the configured resources against gateway fixtures.
+        //!
+        //! The factory is called once per case and must return a fresh,
+        //! empty store (Redis: a fresh key prefix or database). A suite
+        //! returns `()` or panics on the first failing case with
+        //! `` conformance::<suite>: case `<case>` failed: <detail> ``. The
+        //! suites use the real clock: run them in `#[tokio::test]` (either
+        //! flavor), never on a paused clock.
+        //!
+        //! ```no_run
+        //! use noctis::ports::memory::MemoryCacheStore;
+        //! use noctis::testkit::conformance;
+        //!
+        //! # async fn conforms() {
+        //! conformance::cache_store(MemoryCacheStore::new).await;
+        //! # }
+        //! ```
+
+        pub use noctis_testkit::conformance::{
+            asset_store, cache_store, discord_cache, identify_queue, module_state_store,
+            rate_limit_store, ref_store, render_cache, session_store,
+        };
+    }
 
     pub mod fake {
         //! The HTTP fake behind a [`TestApp`](super::TestApp)

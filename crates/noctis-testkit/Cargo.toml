@@ -21,6 +21,8 @@ noctis-rules.workspace = true
 noctis-ui.workspace = true
 # Decodes pixel snapshots (stored and rendered PNGs).
 png.workspace = true
+# `DeserializeSeed` for the conformance suites' gateway fixtures.
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }

@@ -653,7 +653,7 @@ Checklist for any Adapter: bounded (or backed by bounded storage), atomic ops re
 atomic, TTL honoured on read, verbatim keys, no secrets, no blocking calls in async
 (use async clients or `spawn_blocking`), passes conformance.
 
-## 5. Conformance tests (FR-39) [planned]
+## 5. Conformance tests (FR-39)
 
 ```rust
 use noctis::testkit::conformance;
@@ -664,12 +664,67 @@ async fn bounded_cache_store_conforms() {
 }
 ```
 
-One suite per port: `ref_store`, `session_store`, `identify_queue`,
-`module_state_store`, `rate_limit_store`, `cache_store`, `render_cache`, `asset_store`,
-`discord_cache`.
-They test TTL, overwrite, delete, missing keys, concurrent callers (exactly one
-`take`/`put_if_absent` winner, no lost increments) and App namespacing. The factory is
-called per case, so return a fresh, empty store (for Redis: a fresh key prefix or DB).
+One suite per port in `noctis::testkit::conformance` (feature `testkit`):
+
+```rust
+pub async fn ref_store<P: RefStore, F: Fn() -> P>(factory: F);
+pub async fn session_store<P: SessionStore, F: Fn() -> P>(factory: F);
+pub async fn module_state_store<P: ModuleStateStore, F: Fn() -> P>(factory: F);
+pub async fn rate_limit_store<P: RateLimitStore, F: Fn() -> P>(factory: F);
+pub async fn cache_store<P: CacheStore, F: Fn() -> P>(factory: F);
+pub async fn render_cache<P: RenderCache, F: Fn() -> P>(factory: F);
+pub async fn asset_store<P: AssetStore, F: Fn() -> P>(factory: F);
+pub async fn identify_queue<P: IdentifyQueue, F: Fn() -> P>(factory: F);
+pub async fn discord_cache<C: DiscordCache, F: Fn(DiscordCacheResources) -> C>(factory: F);
+```
+
+- **Factory.** Called once per case; return a fresh, empty store (Redis: a fresh key
+  prefix or DB; SQL: a fresh table or schema). Cases use fixed keys and at most 64
+  distinct keys per instance, so a bounded Adapter of that size never evicts mid-run.
+  `identify_queue` needs at least 2 buckets and a queue that granted no Lease in the
+  last 5 s. `discord_cache` passes the resources to cache, as core passes the
+  configured set to a custom backend.
+- **Result.** `()` when every case passes; otherwise a panic on the first failing case:
+  `` conformance::<suite>: case `<case>` failed: <detail> ``. An unexpected
+  `Err(PortError)` fails the case with the error's text; a panic in a racing task is
+  re-raised with the same prefix.
+- **Clock.** Real time: `#[tokio::test]` (either flavor), never `start_paused`. All TTL
+  cases share one 2.5 s wait for 1 s TTLs, which tolerates second-resolution backends:
+  ~3 s per byte-store suite, ~5 s for `identify_queue`.
+
+Byte-store cases, in order (each runs when the port has the ops it needs): `missing_key`
+(`None`, `delete` twice is `Ok`, `touch` gives `false` and creates nothing),
+`roundtrip_values` (empty, 1 byte, all 256 byte values and 64 KiB returned exactly;
+empty is `Some`), `key_shapes` (Unicode, `:` and `%`, a 512-byte key, case- and
+prefix-distinct keys stored verbatim), `overwrite`, `put_if_absent_live`, `take_once`,
+`delete_live`, `touch_live`, `incr_basic` (8-byte big-endian `u64`, `by = 0` creates
+0), `incr_saturates` (at `u64::MAX`), `incr_non_counter` (`PortError::InvalidValue`,
+value unchanged), `version_monotonic` (0 on a fresh store, greater after every `put`,
+also under 8 concurrent `put`s), `namespacing` (the store wrapped in
+`Namespaced::new` for two App ids and `Namespaced::shared`: Apps never see each
+other's keys or counters; keys reach the store as `<app>:<port>:<key>` and
+`_shared:<port>:<key>`), `race_put_if_absent` (32 callers: exactly one `true`, its value
+stored), `race_take` (exactly one `Some`), `race_incr` (32 x 16 increments: the counter
+is 512 and the returned values are exactly 1..=512), then `ttl_live_before_expiry`,
+`ttl_get_expires`, `ttl_put_resets`, `ttl_put_if_absent_expired`, `ttl_take_expired`,
+`ttl_touch` (extends and shortens; `false` once expired) and `ttl_incr_create_only` (TTL
+set on create only; an expired counter restarts).
+
+`identify_queue` cases: `lease_bucket` (the Lease names its bucket; an idle bucket
+grants within 1 s), `bucket_spacing` (the next Lease of one bucket comes 5 s later),
+`buckets_parallel` (another bucket grants at once meanwhile).
+
+`discord_cache` cases (gateway fixtures for guild 1, channels 10 and 11, roles 1 and 20,
+member/user 30, message 40): `empty`, `guild_create_all`, `unknown_ids`, `owned_reads`
+(changing a returned value changes nothing cached), `updates_in_order` (channel
+update, role, member, channel, message and guild deletes), `disabled_guild`,
+`disabled_channel`, `disabled_role`, `disabled_member`, `disabled_user` (with `MEMBER`
+off too) and `disabled_message` (that getter `None`, every other `Some`), and
+`channel_only` (`DiscordCacheResources::CHANNEL`).
+
+The suites are proven both ways in noctis itself: every in-memory default passes, and
+deliberately broken stores (a TTL-ignoring cache, a non-atomic `take`, a read-then-write
+`incr_with_ttl`) fail on the matching case.
 
 ## 6. Namespacing and sharing (FR-71)
 

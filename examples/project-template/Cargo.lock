@@ -2782,6 +2782,7 @@ dependencies = [
  "noctis-rules",
  "noctis-ui",
  "png",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
