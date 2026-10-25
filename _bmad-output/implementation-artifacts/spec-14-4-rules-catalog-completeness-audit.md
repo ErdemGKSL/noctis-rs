@@ -2,7 +2,8 @@
 title: 'Story 14.4: Rules catalog completeness audit'
 type: 'chore'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '40f851e096d8b92a93f5fbaca59a9b9765bb0ce7'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
