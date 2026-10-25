@@ -181,7 +181,7 @@ development_status:
   15-4-prefix-commands: done
   epic-15-retrospective: optional
 
-  epic-16: in-progress
+  epic-16: done
   16-1-event-pipeline-throughput-bench-and-baseline: done
   16-2-lock-light-lanes-parallel-drain-and-per-guild-ordering-witho: done
   16-3-per-event-and-per-handler-overhead: done
