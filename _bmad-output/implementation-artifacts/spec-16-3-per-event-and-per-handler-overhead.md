@@ -2,7 +2,8 @@
 title: 'Story 16.3: Per-event and per-handler overhead'
 type: 'refactor'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'effbf2bb0cdc3d26b6e0dbc4529133b7f802300e'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
