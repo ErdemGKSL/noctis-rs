@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 100 of 107" src="https://img.shields.io/badge/stories-100%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 103 of 107" src="https://img.shields.io/badge/stories-103%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -31,7 +31,7 @@
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
 > module operations, opt-in extras, event pipeline throughput, voice and music bots).
-> Epic 14 (launch readiness) is in progress (4 of 9 stories done).
+> Epic 14 (launch readiness) is in progress (5 of 9 stories done).
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -253,7 +253,7 @@ done. Live per-story status is in
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | ✅ Done |
-| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (4 / 9) |
+| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (5 / 9) |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 | 16 | Event pipeline throughput | P1 | ✅ Done |
 | 17 | Voice and music bots | P1 | ✅ Done |
@@ -397,6 +397,10 @@ done. Live per-story status is in
   snapshots (re-exported as `noctis::testkit`). Conformance suites
   (`noctis::testkit::conformance`) check your own storage, identify-queue and cache
   Adapters.
+- **Usage Skill completeness.** `xtask skill-check` also checks the Usage Skill for
+  completeness: required references, a troubleshooting index covering every rule id,
+  limits-cheatsheet coverage and no planned-feature markers. An agent trial on isolated
+  template copies built a bot in 4 of 5 runs.
 
 ### 🔭 Beyond v1
 - Official Redis and SQL adapter crates
