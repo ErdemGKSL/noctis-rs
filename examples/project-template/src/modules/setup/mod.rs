@@ -149,6 +149,15 @@ impl GuildConfig {
             mod_role: mod_role.get(),
         }
     }
+
+    /// The stored log channel and moderator role as typed ids; `None` when either
+    /// stored id is `0` (no valid configuration stored).
+    pub fn ids(&self) -> Option<(Id<ChannelMarker>, Id<RoleMarker>)> {
+        Some((
+            Id::new_checked(self.log_channel)?,
+            Id::new_checked(self.mod_role)?,
+        ))
+    }
 }
 
 pub fn config_key(guild: Id<GuildMarker>) -> String {
@@ -228,5 +237,21 @@ mod tests {
             channel: 300,
         };
         assert_eq!(hook.ids(), Some((Id::new(900), Id::new(300))));
+    }
+
+    #[test]
+    fn guild_config_with_a_zero_id_is_no_config() {
+        let config = GuildConfig::new(Id::new(300), Id::new(400));
+        assert_eq!(config.ids(), Some((Id::new(300), Id::new(400))));
+        let config = GuildConfig {
+            log_channel: 0,
+            mod_role: 400,
+        };
+        assert_eq!(config.ids(), None);
+        let config = GuildConfig {
+            log_channel: 300,
+            mod_role: 0,
+        };
+        assert_eq!(config.ids(), None);
     }
 }

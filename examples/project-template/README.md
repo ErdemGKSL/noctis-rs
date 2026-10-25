@@ -151,14 +151,14 @@ user code. Code lines (non-blank, not a comment, up to `#[cfg(test)]`):
 | File | Code lines |
 | --- | ---: |
 | `src/main.rs` | 25 |
-| `src/modules/setup/mod.rs` | 112 |
+| `src/modules/setup/mod.rs` | 118 |
 | `src/modules/setup/view.rs` | 149 |
 | `src/modules/setup/handlers.rs` | 165 |
 | `src/modules/profile/view.rs` | 82 |
-| **SM-1 files** | **533** |
-| whole `src/` | 1784 |
+| **SM-1 files** | **539** |
+| whole `src/` | 1799 |
 
-Goal: ≤ 150. **Missed** (533): the template's setup flow does more than SM-1's minimum
+Goal: ≤ 150. **Missed** (539): the template's setup flow does more than SM-1's minimum
 (per-step validation, Back and Cancel, a stale-panel restart, a one-shot Finish, logging
 through a stored, replaceable webhook). Reproduce the count from this directory:
 

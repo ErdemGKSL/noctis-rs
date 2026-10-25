@@ -13,7 +13,8 @@ use noctis::{DiscordCacheReader, Kv, ResponderError};
 
 use super::view::{ProfileCard, ProfileData, render_profile};
 use super::{
-    BioForm, BioFormOverrides, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key,
+    BioForm, BioFormOverrides, EditBio, Pronouns, RefreshProfile, StoredProfile, profile_key,
+    xp_key,
 };
 use crate::strings::{Strings, keys};
 
@@ -310,7 +311,7 @@ async fn load(
         name: name.clone(),
         subtitle: stored
             .pronouns
-            .map(|p| p.label().to_owned())
+            .map(|p| pronoun_label(p, &s).to_owned())
             .unwrap_or_default(),
         level_label: s.profile.card.level(xp / XP_PER_LEVEL),
         xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
@@ -329,7 +330,31 @@ async fn load(
     ))
 }
 
+/// The card's pronoun text in the response locale: `label()` is the literal (English)
+/// choice text, so the card reads `profile.pronouns.*` instead.
+fn pronoun_label(p: Pronouns, s: &Strings) -> &'static str {
+    match p {
+        Pronouns::He => s.profile.pronouns.he(),
+        Pronouns::She => s.profile.pronouns.she(),
+        Pronouns::They => s.profile.pronouns.they(),
+        Pronouns::Any => s.profile.pronouns.any(),
+    }
+}
+
 /// The guild of a guild-only interaction; outside a guild, the `common.guild_only` notice.
 fn guild_of(guild: Option<Id<GuildMarker>>) -> HandlerResult<Id<GuildMarker>> {
     guild.ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn card_pronouns_follow_the_response_locale() {
+        let tr = Strings::of(Locale::Tr);
+        assert_eq!(pronoun_label(Pronouns::They, &tr), "onlar");
+        let en = Strings::of(Locale::EnUs);
+        assert_eq!(pronoun_label(Pronouns::They, &en), "they/them");
+    }
 }

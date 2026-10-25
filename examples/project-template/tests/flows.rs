@@ -77,6 +77,17 @@ async fn setup_flow_validates_then_finishes() -> anyhow::Result<()> {
 
     let done = app.click(step3.button("Finish")?).by(ADMIN).run().await?;
     assert!(done.text().contains("Setup complete"));
+    // Each stored id lands in its own mention.
+    assert!(
+        done.text().contains(&format!("<#{LOGS}>")),
+        "{}",
+        done.text()
+    );
+    assert!(
+        done.text().contains(&format!("<@&{MODS}>")),
+        "{}",
+        done.text()
+    );
     // A Components V2 message always has components (its text is one); the done state
     // has nothing left to click: no action row, so no button or select.
     assert!(done.components().iter().all(|c| c.component_type() != 1));
@@ -84,8 +95,9 @@ async fn setup_flow_validates_then_finishes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Runs `/setup start` to its Finish click for `ADMIN`.
-async fn finish_setup(app: &TestApp) -> anyhow::Result<Response> {
+/// Runs `/setup start` to its Finish click for `ADMIN`, picking `channel` as the log
+/// channel.
+async fn finish_setup(app: &TestApp, channel: Id<ChannelMarker>) -> anyhow::Result<Response> {
     let step1 = app
         .command("setup start")
         .by(ADMIN)
@@ -94,7 +106,7 @@ async fn finish_setup(app: &TestApp) -> anyhow::Result<Response> {
         .await?;
     let picked = app
         .select(step1.component::<PickLogChannel>()?)
-        .channels([LOGS])
+        .channels([channel])
         .by(ADMIN)
         .run()
         .await?;
@@ -137,7 +149,12 @@ async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
         );
 
     for _ in 0..2 {
-        assert!(finish_setup(&app).await?.text().contains("Setup complete"));
+        assert!(
+            finish_setup(&app, LOGS)
+                .await?
+                .text()
+                .contains("Setup complete")
+        );
     }
 
     let requests = log
@@ -164,7 +181,82 @@ async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
         assert_eq!(body["flags"], 32768);
         assert!(body.get("content").is_none());
         assert_eq!(body["components"][0]["type"], 17);
+        let text = body["components"][0]["components"][0]["content"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(text.contains(&format!("<#{LOGS}>")), "{text}");
+        assert!(text.contains(&format!("<@&{MODS}>")), "{text}");
     }
+    Ok(())
+}
+
+/// A Finish with a different log channel does not reuse the stored webhook: it creates
+/// one in the new channel and logs through that.
+#[tokio::test(flavor = "multi_thread")]
+async fn setup_finish_new_log_channel_creates_a_new_webhook() -> anyhow::Result<()> {
+    const OTHER_LOGS: Id<ChannelMarker> = Id::new(301);
+    let guild = TestGuild::new(GUILD, "Test Guild")
+        .text_channel(LOGS, "logs")
+        .text_channel(OTHER_LOGS, "other-logs")
+        .role(MODS, "Mods");
+    let app = TestApp::build(configure(&mut App::builder()))
+        .await?
+        .guild(guild)
+        .user(TestUser::new(ADMIN).permissions(Permissions::MANAGE_GUILD));
+    let log: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
+    let record = |answer: serde_json::Value| {
+        let log = Arc::clone(&log);
+        move |request: &RecordedRequest| {
+            log.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(request.clone());
+            FakeResponse::json(StatusCode::OK, &answer)
+        }
+    };
+    let message = |channel: Id<ChannelMarker>| serde_json::json!({"id": "71", "channel_id": channel.to_string(), "attachments": []});
+    app.http_fake()
+        .route_with(
+            Method::POST,
+            format!("/channels/{LOGS}/webhooks"),
+            record(serde_json::json!({"id": "900", "token": "log-token", "channel_id": LOGS.to_string()})),
+        )
+        .route_with(
+            Method::POST,
+            format!("/channels/{OTHER_LOGS}/webhooks"),
+            record(serde_json::json!({"id": "901", "token": "other-token", "channel_id": OTHER_LOGS.to_string()})),
+        )
+        .route_with(Method::POST, "/webhooks/900/log-token", record(message(LOGS)))
+        .route_with(
+            Method::POST,
+            "/webhooks/901/other-token",
+            record(message(OTHER_LOGS)),
+        );
+
+    for channel in [LOGS, OTHER_LOGS] {
+        assert!(
+            finish_setup(&app, channel)
+                .await?
+                .text()
+                .contains("Setup complete")
+        );
+    }
+
+    let paths: Vec<_> = log
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .map(|r| r.path.clone())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            format!("/api/v10/channels/{LOGS}/webhooks"),
+            "/api/v10/webhooks/900/log-token".to_owned(),
+            format!("/api/v10/channels/{OTHER_LOGS}/webhooks"),
+            "/api/v10/webhooks/901/other-token".to_owned(),
+        ],
+        "a new channel gets its own webhook"
+    );
     Ok(())
 }
 
@@ -201,7 +293,7 @@ async fn setup_rejects_other_users() -> anyhow::Result<()> {
         .await
         .err();
     assert!(
-        matches!(err, Some(TestError::NotVisible { user: 201 })),
+        matches!(err, Some(TestError::NotVisible { user }) if user == MEMBER.get()),
         "{err:?}"
     );
     Ok(())

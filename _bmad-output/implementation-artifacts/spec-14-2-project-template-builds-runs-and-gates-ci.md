@@ -2,10 +2,10 @@
 title: 'Story 14.2: Project Template builds, runs and gates CI'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'cefed1f2d569f993d13310a92ee3887345fe0dfc'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/tooling-and-project-layout.md'
@@ -23,6 +23,27 @@ deferred:
     evidence: |-
       This story removes `impl Ctx` from the template instead of adding the trait (Design Notes D2). Story 14.5 (removes every `[planned]` marker) must delete or deliver that line.
     location: examples/project-template/.claude/skills/noctis/references/commands.md
+    severity: low
+  - summary: >-
+      The template's `post_log` never deletes the old log webhook in Discord when the log channel changes (or the stored ids are invalid); repeated channel switches leave orphaned webhooks toward Discord's per-channel cap.
+    evidence: |-
+      Review 14.2 pass 1 (blind, edge): pre-existing behaviour (baseline `post_log`/`create_log_webhook` already overwrote the stored record without deleting the old webhook); this story only changed the id types. Fix: delete the stale owned webhook (ignore 404) before creating the replacement.
+    location: >-
+      examples/project-template/src/modules/setup/handlers.rs post_log / create_log_webhook
+    severity: low
+  - summary: >-
+      Nothing tells maintainers or story agents to refresh `examples/project-template/Cargo.lock` when a workspace crate's version or dependencies change, although every template gate is now `--locked`.
+    evidence: |-
+      Review 14.2 pass 1 (blind, intent): a dependency bump in the workspace changes the template's resolve and `template-build` fails with cargo's "lock file needs to be updated" error. The fix edits agent-context files (root `AGENTS.md` policy next to the template rule, or `gates.sh` comments): add `cargo update --manifest-path examples/project-template/Cargo.toml -p noctis` (or `--workspace`) to the dependency-change policy.
+    location: >-
+      AGENTS.md (Policy / Running and verifying); tools/story-loop/gates.sh
+    severity: low
+  - summary: >-
+      The Usage Skill's new Kv id note (references/adapters.md §3) does not say what to do with a value already stored with `Id<_>` fields (it reads back as `Malformed`: treat as absent and overwrite).
+    evidence: |-
+      Review 14.2 pass 1 (blind): one sentence is missing for bots that stored `Id`-typed structs before the note; the fix edits the Usage Skill (agent context), and Story 14.5 owns skill completeness.
+    location: >-
+      examples/project-template/.claude/skills/noctis/references/adapters.md §3
     severity: low
 ---
 
@@ -125,6 +146,32 @@ deferred:
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 22 findings — high 0, medium 4, low 9, false 9, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) `setup_flow_validates_then_finishes` component check is vacuous (top-level only) — testkit `nodes()` (crates/noctis-testkit/src/response.rs:673) walks the whole tree, so `components()` includes action rows nested in Containers; no type-1 node means no button or select remains.
+  - `[false]` `[reject]` (blind) a malformed stored `StoredWebhook` makes `post_log` fail forever — the matrix row "Undecodable stored entry" settles this (warn, log not posted, setup succeeds), and no reachable path writes undecodable bytes: the template never compiled before this story, so no `Id`-typed record exists.
+  - `[low]` `[defer]` (blind) old webhook not deleted on log-channel change (leak) — pre-existing: the baseline `post_log` had the same overwrite-without-delete logic; deferred to frontmatter.
+  - `[low]` `[patch]` (blind) `GuildConfig` has no checked way back to typed ids, though template `AGENTS.md` points at it as the `Id::new_checked` example — patch: add `GuildConfig::ids()` mirroring `StoredWebhook::ids()` plus a unit test.
+  - `[medium]` `[patch]` (blind) profile card pronouns lost their localization (`p.label().to_owned()`), `tr` users see English and `profile.pronouns.*` keys are dead — patch: map `Pronouns` to `s.profile.pronouns.*` in `load` and assert a `tr` label.
+  - `[low]` `[reject]` (blind) six template gates add ~3.5 GB target and time to every gate pass, also in light mode — Design Notes D6 accepted this with `prune-target.sh` as the mitigation; a shared target dir is not a direct correction and its saving is unproven.
+  - `[false]` `[reject]` (blind) exact `takumi-raster =0.5.8` pin on a published crate / unused optional dep — deliberate (D1, memlog); it prevents the takumi-core split for every fresh resolve; deps-check passes with the optional render-only shape.
+  - `[low]` `[defer]` (blind) no instruction to refresh the template `Cargo.lock` under `--locked` gates — the fix edits agent-context files (AGENTS.md / gate docs); deferred to frontmatter.
+  - `[low]` `[patch]` (blind) `NotVisible { user: 201 }` hardcodes MEMBER's id — patch: compare against `MEMBER.get()`. The `app.stop()` inconsistency part names no harm.
+  - `[false]` `[reject]` (blind) SKILL.md still has the "planned API" v0 banner — the spec's Never list and epics Story 14.5 AC assign removal of `[planned]` markers and the `v0` status to Story 14.5.
+  - `[low]` `[defer]` (blind) adapters.md Kv snippet uses elided names and lacks a migration sentence for already-stored `Id` values — elided names are the skill's fragment convention (nothing fails); the migration sentence edits the Usage Skill (agent context); deferred to frontmatter.
+  - `[low]` `[reject]` (blind) SM-1 README counts are hard-coded and can go stale — the AC asks for a reported count with a reproducible command, which the README gives; the counts match the command today (no block comments in the files); a checking gate adds complexity for a report.
+  - `[false]` `[reject]` (edge) undecodable `StoredWebhook` errors on every Finish — same refutation as the blind malformed-webhook row (matrix-settled, unreachable).
+  - `[low]` `[defer]` (edge) old webhook orphaned on channel change — grouped with the blind leak row (pre-existing); deferred.
+  - `[medium]` `[patch]` (vgap) `GuildConfig` ids are untyped `u64`, no test checks which id lands in which mention — patch: assert `<#300>` and `<@&400>` in the done text and in the webhook body.
+  - `[medium]` `[patch]` (vgap) no test exercises the channel-change branch of the webhook reuse check — patch: add `setup_finish_new_log_channel_creates_a_new_webhook` with a second text channel.
+  - `[false]` `[reject]` (intent 1) "planned API" notes remain in the bundled skill — Story 14.5 owns the skill's `[planned]`/v0 removal (spec Never list, epics 14.5 AC); `bounded_cache.rs` NOTE is an accurate status line, not a planned-API note.
+  - `[false]` `[reject]` (intent 2) required gate edited in `.github/workflows-disabled/` — maintainer policy pauses CI until Epic 14's launch stories; live enforcement is `gates.sh`, as the spec requires.
+  - `[medium]` `[patch]` (intent 3) `tr` locale not exercised at runtime and card pronouns no longer localized — grouped with the blind pronoun row; the patch adds the `tr` assertion.
+  - `[false]` `[reject]` (intent 4) SM-1 file set omits `lib.rs` `configure` and profile `load` — D7 (memlog) fixed the file set deliberately and the README names it; adding files only enlarges an already reported miss.
+  - `[low]` `[defer]` (intent 5) library changes in a template story; `--locked` makes every graph change need a template lock update — the library changes are spec-required (D1, D3, policy followed); the lock-refresh part is grouped with the blind lock row; deferred.
+  - `[false]` `[reject]` (intent 6) the done-state check is weaker than "no action row" — `components()` is recursive (testkit `nodes()`), so the check is not vacuous.
+
 ## Design Notes
 
 Decisions (logged in the memlog at planning):
@@ -156,3 +203,15 @@ cd examples/project-template && for f in src/main.rs src/modules/setup/{mod,view
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- ok
 - `cargo deny check` and `cargo +1.91 check --release --workspace` -- ok
 - `tools/story-loop/gates.sh` -- ALL-OK (includes the new template steps)
+
+## Auto Run Result
+
+- **Summary:** The Project Template (`examples/project-template/`) now builds, passes clippy and tests under `--locked` (default and all-features), and runs as gates in `tools/story-loop/gates.sh`. Library support: `takumi-raster =0.5.8` pin in `noctis-image` (D1), `noctis::id` module plus prelude `Id` re-export (D3, public-api re-blessed). Template ids stored in Kv as `u64` (D4); setup-flow test asserts `NotVisible` for other users (D5); SM-1 line count reported in the README, not enforced (D7).
+- **Files changed:** `crates/noctis-image/Cargo.toml` (takumi-raster pin); `crates/noctis/src/lib.rs` (`id` module, prelude `Id`); `xtask/public-api.txt` (re-bless); `crates/noctis/tests/menus.rs`, `crates/noctis-testkit/tests/observability.rs` (adjust to API); `examples/project-template/src/**` (compile fixes, typed/u64 ids, setup webhook logging, `GuildConfig::ids()`, localized pronouns); `examples/project-template/tests/**` (flows, memory, adapters, templates, new snapshots); template `README.md`, `AGENTS.md`, `.gitignore`, `Cargo.lock`; Usage Skill `SKILL.md` and `references/adapters.md`; `tools/story-loop/gates.sh` (six template gate steps); memlog decisions.
+- **Review findings (22: high 0, medium 4, low 9, false 9):**
+  - Patched (6; medium 4, low 2 at entry verdict... grouped into 5 patches): localize profile pronouns via `s.profile.pronouns.*` with a `tr` assertion (medium x2, grouped); assert `<#300>`/`<@&400>` in done text and webhook body (medium); new test `setup_finish_new_log_channel_creates_a_new_webhook` (medium); `GuildConfig::ids()` checked conversion plus unit test (low); `NotVisible` compares against `MEMBER.get()` (low).
+  - Deferred (5 rows): old webhook not deleted on log-channel change (pre-existing, blind+edge); no instruction to refresh template `Cargo.lock` under `--locked` (blind + intent 5); adapters.md migration sentence for already-stored `Id` values.
+  - Rejected (11): vacuous component check (testkit `nodes()` is recursive; blind + intent 6); undecodable `StoredWebhook` (matrix-settled, unreachable; blind + edge); gate disk/time cost (accepted by D6, prune-target mitigation); exact takumi pin (deliberate D1); SKILL.md v0 banner and planned-API notes (owned by Story 14.5; blind + intent 1); hard-coded SM-1 counts (reproducible command given); gate edited in workflows-disabled (CI paused by maintainer); SM-1 file set (fixed by D7).
+- **Follow-up review recommended: true** (first pass, 4 medium patched). Named risk: the pronoun-localization patch and the new webhook channel-change test touch setup/profile handlers after the reviewed diff; their interaction with Kv-stored `u64` ids and the webhook reuse check has not been independently re-reviewed.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, workspace clippy/test, xtask deps-check, api-snapshot, skill-check, rules-catalog, tw-grammar, tw_crosscheck, cargo deny, MSRV 1.91, plus the new template build/clippy/test steps, default and all-features). CI is paused by the maintainer (workflows in `.github/workflows-disabled/`).
+- **Residual risks:** orphaned webhooks on log-channel change; `--locked` template gates fail whenever the library graph changes until the template lock is refreshed; twilight `Id` is not postcard-serializable in Kv (framework fix deferred); SM-1 line target missed (reported); Usage Skill `[planned]` markers remain until Story 14.5.

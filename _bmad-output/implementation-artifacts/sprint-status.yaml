@@ -164,7 +164,7 @@ development_status:
 
   epic-14: in-progress
   14-1-adapter-conformance-suites: done
-  14-2-project-template-builds-runs-and-gates-ci: in-progress
+  14-2-project-template-builds-runs-and-gates-ci: done
   14-3-dispatch-latency-allocation-and-memory-gates: backlog
   14-4-rules-catalog-completeness-audit: backlog
   14-5-usage-skill-completeness-and-agent-trial: backlog
