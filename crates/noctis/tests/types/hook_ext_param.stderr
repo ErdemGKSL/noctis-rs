@@ -1,4 +1,4 @@
-error[E0277]: `HookCtx` carries no Middleware Extensions: lifecycle hooks run no Middleware, so they take no `Ext<T>` or `Option<Ext<T>>` parameter
+error[E0277]: `HookCtx` carries no Middleware Extensions, so this handler takes no `Ext<T>` or `Option<Ext<T>>` parameter
   --> tests/types/hook_ext_param.rs:10:5
    |
 10 |     #[handler]

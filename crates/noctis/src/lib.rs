@@ -1737,7 +1737,7 @@ pub mod lifecycle {
     //! `App::modules()` before `run`, the CLI `--publish*` modes) the hooks
     //! run inline and the call returns after them; a hook's own
     //! `ctx.modules().set_enabled(..)` is queued after it in a run and nested
-    //! outside one.
+    //! outside one (and during the end-of-run drain, after the queue closed).
     //!
     //! **What runs.** No Middleware, no locale stage, no rate limit; a hook
     //! runs whether or not its Module is enabled at runtime. Boot Flags filter

@@ -429,6 +429,38 @@ async fn one_run_in_order() {
     );
 }
 
+/// R20: a stop after `AppStarted` but before `GET /gateway/bot` answered
+/// still fires `ShutdownStarted { Requested }` once, last.
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_before_gateway_info() {
+    let _serial = serial().await;
+    let http = fake_http().await;
+    let bot = GatewayBot {
+        shards: 1,
+        ..GatewayBot::default()
+    };
+    http.route(
+        Method::GET,
+        "/gateway/bot",
+        FakeResponse::json(StatusCode::OK, &bot.to_json()).delay(Duration::from_mins(1)),
+    );
+    let mut running = Running::start(&http, FakeGatewayConfig::default(), |_| {}).await;
+    running.probe.wait_for("APP_STARTED").await;
+    running.stop();
+    assert!(running.finish(WAIT).await.is_ok());
+    let probe = &running.probe;
+    assert_eq!(
+        probe.names(),
+        ["APP_STARTED", "SHUTDOWN_STARTED"],
+        "{:?}",
+        probe.all()
+    );
+    assert_eq!(
+        probe.data("SHUTDOWN_STARTED"),
+        ["ShutdownStarted { reason: Requested }"]
+    );
+}
+
 /// Acceptance 3 (R12, R20): a fatal close after startup fires `ShardFatal`
 /// with its code (after the `ShardDisconnected` of the closed connection),
 /// then `ShutdownStarted { AllShardsEnded }`.

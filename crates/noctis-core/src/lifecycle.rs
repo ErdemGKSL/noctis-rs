@@ -446,7 +446,7 @@ impl HookCtx {
 
     /// The App's runtime Module switches; a toggle from a hook fires
     /// [`ModuleToggled`] after the running hooks (in a run) or nested
-    /// (outside one).
+    /// (outside one, and during the end-of-run drain after the queue closed).
     pub fn modules(&self) -> crate::Modules {
         crate::Modules::of(Some(&self.0.app))
     }

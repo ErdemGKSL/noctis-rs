@@ -866,7 +866,8 @@ slow hook delays every later one: keep hooks short and `tokio::spawn` slow work 
 HTTP call, a webhook post). Outside a run (`App::publish(..)` or `app.modules()` before
 `run`, the CLI `--publish*` modes) the hooks run inline and the call returns after them.
 A hook's own `ctx.modules().set_enabled(..)` fires `ModuleToggled` after it (in a run)
-or nested inside it (outside one); it never deadlocks.
+or nested inside it (outside one, and during the end-of-run drain after the queue
+closed); it never deadlocks.
 
 **What runs and what does not.** No Middleware, no locale stage, no rate limit, no
 timeout. A hook runs whether or not its Module is enabled at runtime (enablement gates

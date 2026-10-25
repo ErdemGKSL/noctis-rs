@@ -2,10 +2,10 @@
 title: 'Story 13.5: Lifecycle Hooks'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'e6eb41e77228bc1b32bad454e225168b581b2d65'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -135,6 +135,42 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 32 findings — high 0, medium 3, low 15, false 14, maybe-false 0
+- findings:
+  - `[low]` `[patch]` blind: `fold_hooks` inserted between `pre_order`'s doc and `fn pre_order` (registry.rs) — confirmed at registry.rs:354-358; patch moves the doc lines back above `pre_order` (grouped with edge 6, vgap other 1).
+  - `[low]` `[patch]` blind: `__Extensions`/`__RequireExtensions` `on_unimplemented` texts blame lifecycle hooks for any type lacking the impl (kind.rs) — `__RequireExtensions` is implemented for every other descriptor, so its text is accurate; `__Extensions` names `{Self}` and can be hit by a wrong context type in a `#[handler]`; patch makes the `__Extensions` message generic and keeps the hook text on `__RequireExtensions`.
+  - `[low]` `[patch]` blind: `HookRun::finish` detaches the queue before draining, so a toggle from a draining hook runs nested inline, contradicting "queued after it" docs — confirmed (`detach()` first, `fire` then falls back to `run_inline`); bounded by the outer hook's cut, rare; patch documents the drain-phase behaviour in the three doc sites (grouped with edge 1, edge 7).
+  - `[low]` `[reject]` blind: discard warning does not count the remaining hooks of the event whose hook was cut — real (`events = usize::from(!started)`), but the cut hook is already reported `Cancelled` with its event name, several `ShutdownStarted` hooks with a slow first one is uncommon, and the fix adds per-event tracking; spec only requires counting queued events.
+  - `[false]` `[reject]` blind: inline hooks have no timeout or nested-toggle depth bound — spec Never says "no per-hook timeout" and R25 specifies nested inline runs; a mutually-toggling pair is an author-written infinite loop, not a framework defect.
+  - `[false]` `[reject]` blind: `HookCtx` exposes no shutdown deadline/cancellation — the `HookCtx` surface and the cut behaviour are fixed by the intent's Always list; the author configures `shutdown_grace` themselves; adding surface is not a defect fix.
+  - `[false]` `[reject]` blind: `PublishCompleted` lacks `dry_run` while `PublishFailed` has it — intent defines both field sets exactly; `report.is_dry_run()` carries it (R24).
+  - `[medium]` `[patch]` blind: test gaps — early-shutdown `ShutdownStarted`, `ShutdownReason::Signal`, App-level dropped `run_until`, hook position in `shutdown_sequence_order` — the early-shutdown gap is real and shares its root with vgap 2 (patched there); Signal mapping and dropped-run (R23, unit-tested via `dropped_run_aborts`) are covered by the plan's unit tests and get no separate patch.
+  - `[low]` `[reject]` blind: no test for clear/CLI publish firing hooks, no template hook test — CLI modes call `self.publish(scope).dry_run(..).clear(..).await` (app.rs:897), the same `IntoFuture` that fires the hooks (publish.rs:385-393), so the path is structurally covered; template compile is the AC; extra tests add no likely-caught defect.
+  - `[false]` `[reject]` blind: stale `// NOTE: written against the planned Noctis API` header in template `ops/mod.rs` — every template module file (`mod.rs`, `dashboard`, `profile`, `setup`) carries the same header; it is the template's convention, not a stale line specific to this file.
+  - `[low]` `[patch]` blind: memlog says the hook index is built in `Registry::fold`'s pre-order walk, code uses a separate `fold_hooks` pass — confirmed (registry.rs:275, 358; same `pre_order`, same order); patch corrects the memlog phrase.
+  - `[low]` `[reject]` blind: `shut_down` takes an eighth parameter under `#[expect(clippy::too_many_arguments)]` instead of carrying `&HookRun` in `Watch` — style only; `Watch` is built at many sites and tests, so the refactor is not a direct correction and no caller diverges.
+  - `[low]` `[reject]` blind: event table written in three places (core docs, facade docs, skill §7) with wording drift — the spec requires the facade docs and the skill (which must stand alone per AGENTS.md) to list every event; the cited wordings are equivalent; consolidation is not a direct correction.
+  - `[low]` `[patch]` edge: `HookRun::finish` detach lets draining hooks fire nested inline — same root as blind 3; patched there.
+  - `[low]` `[reject]` edge: runner discard count misses skipped hooks of the cut event — same as blind 4; rejected there.
+  - `[low]` `[reject]` edge: runner not stopping within `CUT_WAIT` is aborted on drop without a report — only reachable when a hook blocks the runtime thread synchronously (the biased `select!` on the cut otherwise returns at once); author bug, and the fix adds a warn branch.
+  - `[false]` `[reject]` edge: dropping `run_until` aborts silently, unlike the cut path — R23 specifies exactly this ("runner aborted; no further hook"), and the intent's Always says "Dropping the `run_until` future aborts the runner (no `ShutdownStarted`)".
+  - `[false]` `[reject]` edge: shard events during `close_all` can follow `ShutdownStarted` — R20 states "shard events seen during closing may follow it" and the facade docs say so (lib.rs:1728); no doc calls it the last event.
+  - `[low]` `[patch]` edge: `pre_order` doc moved onto `fold_hooks` — same as blind 1; patched there.
+  - `[low]` `[patch]` edge: `HookCtx::modules` doc claims queued ordering, which does not hold during the drain — same root as blind 3; patched there.
+  - `[medium]` `[patch]` vgap: `shutdown_grace` extension of the drain deadline is never exercised — pre-verified; patch adds a paused-time unit test with a 2 s `ShutdownStarted` hook under grace 5 s asserting completion without a report.
+  - `[medium]` `[patch]` vgap: early-shutdown `ShutdownStarted { Requested }` branch of `run_started` has no test — pre-verified; patch adds a testkit test stopping between `APP_STARTED` and `GET /gateway/bot` (grouped with blind 8).
+  - `[low]` `[patch]` vgap other: `fold_hooks` carries `pre_order`'s doc — same as blind 1; patched there.
+  - `[false]` `[reject]` intent 1: `#[derive(Hook)]` instead of an attribute macro `#[hook]` — the intent's Approach settles the derive, per maintainer decision §7.
+  - `[false]` `[reject]` intent 2: `ModuleToggled` fires only for local writes — intent Never excludes changes seen through the poll (R19, design note "Local toggles only").
+  - `[false]` `[reject]` intent 3: own vs effective enablement — intent defines `enabled` as the Module's own state in `scope`.
+  - `[false]` `[reject]` intent 4: fatal close also fires `ShardDisconnected` — the intent fires the four shard events from `Lifecycle::shard`, which mirrors the gateway's `Disconnected` then `Ended`; nothing in R12/R14 forbids it, and it is logged as a decision.
+  - `[low]` `[reject]` intent 5: multi-shard `AllShardsReady` ordering (R13) tested only with one shard — `AllShardsReady` is emitted once after `await_startup` returns `Ok` (app.rs:1119), which only returns once every shard is ready, so once-after-last holds structurally; the extra 2-shard harness is not a direct fix.
+  - `[false]` `[reject]` intent 6: acceptance tested on a raw `App` plus fakes, not `TestApp` — the spec's Tasks name exactly this harness; `TestApp` sets `publisher(false)` and cannot run the Publish AC.
+  - `[false]` `[reject]` intent 7: new `ErrorOrigin::Hook` instead of `Event` — settled by the intent's Always list and the AD-13 amendment.
+  - `[false]` `[reject]` intent 8: behaviours the epic does not name (enablement ignored, no Middleware, inline Publish hooks, drain deadline) — each is specified in the intent's Always/Never and matrix.
+  - `[false]` `[reject]` intent 9: `PublishFailed` carries no diff — the intent defines `PublishFailed { scope, dry_run, clear, error }`; a failed Publish has no report.
+
 ## Design Notes
 
 - **Order (decision):** the epic lists Publish after "all Shards ready", but the startup Publish runs before `GET /gateway/bot` (Story 6.x, documented). Hooks fire in occurrence order, so a publisher's run reads `AppStarted, PublishCompleted, ShardReady.., AllShardsReady, .., ShutdownStarted`; moving the Publish would change shipped behavior for no FR.
@@ -174,3 +210,12 @@ Run from `/home/claude/lanes/b/noctis-rs`, release only (wrap workspace-wide run
 - `cargo deny check` and `cargo +1.91 check --release --workspace` -- expected: exit 0
 - `cargo check --release --manifest-path examples/project-template/Cargo.toml --target-dir target/template` -- expected: template compiles (delete `target/template` if disk is tight)
 - `cargo hack` -- not run by hand: this is Epic 13's last story, so `tools/story-loop/gates.sh` runs it
+
+## Auto Run Result
+
+- **Summary:** Added FR-54 lifecycle hooks: `#[derive(Hook)]` (sixth kind derive, optional `#[hook(flags = [..])]`) on unit structs whose `#[handler]` takes `HookCtx` plus one of ten sealed `noctis::lifecycle` payloads (`AppStarted`, `ShardReady`, `ShardResumed`, `ShardDisconnected`, `ShardFatal`, `AllShardsReady`, `PublishCompleted`, `PublishFailed`, `ModuleToggled`, `ShutdownStarted`). The Registry folds hooks in pre-order; core fires events into one ordered per-App queue drained by a single runner task (inline when the App is not running), each hook under `catch_unwind`, failures to the new `ErrorOrigin::Hook` Error Sink; shutdown drains within `shutdown_grace`.
+- **Files changed:** `crates/noctis-core/src/lifecycle.rs` (+tests: events, queue, runner, firing), `kind.rs`/`registry.rs` (Hook descriptor, `fold_hooks`), `app.rs`/`publish.rs`/`modules` (firing points), `sink.rs` (`ErrorOrigin::Hook`); `crates/noctis-macros/src/lifecycle.rs`, `kind.rs`, `handler.rs`, `lib.rs` (derive); `crates/noctis/src/lib.rs` (facade + docs); `crates/noctis/tests/hooks.rs`, `tests/types/hook_*` (trybuild compile_fail); `crates/noctis-testkit/tests/lifecycle.rs` (acceptance); `examples/project-template/` (ops module, AGENTS.md, Usage Skill refs); `xtask/public-api.txt`, `xtask/src/api_snapshot.rs`; architecture memlog.
+- **Review findings:** 32 (high 0, medium 3, low 15, false 14). Patched (by verdict: high 0, medium 3, low 9 entries, grouped): `pre_order` doc restored above its fn; generic `__Extensions` on_unimplemented text; drain-phase nested-inline behaviour documented in three doc sites; memlog `fold_hooks` wording; new paused-time test for `shutdown_grace` extending the drain; new testkit test for early-shutdown `ShutdownStarted { Requested }`. Deferred: none. Rejected: discard count of skipped hooks in a cut event (rare, needs per-event tracking); no inline timeout/depth bound (spec Never); no shutdown deadline on `HookCtx` (surface fixed); `PublishCompleted` lacks `dry_run` (in report); clear/CLI publish tests (same `IntoFuture` path); template header (convention); `shut_down` 8th param (style); triplicated event table (required); runner abort past `CUT_WAIT` unreported (author blocking bug); silent drop of `run_until` (R23); shard events after `ShutdownStarted` (R20); derive vs attribute, local-only toggles, own-state `enabled`, fatal also fires Disconnected, 1-shard `AllShardsReady` test, raw-App harness, `ErrorOrigin::Hook`, unnamed epic behaviours, no diff on `PublishFailed` (all settled by intent/decisions).
+- **Follow-up review recommended:** true — two-plus medium patches on a first pass; unverified risk: the two new timing tests (paused-time `shutdown_grace` drain and early-shutdown between `APP_STARTED` and `GET /gateway/bot`) may be order/timing-sensitive and the drain-phase nested-inline semantics are only documented, not tested.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** toggles fired from hooks during the final drain run nested inline (bounded by the cut); a hook blocking the runtime thread synchronously can outlive `CUT_WAIT` without a report; `AllShardsReady` ordering covered structurally, not by a multi-shard test.

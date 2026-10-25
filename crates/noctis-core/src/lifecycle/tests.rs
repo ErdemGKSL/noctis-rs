@@ -351,6 +351,37 @@ async fn slow_hook_is_cut() {
     assert_eq!(warned.len(), 1, "{}", capture.text());
 }
 
+/// R22: after `ShutdownStarted` the end-of-run drain waits up to
+/// `shutdown_grace`, past the 1 s floor, for a hook that finishes in time.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn drain_waits_for_shutdown_grace() {
+    let sink = Arc::new(Recording::default());
+    let done = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&done);
+    let slow = LifecycleHook::__new::<ShutdownStarted, _, _>("t::Slow", move |_, _| {
+        let flag = Arc::clone(&flag);
+        async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            flag.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    });
+    let app = app(vec![Module::new("ops").__add(slow)], &sink);
+    let run = HookRun::start(app.shared());
+    run.app_started(false);
+    run.shutdown_started(ShutdownReason::Requested);
+    let started = Instant::now();
+    run.finish(Duration::from_secs(5)).await;
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_secs(2) && waited < Duration::from_secs(5),
+        "{waited:?}"
+    );
+    assert!(done.load(Ordering::SeqCst));
+    let seen = sink.seen();
+    assert!(seen.is_empty(), "{seen:?}");
+}
+
 /// R23: dropping the run aborts the runner and detaches the queue.
 #[tokio::test(flavor = "multi_thread")]
 async fn dropped_run_aborts() {

@@ -159,7 +159,7 @@ development_status:
   13-2-boot-time-feature-flags: done
   13-3-runtime-module-enable-and-disable: done
   13-4-rate-limits-on-commands-and-routes: done
-  13-5-lifecycle-hooks: in-progress
+  13-5-lifecycle-hooks: done
   epic-13-retrospective: optional
 
   epic-14: backlog

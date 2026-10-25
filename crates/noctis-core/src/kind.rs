@@ -1211,7 +1211,7 @@ require_extensions!(
 /// A handler context that carries its run's frozen Extensions.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` carries no Middleware Extensions: lifecycle hooks run no Middleware, so they take no `Ext<T>` or `Option<Ext<T>>` parameter",
+    message = "`{Self}` carries no Middleware Extensions, so this handler takes no `Ext<T>` or `Option<Ext<T>>` parameter",
     label = "remove the `Ext` parameter"
 )]
 pub trait __Extensions {

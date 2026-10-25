@@ -330,8 +330,6 @@ impl Registry {
 /// root).
 type Mounted<'m> = (&'m Module, Option<&'static str>);
 
-/// Every Module of `roots`, pre-order (parent before children, children in
-/// `module` order).
 /// Every Lifecycle Hook of the kept trees `roots`, by event, in fold order
 /// (pre-order, `add` order).
 fn fold_hooks(roots: &[Module]) -> Hooks {
@@ -347,6 +345,8 @@ fn fold_hooks(roots: &[Module]) -> Hooks {
     hooks
 }
 
+/// Every Module of `roots`, pre-order (parent before children, children in
+/// `module` order).
 fn pre_order(roots: &[Module]) -> Vec<Mounted<'_>> {
     let mut out = Vec::new();
     let mut stack: Vec<Mounted<'_>> = roots.iter().rev().map(|root| (root, None)).collect();
