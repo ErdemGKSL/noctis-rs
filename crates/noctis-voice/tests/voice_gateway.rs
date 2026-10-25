@@ -258,7 +258,11 @@ impl Running {
 }
 
 async fn finished<T>(task: JoinHandle<T>) -> T {
-    tokio::time::timeout(WAIT, task)
+    finished_within(WAIT, task).await
+}
+
+async fn finished_within<T>(bound: Duration, task: JoinHandle<T>) -> T {
+    tokio::time::timeout(bound, task)
         .await
         .expect("the task finished")
         .unwrap()
@@ -484,7 +488,10 @@ async fn join_driver_error_leaves() {
             "endpoint": "127.0.0.1:9"
         }),
     );
-    let result = finished(join).await;
+    // Songbird retries the failed connect 5 times with a jittered 0.25 s to
+    // 10 s backoff (about 8 s to 17 s in all), so the error can come after
+    // `WAIT`; the 30 s join timeout bounds it.
+    let result = finished_within(Duration::from_secs(35), join).await;
     let Err(VoiceError::Driver {
         guild: failed,
         reason,
