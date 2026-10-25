@@ -14,6 +14,7 @@ follows the `bmad-build-auto` workflow and the maintainer workflow in `AGENTS.md
 | `planner.md`, `triage.md`, `rv-*.md` | Prompts for the planner, triage and the four review layers |
 | `gates.sh` | Every local gate from `AGENTS.md`; prints `ALL-OK` or `FAIL:<step>` |
 | `bg.sh` | Runs a long command (the gates, a workspace-wide test) detached; a caller cut off by a tool timeout reruns it and attaches |
+| `readme-due.py` | Tells the loop whether README progress is due (3+ stories past the badge on origin/main, or an epic just closed) |
 | `epic-last.py` | Tells `gates.sh` whether the gated story is the last open one of its epic (only then `cargo hack` runs) |
 | `prune-target.sh` | Frees disk by deleting whole cargo build units under cargo's build lock (for a near-full disk only) |
 | `cp.sh` | Commit everything and push to `main` (and the current branch) |
@@ -68,7 +69,7 @@ Run about one or two epics per invocation, then check the results, `git log` and
   Only then does the lane stop.
 - An agent that dies (no structured output) is retried once and then counts as a failed
   step; it no longer ends its lane silently.
-- Every third finished epic (3, 6, 9, 12, 15) the script refreshes `README.md`.
+- Every 3-4 merged stories and at the end of each epic (`readme-due.py`: done stories exceed origin/main's README badge by 3, or the story closed its epic) the script refreshes `README.md`; in a lane it commits the refresh before the merge, so it lands on main with the story under the merge lock.
 - Before the Epic 14 launch stories, move `.github/workflows-disabled/*` back to
   `.github/workflows/` and fix every CI failure.
 

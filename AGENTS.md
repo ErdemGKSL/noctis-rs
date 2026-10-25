@@ -46,7 +46,7 @@ These are the maintainer's standing preferences for agent sessions on this repo.
 
 - Push every commit to `main` immediately and automatically (`git push origin HEAD:main`), together with the session branch if there is one; no PRs and no waiting for approval.
 - Commit and push after every finished step, including `_bmad-output/`: cloud containers are ephemeral and anything unpushed is lost.
-- After every third finished epic (3, 6, 9, 12, 15), refresh `README.md`: status note, stories-done badge, epic status table, "What already works" bullets, and API-preview names that no longer match the real API.
+- Every 3-4 merged stories and at the end of each epic (maintainer, 2026-10-25; replaces "every third epic"), refresh `README.md` on main: status note, stories-done badge, epic status table, "What already works" bullets, and API-preview names that no longer match the real API. The story loop does it (`tools/story-loop/readme-due.py`).
 - CI is paused by the maintainer until the end of the project: workflows sit in `.github/workflows-disabled/` and GitHub runs none of them. A story is done when every local gate above passes. Before the final launch stories (Epic 14), move them back to `.github/workflows/` and fix every failure.
 - Stories marked `[Maintainer-gated]` in `epics.md` (crates.io token or publish, repository settings) need the maintainer; skip them in unattended runs, report them as waiting, and continue.
 - Work autonomously. The maintainer has delegated every decision, including architecture and feature-set questions, until the project is finished: decide, log each decision as a `(decision)` line in the relevant memlog, and continue.
