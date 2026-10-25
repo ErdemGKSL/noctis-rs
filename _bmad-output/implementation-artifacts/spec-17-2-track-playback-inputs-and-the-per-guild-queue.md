@@ -2,7 +2,8 @@
 title: 'Story 17.2: Track playback, inputs and the per-guild queue'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '3f8d1593c584695ae8e541c4caea8d3464217626'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
