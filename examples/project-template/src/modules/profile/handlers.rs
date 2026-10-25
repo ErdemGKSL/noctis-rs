@@ -299,27 +299,15 @@ async fn load(
         .unwrap_or_default();
     let xp = kv.counter(&xp_key(guild, user_id)).await?;
 
-    // The card's text follows the response's locale (FR-43).
-    let s = Strings::of(locale);
-    #[expect(clippy::cast_precision_loss, reason = "remainder is < 100")]
-    let progress = (xp % XP_PER_LEVEL) as f32 / XP_PER_LEVEL as f32;
     let name = user.as_ref().map_or_else(
         || user_id.to_string(),
         |u| u.global_name.clone().unwrap_or_else(|| u.name.clone()),
     );
-    let card = ProfileCard {
-        name: name.clone(),
-        subtitle: stored
-            .pronouns
-            .map(|p| pronoun_label(p, &s).to_owned())
-            .unwrap_or_default(),
-        level_label: s.profile.card.level(xp / XP_PER_LEVEL),
-        xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
-        progress,
-        avatar: user
-            .as_ref()
-            .map_or_else(RemoteImage::placeholder, |u| RemoteImage::avatar(u, 256)),
-    };
+    let avatar = user
+        .as_ref()
+        .map_or_else(RemoteImage::placeholder, |u| RemoteImage::avatar(u, 256));
+    // The card's text follows the response's locale (FR-43).
+    let card = profile_card(name.clone(), avatar, &stored, xp, &Strings::of(locale));
     Ok((
         card,
         Loaded {
@@ -328,6 +316,30 @@ async fn load(
             bio: stored.bio,
         },
     ))
+}
+
+/// The card of a loaded profile, its text in the strings `s` of the response locale.
+/// Pure, so the card data is testable without a gateway.
+fn profile_card(
+    name: String,
+    avatar: RemoteImage,
+    stored: &StoredProfile,
+    xp: u64,
+    s: &Strings,
+) -> ProfileCard {
+    #[expect(clippy::cast_precision_loss, reason = "remainder is < 100")]
+    let progress = (xp % XP_PER_LEVEL) as f32 / XP_PER_LEVEL as f32;
+    ProfileCard {
+        name,
+        subtitle: stored
+            .pronouns
+            .map(|p| pronoun_label(p, s).to_owned())
+            .unwrap_or_default(),
+        level_label: s.profile.card.level(xp / XP_PER_LEVEL),
+        xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
+        progress,
+        avatar,
+    }
 }
 
 /// The card's pronoun text in the response locale: `label()` is the literal (English)
@@ -356,5 +368,33 @@ mod tests {
         assert_eq!(pronoun_label(Pronouns::They, &tr), "onlar");
         let en = Strings::of(Locale::EnUs);
         assert_eq!(pronoun_label(Pronouns::They, &en), "they/them");
+    }
+
+    /// The card subtitle of a `tr` response reads the translated pronouns, never the
+    /// English choice literal (`Pronouns::label`).
+    #[test]
+    fn tr_card_subtitle_is_translated() {
+        let stored = StoredProfile {
+            bio: None,
+            pronouns: Some(Pronouns::They),
+        };
+        let tr = Strings::of(Locale::Tr);
+        let card = profile_card(
+            "Ada".to_owned(),
+            RemoteImage::placeholder(),
+            &stored,
+            150,
+            &tr,
+        );
+        assert_eq!(card.subtitle, "onlar");
+        assert_ne!(card.subtitle, Pronouns::They.label());
+        let empty = profile_card(
+            "Ada".to_owned(),
+            RemoteImage::placeholder(),
+            &StoredProfile::default(),
+            0,
+            &tr,
+        );
+        assert_eq!(empty.subtitle, "");
     }
 }

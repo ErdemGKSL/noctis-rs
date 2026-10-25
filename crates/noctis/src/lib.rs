@@ -3949,8 +3949,8 @@ pub mod testkit {
         //!   `ModuleStateStore` version, namespacing, races of 32 concurrent
         //!   callers and TTL expiry (~3 s each).
         //! - [`identify_queue`] takes a factory `Fn() -> P` of at least 2
-        //!   buckets and checks bucket Leases, the 5 s spacing and parallel
-        //!   buckets (~5 s).
+        //!   buckets and checks bucket Leases, the 5 s spacing (three Leases
+        //!   5 s apart) and parallel buckets (~10 s).
         //! - [`discord_cache`] takes a factory
         //!   `Fn(DiscordCacheResources) -> C` and checks owned reads, updates
         //!   in order and the configured resources against gateway fixtures.

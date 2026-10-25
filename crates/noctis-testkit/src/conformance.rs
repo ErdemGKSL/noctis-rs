@@ -52,8 +52,9 @@
 //! (`start_paused`). A byte-store suite writes every short-TTL entry (1 s)
 //! first, then waits once for 2.5 s, which tolerates backends that round
 //! TTLs up to whole seconds. A 1 s entry must stay readable for its full
-//! second, so a backend that truncates or rounds expiry down fails the live
-//! checks (`ttl_live_before_expiry`, `ttl_touch`).
+//! second, so a backend that truncates or rounds expiry down may fail the
+//! live checks (`ttl_live_before_expiry`, `ttl_touch`) intermittently,
+//! whenever the write lands just before a second boundary.
 //!
 //! # Cases
 //!

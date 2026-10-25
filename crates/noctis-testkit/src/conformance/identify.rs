@@ -14,8 +14,10 @@ const IDLE_GRANT: Duration = Duration::from_secs(1);
 const MIN_SPACING: Duration = Duration::from_millis(4_900);
 /// The longest accepted gap between two Leases of one bucket.
 const MAX_SPACING: Duration = Duration::from_secs(8);
-/// How long any `acquire` may take before the case gives up.
-const GIVE_UP: Duration = Duration::from_secs(15);
+/// How long any `acquire` may take before the case gives up: two gaps of
+/// [`MAX_SPACING`] plus an idle grant (17 s), so a slow but correct queue
+/// still reaches its third Lease of one bucket.
+const GIVE_UP: Duration = MAX_SPACING.saturating_mul(2).saturating_add(IDLE_GRANT);
 
 /// Runs the `IdentifyQueue` suite: a Lease names its bucket, one bucket
 /// grants at most once per 5 s, and different buckets grant in parallel.

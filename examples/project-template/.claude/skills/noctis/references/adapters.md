@@ -709,7 +709,8 @@ pub async fn discord_cache<C: DiscordCache, F: Fn(DiscordCacheResources) -> C>(f
 - **Clock.** Real time: `#[tokio::test]` (either flavor), never `start_paused`. All TTL
   cases share one 2.5 s wait for 1 s TTLs, which tolerates backends that round TTLs up
   to whole seconds; a 1 s entry must stay readable for its full second, so a backend
-  that truncates or rounds expiry down fails the live checks. ~3 s per byte-store
+  that truncates or rounds expiry down may fail the live checks intermittently
+  (whenever the write lands just before a second boundary). ~3 s per byte-store
   suite, ~10 s for `identify_queue`.
 
 Byte-store cases, in order (each runs when the port has the ops it needs): `missing_key`
