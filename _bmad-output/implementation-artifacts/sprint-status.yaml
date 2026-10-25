@@ -188,7 +188,7 @@ development_status:
   epic-16-retrospective: optional
 
   epic-17: backlog
-  17-1-voice-connections-through-noctis-gateway: backlog
+  17-1-voice-connections-through-noctis-gateway: in-progress
   17-2-track-playback-inputs-and-the-per-guild-queue: backlog
   17-3-optimized-opus-path-passthrough-encoder-tuning-and-voice-bench: backlog
   17-4-music-bot-example-testkit-support-and-voice-documentation: backlog

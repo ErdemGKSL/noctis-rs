@@ -2,7 +2,8 @@
 title: 'Story 17.1: Voice connections through Noctis''s gateway'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '4dce2ab77862f152c2e50f935bc27ac2d489cbde'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
