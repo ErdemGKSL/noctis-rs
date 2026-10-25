@@ -269,6 +269,9 @@ pub(crate) struct AppShared {
     /// The App's lifecycle: the internal tap, the Lifecycle Hooks and the
     /// hook queue of a running run (FR-54).
     pub(crate) lifecycle: crate::lifecycle::Lifecycle,
+    /// The App's event-handler metric handles, registered on first use
+    /// (Story 16.3).
+    pub(crate) event_metrics: crate::worker::EventMetrics,
 }
 
 /// The hidden run-end observer of [`AppShared::run_observer`].
@@ -328,6 +331,12 @@ impl EventCtx {
             run,
             locales,
         }))
+    }
+
+    /// The run's locale cell (Story 16.3 reuse tests).
+    #[cfg(test)]
+    pub(crate) fn locale_cell(&self) -> &Arc<crate::locale::LocaleCell> {
+        &self.0.locales
     }
 
     /// The number of the shard that received the event.
@@ -461,6 +470,9 @@ pub struct EventHandler {
     ordered: bool,
     droppable: bool,
     call: Arc<ErasedHandler>,
+    /// Whether an event carries its payload (`P::accepts`), checked before
+    /// the event is cloned for it.
+    accepts: fn(&Event) -> bool,
     /// The Extension types its `Ext<T>` parameters require.
     requires: &'static [crate::kind::__ExtType],
 }
@@ -490,6 +502,7 @@ impl EventHandler {
             ordered,
             droppable,
             call: Arc::new(call),
+            accepts: P::accepts,
             requires: &[],
         }
     }
@@ -554,6 +567,12 @@ impl EventHandler {
     /// Whether its event may be dropped under load.
     pub(crate) fn droppable(&self) -> bool {
         self.droppable
+    }
+
+    /// Whether `event` carries its payload: [`call`](Self::call) on it
+    /// returns `Some` exactly when this is `true` (D2, Story 16.3).
+    pub(crate) fn accepts(&self, event: &Event) -> bool {
+        (self.accepts)(event)
     }
 
     /// Starts the handler on `event`; `None` when `event` is not its payload.

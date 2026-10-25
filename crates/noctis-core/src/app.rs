@@ -3327,6 +3327,7 @@ impl AppBuilder {
                 gateway: GatewayHandle::detached(),
                 guild_access: Arc::clone(&ports.guild_access),
                 lifecycle: Lifecycle::with_hooks(Arc::clone(registry.hooks())),
+                event_metrics: crate::worker::EventMetrics::default(),
             }),
             strings,
             http_timeout: config.http_timeout,

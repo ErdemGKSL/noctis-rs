@@ -280,3 +280,41 @@ fn resolver_panic_keeps_builtin() {
     let lines = capture.lines_with(&["ERROR", "noctis::i18n", "handler=\"bot::Where\""]);
     assert_eq!(lines.len(), 1, "{}", capture.text());
 }
+
+/// en-US (default) and de files.
+static EN_DE: noctis_i18n::Catalog =
+    noctis_i18n::Catalog::__new("bot/en_de", EnUs, &[(De, &[]), (EnUs, &[])], &[]);
+
+/// Story 16.3 D5: one shared cell per guild record locale, filled lazily
+/// with the built-in resolution; no record shares one slot.
+#[test]
+fn event_cells_are_shared_per_record() {
+    let table = AppLocales::new(&[EN_DE], None);
+    let de = table.event_cell(Some(De)).unwrap();
+    assert!(Arc::ptr_eq(&de, &table.event_cell(Some(De)).unwrap()));
+    assert_eq!(de.get(), table.builtin(None, Some(De)));
+    assert_eq!(de.get(), Locales::both(De));
+    let tr = table.event_cell(Some(Tr)).unwrap();
+    assert!(!Arc::ptr_eq(&de, &tr));
+    // A record without a file falls back to the default.
+    assert_eq!(tr.get(), Locales::both(EnUs));
+    let none = table.event_cell(None).unwrap();
+    assert!(Arc::ptr_eq(&none, &table.event_cell(None).unwrap()));
+    assert!(!Arc::ptr_eq(&none, &tr));
+    assert_eq!(none.get(), Locales::both(EnUs));
+    // Every locale has its own slot.
+    for locale in Locale::ALL {
+        let cell = table.event_cell(Some(locale)).unwrap();
+        assert_eq!(cell.get(), table.builtin(None, Some(locale)), "{locale}");
+        assert!(!Arc::ptr_eq(&cell, &none), "{locale}");
+    }
+}
+
+/// Story 16.3 D5: an App with a `LocaleResolver` shares no cell.
+#[test]
+fn event_cells_need_no_resolver() {
+    let resolver: Arc<dyn LocaleResolver> = Arc::new(|r: &LocaleRequest| r.resolved);
+    let table = AppLocales::new(&[EN_DE], Some(resolver));
+    assert!(table.event_cell(Some(De)).is_none());
+    assert!(table.event_cell(None).is_none());
+}

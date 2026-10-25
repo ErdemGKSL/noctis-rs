@@ -47,6 +47,10 @@ pub(crate) struct Entry {
     pub(crate) ancestors: Arc<[&'static str]>,
     /// The Middleware chain of that Module.
     pub(crate) chain: Chain,
+    /// Whether any Middleware of `chain` covers event handlers
+    /// (`chain.covers(true)`, computed once at fold): without it a run
+    /// builds no Middleware state and may share its locale cell.
+    pub(crate) event_middleware: bool,
     pub(crate) handler: EventHandler,
 }
 
@@ -201,6 +205,7 @@ impl Registry {
                     module: module.id(),
                     ancestors: Arc::clone(&ancestors),
                     chain: chain.clone(),
+                    event_middleware: chain.covers(true),
                     handler: handler.clone(),
                 })
             }));

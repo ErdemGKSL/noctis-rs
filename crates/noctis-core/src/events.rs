@@ -67,6 +67,10 @@ pub(crate) mod sealed {
         /// The payload of `event`, unboxed; `None` when `event` does not
         /// carry it.
         fn extract(event: Event) -> Option<Self>;
+
+        /// Whether `event` carries the payload: `extract(event.clone())`
+        /// is `Some` exactly when this is `true`, without the clone.
+        fn accepts(event: &Event) -> bool;
     }
 }
 
@@ -89,7 +93,8 @@ pub trait EventPayload: sealed::Sealed + Send + 'static {}
 /// `Type(boxed|plain|custom) [dispatch Other] parse FLAG intent INTENT|none`.
 ///
 /// `boxed`/`plain` extract the `Event::Type` variant (unboxing it);
-/// `custom` calls the hand-written `extract_<type>` function below.
+/// `custom` calls the hand-written `extract_<type>` and `accepts_<type>`
+/// functions below.
 macro_rules! payloads {
     (@extract boxed $ty:ident $event:ident) => {
         match $event {
@@ -105,6 +110,15 @@ macro_rules! payloads {
     };
     (@extract custom UnavailableGuild $event:ident) => {
         extract_unavailable_guild($event)
+    };
+    (@accepts boxed $ty:ident $event:ident) => {
+        matches!($event, Event::$ty(_))
+    };
+    (@accepts plain $ty:ident $event:ident) => {
+        matches!($event, Event::$ty(_))
+    };
+    (@accepts custom UnavailableGuild $event:ident) => {
+        accepts_unavailable_guild($event)
     };
     (@dispatch $ty:ident) => { EventType::$ty };
     (@dispatch $ty:ident $dispatch:ident) => { EventType::$dispatch };
@@ -123,6 +137,10 @@ macro_rules! payloads {
                 fn extract(event: Event) -> Option<Self> {
                     payloads!(@extract $how $ty event)
                 }
+
+                fn accepts(event: &Event) -> bool {
+                    payloads!(@accepts $how $ty event)
+                }
             }
 
             impl EventPayload for $ty {}
@@ -140,6 +158,17 @@ macro_rules! payloads {
                 <$ty as sealed::Sealed>::INTENT,
             ),)*
         ];
+
+        /// Every payload's `(name, accepts, extract(..).is_some())`, in
+        /// table order.
+        #[cfg(test)]
+        pub(crate) const PROBES: &[Probe] = &[
+            $((
+                stringify!($ty),
+                <$ty as sealed::Sealed>::accepts,
+                |event| <$ty as sealed::Sealed>::extract(event).is_some(),
+            ),)*
+        ];
     };
 }
 
@@ -155,6 +184,22 @@ fn extract_unavailable_guild(event: Event) -> Option<UnavailableGuild> {
         _ => None,
     }
 }
+
+/// Whether [`extract_unavailable_guild`] takes `event`.
+fn accepts_unavailable_guild(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::GuildDelete(GuildDelete {
+            unavailable: Some(true),
+            ..
+        }) | Event::UnavailableGuild(_)
+    )
+}
+
+/// Every payload's `accepts`, in table order (the accepts/extract
+/// equivalence test).
+#[cfg(test)]
+pub(crate) type Probe = (&'static str, fn(&Event) -> bool, fn(Event) -> bool);
 
 payloads! {
     AutoModerationRuleCreate(plain) parse AUTO_MODERATION_RULE_CREATE intent AUTO_MODERATION_CONFIGURATION;

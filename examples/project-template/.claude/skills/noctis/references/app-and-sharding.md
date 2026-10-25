@@ -1147,6 +1147,10 @@ noctis installs no tracing subscriber and no `metrics` recorder: install your ow
 `tracing-subscriber`, `metrics-exporter-prometheus`) to collect them. Never put ids or
 free text in your own metric labels either.
 
+Install the recorder **before `App::run`**: noctis registers each metric handle once
+and keeps it (the lane gauges when the run starts, the event-handler and dropped-event
+metrics on their first use), so a recorder installed later never sees them.
+
 Spans (live):
 
 - `noctis.shard{app, shard}` around each shard task.
@@ -1203,8 +1207,8 @@ The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `n
 `metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and
 `description`) lists every emitted metric, so you can build dashboards from it.
 `noctis::observe::describe_metrics()` registers descriptions and units (`Seconds` for
-`_seconds`, `Count` for `_total`) with your recorder; `App::run` calls it, so call it
-yourself only if you install the recorder later.
+`_seconds`, `Count` for `_total`) with your recorder; `App::run` calls it, so you
+never need to call it when the recorder is installed before `App::run`.
 
 ```rust
 for m in noctis::observe::METRICS {

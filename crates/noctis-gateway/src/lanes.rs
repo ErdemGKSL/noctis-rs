@@ -8,16 +8,16 @@
 //! depths and bounds are global atomics. `push` never awaits, and metrics
 //! and logs are emitted after the lock is released.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::mem;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::task::Poll;
 
-use metrics::Gauge;
+use metrics::{Counter, Gauge};
 use tokio::sync::Notify;
 use tokio::sync::futures::Notified;
 use twilight_gateway::{Event, EventType, EventTypeFlags};
@@ -236,6 +236,7 @@ pub fn lanes_with(config: LaneConfig, partitions: NonZeroUsize) -> (LaneSender, 
         senders: AtomicUsize::new(1),
         config,
         gauges,
+        drop_counters: RwLock::default(),
     });
     (
         LaneSender {
@@ -492,6 +493,10 @@ struct Shared {
     senders: AtomicUsize,
     config: LaneConfig,
     gauges: Gauges,
+    /// The `noctis_events_dropped_total` handle of each event type that
+    /// dropped an event, registered on its first drop (bounded by the
+    /// `EventType` variants).
+    drop_counters: RwLock<HashMap<EventType, Counter>>,
 }
 
 impl Shared {
@@ -536,14 +541,31 @@ impl Shared {
         self.gauges.set(self.totals.load());
     }
 
-    /// Counts one dropped event of `event_type`.
+    /// Counts one dropped event of `event_type` on its cached handle,
+    /// registering the handle on the type's first drop (Story 16.3, D1);
+    /// neither lock is held while the counter increments.
     fn count_drop(&self, event_type: EventType) {
-        metrics::counter!(
-            "noctis_events_dropped_total",
-            "app" => Arc::clone(&self.config.app),
-            "event_type" => type_label(event_type)
-        )
-        .increment(1);
+        let cached = self
+            .drop_counters
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&event_type)
+            .cloned();
+        let counter = cached.unwrap_or_else(|| {
+            self.drop_counters
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(event_type)
+                .or_insert_with(|| {
+                    metrics::counter!(
+                        "noctis_events_dropped_total",
+                        "app" => Arc::clone(&self.config.app),
+                        "event_type" => type_label(event_type)
+                    )
+                })
+                .clone()
+        });
+        counter.increment(1);
     }
 
     /// Enqueues `inbound` into its partition under that partition's lock
@@ -1009,7 +1031,7 @@ impl fmt::Debug for LaneReceiver {
 /// discarded without being counted. `Debug` prints the index and depths.
 ///
 /// ```
-/// use std::collections::VecDeque;
+/// use std::collections::{HashMap, VecDeque};
 /// use std::num::NonZeroUsize;
 ///
 /// use noctis_gateway::{Inbound, InboundKind, InboundSink, LaneConfig, lanes};
@@ -1053,7 +1075,7 @@ impl LanePartition {
     ///
     /// ```
     /// # #[tokio::main(flavor = "current_thread")] async fn main() {
-    /// use std::collections::VecDeque;
+    /// use std::collections::{HashMap, VecDeque};
     /// use std::num::NonZeroUsize;
     ///
     /// let (sender, receiver) = noctis_gateway::lanes(Default::default());
@@ -1077,7 +1099,7 @@ impl LanePartition {
     /// [`recv_batch`](Self::recv_batch) takes them; returns how many.
     ///
     /// ```
-    /// use std::collections::VecDeque;
+    /// use std::collections::{HashMap, VecDeque};
     /// use std::num::NonZeroUsize;
     ///
     /// let (_sender, receiver) = noctis_gateway::lanes(Default::default());

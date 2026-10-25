@@ -44,15 +44,21 @@ use twilight_model::id::Id;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-/// The recorded block count of each case (Story 16.1 baseline; Story 16.2
-/// raised `ordered` from 4 to 5: an ordered event of an idle guild spawns
-/// that guild's on-demand runner task instead of reusing one of 64
-/// long-lived sub-queue tasks).
+/// The recorded block count of each case (Story 16.1 baseline: 0 / 7 /
+/// 12 / 4; Story 16.2 raised `ordered` to 5: an ordered event of an idle
+/// guild spawns that guild's on-demand runner task instead of reusing one
+/// of 64 long-lived sub-queue tasks). Story 16.3 lowered them to the
+/// spawned task, plus per started handler its `EventCtx` `Arc` and its
+/// boxed future, plus one `join_all` slice for several concurrent
+/// handlers: the metric handles are cached (no label `Vec` or recorder
+/// lookup per run), the locale cell is shared per guild record, a single
+/// concurrent handler is awaited inline and several are joined without an
+/// intermediate `Vec`.
 const RECORDED: [(&str, u64); 4] = [
     ("unhandled", 0),
-    ("one_concurrent", 7),
-    ("two_concurrent", 12),
-    ("ordered", 5),
+    ("one_concurrent", 3),
+    ("two_concurrent", 6),
+    ("ordered", 3),
 ];
 
 /// Warm-up windows per case.

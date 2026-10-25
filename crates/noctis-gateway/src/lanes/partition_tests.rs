@@ -123,6 +123,21 @@ fn overflow_tags(shared: &Shared, index: usize) -> Vec<String> {
         .collect()
 }
 
+/// Runs `f` under a scoped subscriber that discards its output.
+///
+/// A lane log callsite first hit while no subscriber is alive anywhere can
+/// cache `Interest::never` for the whole process (a `tracing-core`
+/// registration race), silencing it for the `lanes::tests` log assertions
+/// that run in parallel; a live subscriber here keeps the cached interest
+/// at `sometimes`.
+fn quiet<T>(f: impl FnOnce() -> T) -> T {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(std::io::sink)
+        .finish();
+    tracing::subscriber::with_default(subscriber, f)
+}
+
 /// Takes everything partition `p` holds now.
 fn take_all(partition: &mut LanePartition) -> Vec<String> {
     let mut batch = VecDeque::new();
@@ -304,10 +319,12 @@ fn global_bound_concurrent() {
                 let sender = sender.clone();
                 let recorder = &recorder;
                 scope.spawn(move || {
-                    metrics::with_local_recorder(recorder, || {
-                        for id in 0..PER_THREAD {
-                            sender.push(m(thread, u64::from(thread) * PER_THREAD + id + 1));
-                        }
+                    quiet(|| {
+                        metrics::with_local_recorder(recorder, || {
+                            for id in 0..PER_THREAD {
+                                sender.push(m(thread, u64::from(thread) * PER_THREAD + id + 1));
+                            }
+                        });
                     });
                 })
             })
@@ -338,73 +355,79 @@ fn global_bound_concurrent() {
 /// or is dropped when its partition holds none.
 #[test]
 fn eviction_is_per_partition() {
-    let (sender, receiver) = lanes_with(config(3, 2), n(2));
-    let shared = Arc::clone(&receiver.shared);
-    sender.push(t(0, 1));
-    sender.push(m(0, 1));
-    sender.push(m(1, 2));
-    assert_eq!(shared.depths().event, 3);
-    // Partition 1 holds no droppable: the pushed one is dropped.
-    sender.push(t(1, 2));
-    assert_eq!(event_tags(&shared, 1), ["M2"]);
-    // Partition 0 holds T1: it is evicted, the survivors keep their order.
-    sender.push(t(0, 3));
-    assert_eq!(event_tags(&shared, 0), ["M1", "T3"]);
-    assert_eq!(
-        shared.depths(),
-        LaneDepths {
-            interaction: 0,
-            event: 3,
-            overflow: 0
-        }
-    );
-    drop(receiver);
+    quiet(|| {
+        let (sender, receiver) = lanes_with(config(3, 2), n(2));
+        let shared = Arc::clone(&receiver.shared);
+        sender.push(t(0, 1));
+        sender.push(m(0, 1));
+        sender.push(m(1, 2));
+        assert_eq!(shared.depths().event, 3);
+        // Partition 1 holds no droppable: the pushed one is dropped.
+        sender.push(t(1, 2));
+        assert_eq!(event_tags(&shared, 1), ["M2"]);
+        // Partition 0 holds T1: it is evicted, the survivors keep their order.
+        sender.push(t(0, 3));
+        assert_eq!(event_tags(&shared, 0), ["M1", "T3"]);
+        assert_eq!(
+            shared.depths(),
+            LaneDepths {
+                interaction: 0,
+                event: 3,
+                overflow: 0
+            }
+        );
+        drop(receiver);
+    });
 }
 
 /// Eviction is O(1): droppables only at the back of a 200 000-item lane.
 #[test]
 fn eviction_complexity() {
-    const CAPACITY: usize = 200_000;
-    let (sender, receiver) = lanes(config(CAPACITY, 0));
-    for id in 1..CAPACITY as u64 {
-        sender.push(m(0, id));
-    }
-    sender.push(t(0, 1));
-    let template = typing(7);
-    let pushes: Vec<_> = (0..100_000)
-        .map(|_| {
-            on(
-                0,
-                InboundKind::Event(Box::new(Event::TypingStart(Box::new(template.clone())))),
-            )
-        })
-        .collect();
-    let started = std::time::Instant::now();
-    for inbound in pushes {
-        sender.push(inbound);
-    }
-    let elapsed = started.elapsed();
-    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
-    assert_eq!(receiver.depths().event, CAPACITY);
-    let queues = receiver.shared.lock();
-    assert_eq!(queues.event.len(), CAPACITY);
-    assert_eq!(queues.event.droppable.len(), 1);
+    quiet(|| {
+        const CAPACITY: usize = 200_000;
+        let (sender, receiver) = lanes(config(CAPACITY, 0));
+        for id in 1..CAPACITY as u64 {
+            sender.push(m(0, id));
+        }
+        sender.push(t(0, 1));
+        let template = typing(7);
+        let pushes: Vec<_> = (0..100_000)
+            .map(|_| {
+                on(
+                    0,
+                    InboundKind::Event(Box::new(Event::TypingStart(Box::new(template.clone())))),
+                )
+            })
+            .collect();
+        let started = std::time::Instant::now();
+        for inbound in pushes {
+            sender.push(inbound);
+        }
+        let elapsed = started.elapsed();
+        assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+        assert_eq!(receiver.depths().event, CAPACITY);
+        let queues = receiver.shared.lock();
+        assert_eq!(queues.event.len(), CAPACITY);
+        assert_eq!(queues.event.droppable.len(), 1);
+    });
 }
 
 /// A stalled consumer and endless droppables: the queue never grows.
 #[test]
 fn eviction_memory() {
-    let (sender, receiver) = lanes(config(8, 0));
-    for id in 1..=100_000 {
-        sender.push(t(0, id));
-    }
-    let queues = receiver.shared.lock();
-    assert_eq!(queues.event.len(), 8);
-    assert!(
-        queues.event.droppable.capacity() < 64,
-        "{}",
-        queues.event.droppable.capacity()
-    );
+    quiet(|| {
+        let (sender, receiver) = lanes(config(8, 0));
+        for id in 1..=100_000 {
+            sender.push(t(0, id));
+        }
+        let queues = receiver.shared.lock();
+        assert_eq!(queues.event.len(), 8);
+        assert!(
+            queues.event.droppable.capacity() < 64,
+            "{}",
+            queues.event.droppable.capacity()
+        );
+    });
 }
 
 /// A partition's overflow refills its own event lane; an event lane that
@@ -681,4 +704,125 @@ fn unsplit_drop_closes_all() {
     drop(receiver);
     sender.push(m(2, 4));
     assert_eq!(sender.shared.depths(), LaneDepths::default());
+}
+
+/// A [`DebuggingRecorder`] that also counts each `register_counter` call
+/// by key.
+#[derive(Default)]
+struct Registrations {
+    inner: DebuggingRecorder,
+    counters: Mutex<Vec<Key>>,
+}
+
+impl Recorder for Registrations {
+    fn describe_counter(&self, name: KeyName, unit: Option<Unit>, text: SharedString) {
+        self.inner.describe_counter(name, unit, text);
+    }
+
+    fn describe_gauge(&self, name: KeyName, unit: Option<Unit>, text: SharedString) {
+        self.inner.describe_gauge(name, unit, text);
+    }
+
+    fn describe_histogram(&self, name: KeyName, unit: Option<Unit>, text: SharedString) {
+        self.inner.describe_histogram(name, unit, text);
+    }
+
+    fn register_counter(&self, key: &Key, metadata: &Metadata<'_>) -> Counter {
+        self.counters.lock().unwrap().push(key.clone());
+        self.inner.register_counter(key, metadata)
+    }
+
+    fn register_gauge(&self, key: &Key, metadata: &Metadata<'_>) -> Gauge {
+        self.inner.register_gauge(key, metadata)
+    }
+
+    fn register_histogram(&self, key: &Key, metadata: &Metadata<'_>) -> Histogram {
+        self.inner.register_histogram(key, metadata)
+    }
+}
+
+/// Story 16.3 D1: repeated drops of one event type register
+/// `noctis_events_dropped_total` once for that type and reuse the handle;
+/// names, labels and counts are unchanged.
+#[test]
+fn drop_counters_register_once_per_event_type() {
+    let recorder = Registrations::default();
+    let snapshotter = recorder.inner.snapshotter();
+    quiet(|| {
+        metrics::with_local_recorder(&recorder, || {
+            let mut config = config(1, 0);
+            config.droppable = DROPPABLE_EVENTS | EventTypeFlags::MESSAGE_DELETE;
+            let (sender, receiver) = lanes_with(config, n(1));
+            // t1 queued; t2..t5 and m1 each evict the oldest: 5 TYPING_START
+            // drops; m2 and m3 evict m1 and m2: 2 MESSAGE_DELETE drops.
+            for id in 1..=5 {
+                sender.push(t(0, id));
+            }
+            for id in 1..=3 {
+                sender.push(m(0, id));
+            }
+            assert_eq!(receiver.depths().event, 1);
+        });
+    });
+    let registered = recorder.counters.lock().unwrap().clone();
+    let labels = |key: &Key| {
+        let mut labels: Vec<_> = key
+            .labels()
+            .map(|l| (l.key().to_owned(), l.value().to_owned()))
+            .collect();
+        labels.sort();
+        labels
+    };
+    assert_eq!(registered.len(), 2, "{registered:?}");
+    for (key, event_type) in registered.iter().zip(["TYPING_START", "MESSAGE_DELETE"]) {
+        assert_eq!(key.name(), "noctis_events_dropped_total");
+        assert_eq!(
+            labels(key),
+            [
+                ("app".to_owned(), "partitions".to_owned()),
+                ("event_type".to_owned(), event_type.to_owned())
+            ]
+        );
+    }
+    let mut counts: Vec<_> = snapshotter
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .filter(|(key, ..)| key.key().name() == "noctis_events_dropped_total")
+        .map(|(key, .., value)| {
+            let event_type = labels(key.key())[1].1.clone();
+            match value {
+                DebugValue::Counter(n) => (event_type, n),
+                other => panic!("{other:?}"),
+            }
+        })
+        .collect();
+    counts.sort();
+    assert_eq!(
+        counts,
+        [
+            ("MESSAGE_DELETE".to_owned(), 2),
+            ("TYPING_START".to_owned(), 5)
+        ]
+    );
+}
+
+/// Story 16.3: a gateway-only kind without a name is labeled `UNKNOWN`
+/// and cached under its `EventType`.
+#[test]
+fn unnamed_drop_counter_is_cached() {
+    let recorder = Registrations::default();
+    metrics::with_local_recorder(&recorder, || {
+        let (sender, _receiver) = lanes_with(config(1, 0), n(1));
+        assert_eq!(EventType::GatewayHeartbeatAck.name(), None);
+        sender.shared.count_drop(EventType::GatewayHeartbeatAck);
+        sender.shared.count_drop(EventType::GatewayHeartbeatAck);
+    });
+    let registered = recorder.counters.lock().unwrap().clone();
+    assert_eq!(registered.len(), 1, "{registered:?}");
+    assert!(
+        registered[0]
+            .labels()
+            .any(|l| l.key() == "event_type" && l.value() == "UNKNOWN")
+    );
 }

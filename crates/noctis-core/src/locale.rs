@@ -21,7 +21,7 @@
 use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 
 use noctis_rules::Locale;
 use twilight_model::gateway::event::Event;
@@ -204,7 +204,15 @@ pub(crate) struct AppLocales {
     /// announced, fed by `GUILD_CREATE`, `GUILD_UPDATE` and `GUILD_DELETE`
     /// (bounded by the App's guild membership: interactions never insert).
     guilds: RwLock<GuildRecords>,
+    /// The shared event locale cells of [`event_cell`](Self::event_cell):
+    /// one per guild record locale ([`Locale::ALL`] position), the last
+    /// for no record; each filled on first use.
+    event_cells: [OnceLock<Arc<LocaleCell>>; EVENT_CELLS],
 }
+
+/// The slots of [`AppLocales::event_cell`]: one per [`Locale::ALL`]
+/// position, plus one for no guild record.
+const EVENT_CELLS: usize = Locale::ALL.len() + 1;
 
 impl AppLocales {
     /// The table of the merged `catalogs` (deduplicated, in merge order):
@@ -226,7 +234,25 @@ impl AppLocales {
             default,
             resolver,
             guilds: RwLock::new(GuildRecords::new()),
+            event_cells: std::array::from_fn(|_| OnceLock::new()),
         }
+    }
+
+    /// A shared event locale cell for a run whose guild record locale is
+    /// `guild` (`None`: no record or no guild), holding the built-in
+    /// resolution of `guild`; `None` when the App has a `LocaleResolver`
+    /// (each run resolves its own). The caller shares it only when nothing
+    /// can write the cell: a run without event Middleware (D5, Story 16.3).
+    pub(crate) fn event_cell(&self, guild: Option<Locale>) -> Option<Arc<LocaleCell>> {
+        if self.resolver.is_some() {
+            return None;
+        }
+        let slot = guild.map_or(EVENT_CELLS - 1, |locale| usize::from(index(locale)));
+        let cell = self
+            .event_cells
+            .get(slot)?
+            .get_or_init(|| LocaleCell::new(self.builtin(None, guild)));
+        Some(Arc::clone(cell))
     }
 
     /// The App's default locale.

@@ -1349,6 +1349,21 @@ list in CI.
   (`HashMap<twilight_model::id::Id<GuildMarker>, _>`), keys behind a type alias
   or inferred by the compiler, and map types outside the opener list
   (`DashSet`, `FxHashMap`, `AHashMap`, ...) are not detected).
+- **Amended (Story 16.3):** the event dispatch path has a measured allocation budget,
+  pinned as the `RECORDED` block counts of `noctis-core/tests/pipeline_alloc.rs`
+  (dhat, push to handler start): an unhandled event 0 blocks; one handled event with
+  one concurrent handler 3 (its job task, the `EventCtx` `Arc`, the boxed handler
+  future); two concurrent handlers 6 (one job task, one `join_all` slice, and per
+  handler a context and a future); one ordered handler 3 (the guild's runner task, a
+  context, a future). A change that adds an allocation fails that test; one that
+  removes one lowers the constant in the same commit. Hot-path metric handles are
+  registered once per label set and reused, never through a labeled `metrics::`
+  macro per event or per run: event-handler duration and errors per App
+  (`OnceLock`), dropped events per lanes instance and event type, lane gauges at
+  `lanes_with`; registration happens on first use (a never-incremented counter is
+  never registered), so the recorder is installed before `App::run`. An `Event` is
+  cloned only for an earlier handler whose payload type accepts it; the last
+  accepting handler gets the original.
 
 ### AD-26 — Declarative, tescord-like authoring surface
 - **Binds:** `noctis-macros`, `noctis-core`, facade, Usage Skill; FR-7, FR-8,

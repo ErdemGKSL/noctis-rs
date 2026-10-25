@@ -543,7 +543,10 @@
 //! are `noctis.shard`, `noctis.event` and `noctis.interaction`, and its
 //! metrics are listed in [`observe::METRICS`]: every name starts with
 //! `noctis_`, every metric has an `app` label, and no label carries an id
-//! or free text.
+//! or free text. Install the recorder before `App::run`: noctis registers
+//! each metric handle once and keeps it (the lane gauges when the run
+//! starts, the event-handler and dropped-event metrics on their first use),
+//! so a recorder installed later misses them.
 //!
 //! ```
 //! use std::sync::Arc;
@@ -1541,7 +1544,10 @@ pub mod observe {
     //! [`describe_metrics`].
     //!
     //! Metrics go through the `metrics` facade; install a recorder (e.g.
-    //! `metrics-exporter-prometheus`) to collect them. Spans:
+    //! `metrics-exporter-prometheus`) before `App::run` to collect them:
+    //! noctis registers each metric handle once and reuses it (the lane
+    //! gauges at run start, the event-handler and dropped-event metrics on
+    //! first use). Spans:
     //! `noctis.shard{app, shard}`,
     //! `noctis.event{app, shard, guild_id, module, handler, event_type}`,
     //! `noctis.interaction{app, shard, guild_id, module, path}`,

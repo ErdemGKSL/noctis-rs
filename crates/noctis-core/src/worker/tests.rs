@@ -2603,3 +2603,566 @@ mod partitions {
         drop(m.sender.take());
     }
 }
+
+// ---- Story 16.3: per-event and per-handler overhead ----
+
+mod overhead {
+    use std::sync::atomic::AtomicU64;
+
+    use metrics::{
+        Counter, Gauge, Histogram, HistogramFn, Key, KeyName, Metadata, Recorder, SharedString,
+        Unit,
+    };
+    use noctis_i18n::Catalog;
+    use noctis_rules::Locale;
+    use tokio::sync::Barrier;
+    use twilight_model::gateway::event::EventType;
+
+    use super::*;
+    use crate::test_support::{Recording, guild_create, guild_update};
+    use crate::{BeforeCtx, ErrorOrigin, Flow, Middleware};
+
+    /// A value that counts its clones and knows whether it is the
+    /// original.
+    struct Tracked {
+        clones: Arc<AtomicUsize>,
+        original: bool,
+    }
+
+    impl Clone for Tracked {
+        fn clone(&self) -> Self {
+            self.clones.fetch_add(1, Ordering::SeqCst);
+            Self {
+                clones: Arc::clone(&self.clones),
+                original: false,
+            }
+        }
+    }
+
+    /// What each handler gets: `"orig"`, `"clone"` or `"-"` (nothing).
+    fn label(value: Option<&Tracked>) -> &'static str {
+        match value {
+            Some(t) if t.original => "orig",
+            Some(_) => "clone",
+            None => "-",
+        }
+    }
+
+    /// Shares one value among handlers with filters `accepts`; what each
+    /// gets and the clone count.
+    fn share(accepts: &[bool]) -> (Vec<&'static str>, usize) {
+        let clones = Arc::new(AtomicUsize::new(0));
+        let value = Tracked {
+            clones: Arc::clone(&clones),
+            original: true,
+        };
+        let mut share = Share::new(Some(value), accepts.len(), |i, _| accepts[i]);
+        let got = accepts
+            .iter()
+            .enumerate()
+            .map(|(i, &a)| label(share.take(i, |_| a).as_ref()))
+            .collect();
+        (got, clones.load(Ordering::SeqCst))
+    }
+
+    /// The Share rows of the Matrix: the last accepting handler gets the
+    /// original, earlier accepting ones a clone, rejecting ones nothing.
+    #[test]
+    fn share_rows() {
+        assert_eq!(share(&[]), (vec![], 0));
+        assert_eq!(share(&[true]), (vec!["orig"], 0));
+        assert_eq!(
+            share(&[true, true, true]),
+            (vec!["clone", "clone", "orig"], 2)
+        );
+        assert_eq!(share(&[false, true]), (vec!["-", "orig"], 0));
+        assert_eq!(share(&[true, false, true]), (vec!["clone", "-", "orig"], 1));
+        assert_eq!(share(&[true, false]), (vec!["orig", "-"], 0));
+        assert_eq!(share(&[false, false]), (vec!["-", "-"], 0));
+    }
+
+    /// The ordered + concurrent rows: the ordered part shares over every
+    /// handler, the concurrent job carries the rest.
+    fn split(ordered: &[bool], concurrent: &[bool]) -> (Vec<&'static str>, usize) {
+        let clones = Arc::new(AtomicUsize::new(0));
+        let value = Tracked {
+            clones: Arc::clone(&clones),
+            original: true,
+        };
+        let all: Vec<bool> = ordered.iter().chain(concurrent).copied().collect();
+        let mut share = Share::new(Some(value), all.len(), |i, _| all[i]);
+        let mut got: Vec<_> = ordered
+            .iter()
+            .enumerate()
+            .map(|(i, &a)| label(share.take(i, |_| a).as_ref()))
+            .collect();
+        let mut rest = Share::new(share.into_rest(), concurrent.len(), |i, _| concurrent[i]);
+        got.extend(
+            concurrent
+                .iter()
+                .enumerate()
+                .map(|(i, &a)| label(rest.take(i, |_| a).as_ref())),
+        );
+        (got, clones.load(Ordering::SeqCst))
+    }
+
+    #[test]
+    fn share_ordered_then_concurrent() {
+        assert_eq!(split(&[true], &[false]), (vec!["orig", "-"], 0));
+        assert_eq!(
+            split(&[false], &[true, true]),
+            (vec!["-", "clone", "orig"], 1)
+        );
+        assert_eq!(
+            split(&[true], &[true, false]),
+            (vec!["clone", "orig", "-"], 1)
+        );
+    }
+
+    /// An `UnavailableGuild` and a `GuildDelete` handler.
+    fn delete_handlers(log: &Log) -> (EventHandler, EventHandler) {
+        let outage = {
+            let log = log.clone();
+            handler("outage", false, move |_, e: UnavailableGuild| {
+                let log = log.clone();
+                async move {
+                    log.push(format!("outage:{}", e.id));
+                    Ok(())
+                }
+            })
+        };
+        let deleted = {
+            let log = log.clone();
+            handler("deleted", false, move |_, e: GuildDelete| {
+                let log = log.clone();
+                async move {
+                    log.push(format!("deleted:{}", e.id));
+                    Ok(())
+                }
+            })
+        };
+        (outage, deleted)
+    }
+
+    /// Acceptance 2: a plain `GUILD_DELETE` is never cloned (the
+    /// `GuildDelete` handler gets the original) and the `UnavailableGuild`
+    /// run still passes its stages without a call.
+    #[tokio::test]
+    async fn rejected_handler_gets_no_clone() {
+        let recording = Arc::new(Recording::default());
+        let log = Log::default();
+        let (outage, deleted) = delete_handlers(&log);
+        let h = Harness::start(
+            App::builder()
+                .error_sink(ErrorOrigin::Event, Arc::clone(&recording))
+                .module(Module::new("m").__add(outage).__add(deleted)),
+        );
+        let entries = &h
+            .app
+            .registry()
+            .handlers(EventType::GuildDelete)
+            .unwrap()
+            .concurrent;
+        let clones = Arc::new(AtomicUsize::new(0));
+        let event = guild_delete(None);
+        let tracked = Tracked {
+            clones: Arc::clone(&clones),
+            original: true,
+        };
+        let mut share = Share::new(Some(tracked), entries.len(), |i, _| {
+            entries[i].handler.accepts(&event)
+        });
+        let got: Vec<_> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| label(share.take(i, |_| entry.handler.accepts(&event)).as_ref()))
+            .collect();
+        assert_eq!((got, clones.load(Ordering::SeqCst)), (vec!["-", "orig"], 0));
+
+        // A rejected run under a fired cancel token still reports
+        // `Cancelled`; without it, it ends silently.
+        let app = Arc::clone(h.app.shared());
+        let cancel = CancellationToken::new();
+        run_entry(&entries[0], 0, Some(Id::new(GA)), None, &app, &cancel).await;
+        assert!(recording.seen().is_empty());
+        cancel.cancel();
+        run_entry(&entries[0], 0, Some(Id::new(GA)), None, &app, &cancel).await;
+        let seen = recording.seen();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(seen[0].kind, "cancelled");
+        assert_eq!(seen[0].handler.as_deref(), Some("outage"));
+
+        h.push(guild_delete(None));
+        until("deleted", || log.count("deleted:1") == 1).await;
+        h.close().await;
+        assert_eq!(log.lines(), ["deleted:1"]);
+    }
+
+    /// A rejected handler whose Module is disabled still traces "module
+    /// disabled here" in its span, like an accepting one.
+    #[tokio::test]
+    async fn rejected_handler_keeps_stage_3_trace() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let (outage, deleted) = delete_handlers(&log);
+        let h =
+            Harness::start(App::builder().module(Module::new("m").__add(outage).__add(deleted)));
+        h.app
+            .modules()
+            .set_enabled("m", Id::new(GA), false)
+            .await
+            .unwrap();
+        tracing::callsite::rebuild_interest_cache();
+        h.push(guild_delete(None));
+        until("both traces", || {
+            capture.lines_with(&["module disabled here"]).len() == 2
+        })
+        .await;
+        h.close().await;
+        assert_eq!(
+            capture
+                .lines_with(&["module disabled here", "handler=\"outage\""])
+                .len(),
+            1
+        );
+        assert_eq!(
+            capture
+                .lines_with(&["module disabled here", "handler=\"deleted\""])
+                .len(),
+            1
+        );
+        assert!(log.lines().is_empty());
+    }
+
+    /// The last accepting handler's Module is disabled: the earlier one
+    /// runs on its clone, the event is dropped with the disabled run.
+    #[tokio::test]
+    async fn last_acceptor_disabled() {
+        let log = Log::default();
+        let h = Harness::start(
+            App::builder()
+                .module(Module::new("on").__add(logging("a", false, &log)))
+                .module(Module::new("off").__add(logging("b", false, &log))),
+        );
+        h.app
+            .modules()
+            .set_enabled("off", Id::new(GA), false)
+            .await
+            .unwrap();
+        h.push(message_delete(5, Some(GA)));
+        until("a", || log.count("a:5") == 1).await;
+        h.close().await;
+        assert_eq!(log.lines(), ["a:5"]);
+    }
+
+    /// `count` concurrent handlers on one event all start before any ends
+    /// (a barrier of `count`).
+    async fn all_start(count: usize) {
+        let barrier = Arc::new(Barrier::new(count));
+        let passed = Log::default();
+        let waiting = {
+            let (barrier, passed) = (Arc::clone(&barrier), passed.clone());
+            handler("wait", false, move |_, _: MessageDelete| {
+                let (barrier, passed) = (Arc::clone(&barrier), passed.clone());
+                async move {
+                    barrier.wait().await;
+                    passed.push("passed");
+                    Ok(())
+                }
+            })
+        };
+        let mut module = Module::new("m");
+        for _ in 0..count {
+            module = module.__add(waiting.clone());
+        }
+        let mut builder = App::builder();
+        builder.handler_concurrency(1).module(module);
+        let h = Harness::start(&mut builder);
+        h.push(message_delete(1, Some(GA)));
+        until("every handler", || passed.count("passed") == count).await;
+        h.close().await;
+    }
+
+    /// One handler (inline), two and 31 (`join_all` switches to a
+    /// `FuturesOrdered` above 30): every handler runs, all at once.
+    #[tokio::test]
+    async fn concurrent_counts_all_start() {
+        all_start(1).await;
+        all_start(2).await;
+        all_start(31).await;
+    }
+
+    /// Counts registrations and records into atomics.
+    #[derive(Default)]
+    struct Registrations {
+        histograms: Mutex<Vec<Key>>,
+        counters: Mutex<Vec<Key>>,
+        samples: Arc<Samples>,
+        errors: Arc<AtomicU64>,
+    }
+
+    #[derive(Default)]
+    struct Samples(AtomicUsize);
+
+    impl HistogramFn for Samples {
+        fn record(&self, _: f64) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl Registrations {
+        fn histograms(&self) -> Vec<Key> {
+            self.histograms.lock().unwrap().clone()
+        }
+
+        fn counters(&self) -> Vec<Key> {
+            self.counters.lock().unwrap().clone()
+        }
+
+        fn samples(&self) -> usize {
+            self.samples.0.load(Ordering::SeqCst)
+        }
+
+        fn errors(&self) -> u64 {
+            self.errors.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Recorder for Registrations {
+        fn describe_counter(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+
+        fn describe_gauge(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+
+        fn describe_histogram(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+
+        fn register_counter(&self, key: &Key, _: &Metadata<'_>) -> Counter {
+            self.counters.lock().unwrap().push(key.clone());
+            if key.name() == "noctis_handler_errors_total" {
+                Counter::from_arc(Arc::clone(&self.errors))
+            } else {
+                Counter::noop()
+            }
+        }
+
+        fn register_gauge(&self, _: &Key, _: &Metadata<'_>) -> Gauge {
+            Gauge::noop()
+        }
+
+        fn register_histogram(&self, key: &Key, _: &Metadata<'_>) -> Histogram {
+            self.histograms.lock().unwrap().push(key.clone());
+            Histogram::from_arc(Arc::clone(&self.samples))
+        }
+    }
+
+    /// `key`'s labels, sorted.
+    fn labels(key: &Key) -> Vec<(String, String)> {
+        let mut labels: Vec<_> = key
+            .labels()
+            .map(|l| (l.key().to_owned(), l.value().to_owned()))
+            .collect();
+        labels.sort();
+        labels
+    }
+
+    /// Acceptance 1: 100 runs with 3 errors and 2 panics register the
+    /// duration histogram once and the error counter once, with 100
+    /// samples and 5 errors.
+    #[tokio::test]
+    async fn handler_metrics_register_once() {
+        let recorder = Registrations::default();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        let mixed = handler("bot::mixed", false, |_, e: MessageDelete| async move {
+            match e.id.get() {
+                1..=3 => Err(HandlerError::new(std::io::Error::other("x"))),
+                4 | 5 => panic!("boom"),
+                _ => Ok(()),
+            }
+        });
+        let mut builder = App::builder();
+        builder.app_id("a").module(Module::new("m").__add(mixed));
+        let h = Harness::start(&mut builder);
+        for n in 1..=100 {
+            h.push(message_delete(n, Some(GA)));
+        }
+        until("every run", || {
+            recorder.samples() == 100 && recorder.errors() == 5
+        })
+        .await;
+        h.close().await;
+        let histograms = recorder.histograms();
+        assert_eq!(histograms.len(), 1, "{histograms:?}");
+        assert_eq!(histograms[0].name(), "noctis_handler_duration_seconds");
+        let expected = [
+            ("app".to_owned(), "a".to_owned()),
+            ("kind".to_owned(), "event".to_owned()),
+        ];
+        assert_eq!(labels(&histograms[0]), expected);
+        let errors: Vec<_> = recorder
+            .counters()
+            .into_iter()
+            .filter(|k| k.name() == "noctis_handler_errors_total")
+            .collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(labels(&errors[0]), expected);
+    }
+
+    /// Two Apps register one handle each, under their own `app` label.
+    #[tokio::test]
+    async fn two_apps_two_handles() {
+        let recorder = Registrations::default();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        for (app, n) in [("a", 1), ("b", 2)] {
+            let log = Log::default();
+            let mut builder = App::builder();
+            builder
+                .app_id(app)
+                .module(Module::new("m").__add(logging("h", false, &log)));
+            let h = Harness::start(&mut builder);
+            for _ in 0..3 {
+                h.push(message_delete(9, Some(GA)));
+            }
+            until("three runs", || recorder.samples() == 3 * n).await;
+            h.close().await;
+        }
+        let apps: Vec<_> = recorder
+            .histograms()
+            .iter()
+            .map(|key| labels(key)[0].1.clone())
+            .collect();
+        assert_eq!(apps, ["a", "b"]);
+        assert!(recorder.counters().is_empty());
+    }
+
+    /// en-US (default), de and tr files.
+    static EN_DE_TR: Catalog = Catalog::__new(
+        "bot/overhead",
+        Locale::EnUs,
+        &[(Locale::De, &[]), (Locale::EnUs, &[]), (Locale::Tr, &[])],
+        &[],
+    );
+
+    /// A `MESSAGE_CREATE` handler keeping every context it gets.
+    fn keeper(ctxs: &Arc<Mutex<Vec<EventCtx>>>) -> EventHandler {
+        let ctxs = Arc::clone(ctxs);
+        handler("keep", false, move |ctx: EventCtx, _: MessageCreate| {
+            ctxs.lock().unwrap().push(ctx);
+            async { Ok(()) }
+        })
+    }
+
+    /// A `MESSAGE_CREATE` without a guild.
+    fn dm() -> Event {
+        let Event::MessageCreate(mut message) = message_create(1) else {
+            unreachable!()
+        };
+        message.0.guild_id = None;
+        Event::MessageCreate(message)
+    }
+
+    /// Pushes `event` and waits for the `n`th kept context.
+    async fn kept(
+        h: &Harness,
+        ctxs: &Arc<Mutex<Vec<EventCtx>>>,
+        event: Event,
+        n: usize,
+    ) -> EventCtx {
+        h.push(event);
+        until("the context", || ctxs.lock().unwrap().len() == n).await;
+        ctxs.lock().unwrap()[n - 1].clone()
+    }
+
+    /// The locale reuse rows: one shared cell per guild record locale
+    /// without a resolver or event Middleware.
+    #[tokio::test]
+    async fn locale_cells_are_reused() {
+        let ctxs = Arc::new(Mutex::new(Vec::new()));
+        let mut builder = App::builder();
+        builder
+            .locales(EN_DE_TR)
+            .module(Module::new("m").__add(keeper(&ctxs)));
+        let h = Harness::start(&mut builder);
+        h.push(guild_create(9, "de"));
+        let first = kept(&h, &ctxs, message_create(9), 1).await;
+        let second = kept(&h, &ctxs, message_create(9), 2).await;
+        assert!(Arc::ptr_eq(first.locale_cell(), second.locale_cell()));
+        assert_eq!(first.guild_locale(), Locale::De);
+        // The record changes: another cell.
+        h.push(guild_update(9, "tr"));
+        let third = kept(&h, &ctxs, message_create(9), 3).await;
+        assert!(!Arc::ptr_eq(first.locale_cell(), third.locale_cell()));
+        assert_eq!(third.guild_locale(), Locale::Tr);
+        // Guildless and a guild without a record share the `None` slot.
+        let guildless = kept(&h, &ctxs, dm(), 4).await;
+        let unrecorded = kept(&h, &ctxs, message_create(8), 5).await;
+        assert!(Arc::ptr_eq(
+            guildless.locale_cell(),
+            unrecorded.locale_cell()
+        ));
+        assert_eq!(guildless.guild_locale(), Locale::EnUs);
+        // A record without a file: its own cell, the default locale.
+        h.push(guild_create(10, "fr"));
+        let fr = kept(&h, &ctxs, message_create(10), 6).await;
+        let fr_again = kept(&h, &ctxs, message_create(10), 7).await;
+        assert!(Arc::ptr_eq(fr.locale_cell(), fr_again.locale_cell()));
+        assert_eq!(fr.guild_locale(), Locale::EnUs);
+        h.close().await;
+    }
+
+    /// With event Middleware every run has its own cell: an override in
+    /// run 1 never reaches run 2.
+    #[tokio::test]
+    async fn middleware_runs_get_their_own_cells() {
+        let ctxs = Arc::new(Mutex::new(Vec::new()));
+        let runs = Arc::new(AtomicUsize::new(0));
+        let module = Module::new("m")
+            .before(Middleware::before({
+                let runs = Arc::clone(&runs);
+                move |ctx: BeforeCtx| {
+                    let first = runs.fetch_add(1, Ordering::SeqCst) == 0;
+                    async move {
+                        if first {
+                            ctx.set_guild_locale(Locale::Tr);
+                        }
+                        Ok(Flow::Continue)
+                    }
+                }
+            }))
+            .__add(keeper(&ctxs));
+        let mut builder = App::builder();
+        builder.locales(EN_DE_TR).module(module);
+        let h = Harness::start(&mut builder);
+        let first = kept(&h, &ctxs, message_create(8), 1).await;
+        let second = kept(&h, &ctxs, message_create(8), 2).await;
+        h.close().await;
+        assert!(!Arc::ptr_eq(first.locale_cell(), second.locale_cell()));
+        assert_eq!(first.guild_locale(), Locale::Tr);
+        assert_eq!(second.guild_locale(), Locale::EnUs);
+    }
+
+    /// With a `LocaleResolver` it runs once per run, each with its own
+    /// cell.
+    #[tokio::test]
+    async fn resolver_runs_get_their_own_cells() {
+        let ctxs = Arc::new(Mutex::new(Vec::new()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&calls);
+        let mut builder = App::builder();
+        builder
+            .locales(EN_DE_TR)
+            .locale_resolver(move |r: &crate::LocaleRequest| {
+                seen.fetch_add(1, Ordering::SeqCst);
+                r.resolved
+            })
+            .module(Module::new("m").__add(keeper(&ctxs)));
+        let h = Harness::start(&mut builder);
+        let mut runs = Vec::new();
+        for n in 1..=3 {
+            runs.push(kept(&h, &ctxs, message_create(8), n).await);
+        }
+        h.close().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert!(!Arc::ptr_eq(runs[0].locale_cell(), runs[1].locale_cell()));
+        assert!(!Arc::ptr_eq(runs[1].locale_cell(), runs[2].locale_cell()));
+    }
+}

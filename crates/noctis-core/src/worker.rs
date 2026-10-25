@@ -7,11 +7,12 @@ use std::collections::hash_map::Entry as MapEntry;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Instant;
 
 use futures_util::FutureExt;
 use futures_util::future::join_all;
+use metrics::{Counter, Histogram};
 use noctis_gateway::{Inbound, InboundKind, LanePartition, LaneReceiver};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
@@ -70,7 +71,9 @@ pub(crate) struct Shutdown {
 struct Job {
     shard: u32,
     guild_id: Option<Id<GuildMarker>>,
-    event: Event,
+    /// `None` when none of `handlers` takes it (the rest of an ordered
+    /// job whose last accepting handler was ordered).
+    event: Option<Event>,
     handlers: Arc<Handlers>,
     permit: OwnedSemaphorePermit,
 }
@@ -251,7 +254,7 @@ impl Workers {
         let job = Job {
             shard,
             guild_id,
-            event,
+            event: Some(event),
             handlers,
             permit,
         };
@@ -535,7 +538,7 @@ async fn run_ordered(
 }
 
 /// Runs one job's ordered handlers in fold order, then spawns its
-/// concurrent part.
+/// concurrent part (with the event when a concurrent handler takes it).
 async fn run_ordered_job(job: Job, app: &Arc<AppShared>, shutdown: &Shutdown) {
     let Job {
         shard,
@@ -545,34 +548,41 @@ async fn run_ordered_job(job: Job, app: &Arc<AppShared>, shutdown: &Shutdown) {
         permit,
     } = job;
     let total = handlers.ordered.len() + handlers.concurrent.len();
-    let mut event = Some(event);
+    let mut share = Share::new(event, total, |index, event| {
+        handlers
+            .ordered
+            .iter()
+            .chain(&handlers.concurrent)
+            .nth(index)
+            .is_some_and(|entry| entry.handler.accepts(event))
+    });
     for (index, entry) in handlers.ordered.iter().enumerate() {
-        let Some(next) = take_event(&mut event, index + 1 == total) else {
-            break;
-        };
-        run_handler(entry, shard, guild_id, next, app, &shutdown.cancel).await;
+        let event = share.take(index, |event| entry.handler.accepts(event));
+        run_entry(entry, shard, guild_id, event, app, &shutdown.cancel).await;
     }
-    match event {
-        Some(event) if !handlers.concurrent.is_empty() => {
-            let job = Job {
-                shard,
-                guild_id,
-                event,
-                handlers,
-                permit,
-            };
-            shutdown.tracker.spawn(run_concurrent(
-                job,
-                Arc::clone(app),
-                shutdown.cancel.clone(),
-            ));
-        }
-        _ => drop(permit),
+    if handlers.concurrent.is_empty() {
+        drop(permit);
+    } else {
+        let job = Job {
+            shard,
+            guild_id,
+            event: share.into_rest(),
+            handlers,
+            permit,
+        };
+        shutdown.tracker.spawn(run_concurrent(
+            job,
+            Arc::clone(app),
+            shutdown.cancel.clone(),
+        ));
     }
 }
 
 /// Runs every concurrent handler of `job` at once; the permit is released
-/// when all have ended.
+/// when all have ended. One handler is awaited inline; several are joined
+/// through one allocation (D4, Story 16.3: `join_all` over an exact-size
+/// iterator collects one boxed slice up to 30 futures, and switches to a
+/// `FuturesOrdered` above).
 async fn run_concurrent(job: Job, app: Arc<AppShared>, cancel: CancellationToken) {
     let Job {
         shard,
@@ -581,23 +591,72 @@ async fn run_concurrent(job: Job, app: Arc<AppShared>, cancel: CancellationToken
         handlers,
         permit,
     } = job;
-    let total = handlers.concurrent.len();
-    let mut event = Some(event);
-    let runs = handlers
-        .concurrent
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entry)| {
-            let next = take_event(&mut event, index + 1 == total)?;
-            Some(run_handler(entry, shard, guild_id, next, &app, &cancel))
-        });
-    join_all(runs.collect::<Vec<_>>()).await;
+    let concurrent = handlers.concurrent.as_slice();
+    let mut share = Share::new(event, concurrent.len(), |index, event| {
+        concurrent
+            .get(index)
+            .is_some_and(|entry| entry.handler.accepts(event))
+    });
+    match concurrent {
+        [] => {}
+        [entry] => {
+            let event = share.take(0, |event| entry.handler.accepts(event));
+            run_entry(entry, shard, guild_id, event, &app, &cancel).await;
+        }
+        entries => {
+            let runs = entries.iter().enumerate().map(|(index, entry)| {
+                let event = share.take(index, |event| entry.handler.accepts(event));
+                run_entry(entry, shard, guild_id, event, &app, &cancel)
+            });
+            join_all(runs).await;
+        }
+    }
     drop(permit);
 }
 
-/// The original event for the last handler, a clone for the others.
-fn take_event(event: &mut Option<Event>, last: bool) -> Option<Event> {
-    if last { event.take() } else { event.clone() }
+/// One event shared among the handlers of a job (D3, Story 16.3): the
+/// last handler whose payload filter accepts it gets the original, the
+/// earlier accepting ones a clone each, the rejecting ones nothing.
+struct Share<T> {
+    /// The original, until the last accepting handler takes it; `None`
+    /// from the start when no handler accepts it.
+    value: Option<T>,
+    /// The index of the last accepting handler.
+    last: Option<usize>,
+}
+
+impl<T: Clone> Share<T> {
+    /// Shares `value` among `count` handlers; `accepts(index, value)` is
+    /// handler `index`'s payload filter.
+    fn new(value: Option<T>, count: usize, accepts: impl Fn(usize, &T) -> bool) -> Self {
+        let last = value
+            .as_ref()
+            .and_then(|value| (0..count).rev().find(|&index| accepts(index, value)));
+        Self {
+            value: value.filter(|_| last.is_some()),
+            last,
+        }
+    }
+
+    /// What handler `index` (whose payload filter is `accepts`) gets, in
+    /// handler order: the original when it is the last accepting one, a
+    /// clone when it accepts earlier, `None` when it rejects.
+    fn take(&mut self, index: usize, accepts: impl FnOnce(&T) -> bool) -> Option<T> {
+        let value = self.value.as_ref()?;
+        if !accepts(value) {
+            None
+        } else if self.last == Some(index) {
+            self.value.take()
+        } else {
+            Some(value.clone())
+        }
+    }
+
+    /// The original when no handler took it yet: a later handler (the
+    /// job's concurrent part) is the last accepting one.
+    fn into_rest(self) -> Option<T> {
+        self.value
+    }
 }
 
 /// How one handler run ended.
@@ -612,6 +671,19 @@ enum Outcome {
     Cancelled,
 }
 
+/// Runs one handler on `event` ([`run_entry`] with the event).
+#[cfg(test)]
+pub(crate) async fn run_handler(
+    entry: &Entry,
+    shard: u32,
+    guild_id: Option<Id<GuildMarker>>,
+    event: Event,
+    app: &Arc<AppShared>,
+    cancel: &CancellationToken,
+) {
+    run_entry(entry, shard, guild_id, Some(event), app, cancel).await;
+}
+
 /// Runs one handler in span `noctis.event`: its before-Middleware, then the
 /// handler, then its after-Middleware, catching panics and racing the
 /// cancel token (cancel first); records the handler's duration when it
@@ -619,15 +691,21 @@ enum Outcome {
 /// sink. Every run ends in exactly one outcome; a filtered event runs no
 /// Middleware. A handler whose Module is disabled in the event's guild
 /// (globally for a guildless event) does not run at all (AD-23 stage 3).
+///
+/// `event` is `None` when the handler's payload filter rejected the event
+/// (D3, Story 16.3): the run passes every stage up to the call, then ends
+/// as a filtered one. Without event Middleware no Middleware state is
+/// built and the run shares the App's locale cell of its guild record
+/// (D5, D6); a disabled span is neither entered nor attached (D7).
 #[expect(
     clippy::too_many_lines,
     reason = "one linear pass over the stages of an event handler run"
 )]
-pub(crate) async fn run_handler(
+async fn run_entry(
     entry: &Entry,
     shard: u32,
     guild_id: Option<Id<GuildMarker>>,
-    event: Event,
+    event: Option<Event>,
     app: &Arc<AppShared>,
     cancel: &CancellationToken,
 ) {
@@ -645,90 +723,108 @@ pub(crate) async fn run_handler(
     // Stage 3: a disabled Module's handler is skipped silently (cached
     // state only): no Middleware, no report.
     if !app.module_state.is_enabled(entry.module, guild_id.into()) {
-        span.in_scope(|| {
+        in_span(&span, || {
             tracing::trace!(target: "noctis::dispatch", module = entry.module, "module disabled here");
         });
         return;
     }
     let invocation = Invocation::Event { event_type };
-    // Stage 4: the guild's recorded locale, then the App's default.
-    let locales = crate::pipeline::stage4(
-        app,
-        Stage4 {
-            invocation,
-            guild_id,
-            user_id: None,
-            discord_user: None,
-            discord_guild: app.locales.guild(guild_id),
-        },
-        handler.name(),
-    );
-    let around = Around::new(
-        &entry.chain,
-        || RunInfo {
-            invocation,
-            module: entry.module,
-            handler: handler.name(),
-            shard,
-            guild_id,
-            channel_id: None,
-            user_id: None,
-            app: Some(Arc::clone(app)),
-            locales: Arc::clone(&locales),
-        },
-        true,
-    );
+    // Stage 4: the guild's recorded locale, then the App's default. Only a
+    // before-Middleware writes a run's cell, so a run without event
+    // Middleware (and an App without a resolver) shares one.
+    let discord_guild = app.locales.guild(guild_id);
+    let shared_cell = if entry.event_middleware {
+        None
+    } else {
+        app.locales.event_cell(discord_guild)
+    };
+    let locales = shared_cell.unwrap_or_else(|| {
+        crate::pipeline::stage4(
+            app,
+            Stage4 {
+                invocation,
+                guild_id,
+                user_id: None,
+                discord_user: None,
+                discord_guild,
+            },
+            handler.name(),
+        )
+    });
+    let around = entry.event_middleware.then(|| {
+        Around::new(
+            &entry.chain,
+            || RunInfo {
+                invocation,
+                module: entry.module,
+                handler: handler.name(),
+                shard,
+                guild_id,
+                channel_id: None,
+                user_id: None,
+                app: Some(Arc::clone(app)),
+                locales: Arc::clone(&locales),
+            },
+            true,
+        )
+    });
     let mut middleware = None;
     // No Middleware runs for a start panic: neither chain saw the run.
     let mut start_panicked = false;
     let outcome = if cancel.is_cancelled() {
         Outcome::Cancelled
     } else {
+        // A rejected payload ends like a filtered call.
+        let Some(event) = event else {
+            return;
+        };
         let ctx = EventCtx::new(
             shard,
             guild_id,
             entry.module,
             Arc::clone(app),
-            around.run(),
+            around.as_ref().and_then(Around::run),
             locales,
         );
         let started_at = Instant::now();
-        let started = span
-            .in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));
+        let started = in_span(&span, || {
+            std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event)))
+        });
         match started {
-            Ok(Some(fut)) => match around.before(&span, Some(cancel)).await {
-                Before::Continue => {
-                    let started_at = if around.has_before() {
-                        Instant::now()
-                    } else {
-                        started_at
-                    };
-                    let run = AssertUnwindSafe(fut)
-                        .catch_unwind()
-                        .instrument(span.clone());
-                    let outcome = tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => Outcome::Cancelled,
-                        result = run => match result {
-                            Ok(result) => Outcome::Returned(result),
-                            Err(panic) => Outcome::Panicked(panic),
-                        },
-                    };
-                    record_duration(app, started_at);
-                    outcome
+            Ok(Some(fut)) => {
+                let before = match &around {
+                    Some(around) => around.before(&span, Some(cancel)).await,
+                    None => Before::Continue,
+                };
+                match before {
+                    Before::Continue => {
+                        let started_at = if around.as_ref().is_some_and(Around::has_before) {
+                            Instant::now()
+                        } else {
+                            started_at
+                        };
+                        let run = AssertUnwindSafe(fut).catch_unwind();
+                        let outcome = if span.is_disabled() {
+                            race(cancel, run).await
+                        } else {
+                            race(cancel, run.instrument(span.clone())).await
+                        };
+                        record_duration(app, started_at);
+                        outcome
+                    }
+                    // An event sends nothing on a stop, whatever its key.
+                    Before::Stop(..) => Outcome::Stopped,
+                    Before::Failed(error, name) => {
+                        middleware = Some(name);
+                        Outcome::Returned(Err(error))
+                    }
+                    Before::Panicked(panic, name) => {
+                        middleware = Some(name);
+                        Outcome::Panicked(panic)
+                    }
+                    Before::Cancelled => Outcome::Cancelled,
                 }
-                // An event sends nothing on a stop, whatever its key.
-                Before::Stop(..) => Outcome::Stopped,
-                Before::Failed(error, name) => {
-                    middleware = Some(name);
-                    Outcome::Returned(Err(error))
-                }
-                Before::Panicked(panic, name) => {
-                    middleware = Some(name);
-                    Outcome::Panicked(panic)
-                }
-                Before::Cancelled => Outcome::Cancelled,
-            },
+            }
             Ok(None) => return,
             Err(panic) => {
                 record_duration(app, started_at);
@@ -737,7 +833,9 @@ pub(crate) async fn run_handler(
             }
         }
     };
-    around.freeze();
+    if let Some(around) = &around {
+        around.freeze();
+    }
     let base = ErrorReport {
         origin: ErrorOrigin::Event,
         kind: ReportKind::Cancelled,
@@ -747,7 +845,10 @@ pub(crate) async fn run_handler(
         module: Some(entry.module),
         handler: Some(handler.name()),
         event_type: Some(event_type),
-        extensions: Some(around.extensions()),
+        extensions: Some(match &around {
+            Some(around) => around.extensions(),
+            None => crate::Extensions::empty(),
+        }),
         middleware: None,
     };
     let run_outcome = match &outcome {
@@ -757,7 +858,7 @@ pub(crate) async fn run_handler(
         Outcome::Stopped => Some(RunOutcome::Stopped),
         Outcome::Cancelled => None,
     };
-    if let Some(run_outcome) = run_outcome {
+    if let (Some(around), Some(run_outcome)) = (&around, run_outcome) {
         let panicked = |name: &'static str, panic: &str| {
             count_error(app);
             app.sinks.report(ErrorReport {
@@ -777,7 +878,7 @@ pub(crate) async fn run_handler(
         Outcome::Cancelled => ReportKind::Cancelled,
     };
     count_error(app);
-    span.in_scope(|| {
+    in_span(&span, || {
         app.sinks.report(ErrorReport {
             kind: report_kind,
             middleware,
@@ -786,24 +887,77 @@ pub(crate) async fn run_handler(
     });
 }
 
+/// Polls a started handler `run` against `cancel` (cancel first).
+async fn race<F>(cancel: &CancellationToken, run: F) -> Outcome
+where
+    F: Future<Output = std::thread::Result<HandlerResult<()>>>,
+{
+    tokio::select! {
+        biased;
+        () = cancel.cancelled() => Outcome::Cancelled,
+        result = run => match result {
+            Ok(result) => Outcome::Returned(result),
+            Err(panic) => Outcome::Panicked(panic),
+        },
+    }
+}
+
+/// `f` inside `span`, or plainly when no subscriber is interested in the
+/// span (entering a disabled span does nothing).
+fn in_span<R>(span: &tracing::Span, f: impl FnOnce() -> R) -> R {
+    if span.is_disabled() {
+        f()
+    } else {
+        span.in_scope(f)
+    }
+}
+
+/// The event-handler metric handles of one App
+/// (`noctis_handler_duration_seconds` and `noctis_handler_errors_total`,
+/// labels `{app, kind = "event"}`), each registered with the global (or
+/// thread-local) recorder on its first use and reused afterwards (D1,
+/// Story 16.3): a recorder installed after the App's first event run
+/// misses them, so it is installed before `App::run`.
+#[derive(Default)]
+pub(crate) struct EventMetrics {
+    duration: OnceLock<Histogram>,
+    errors: OnceLock<Counter>,
+}
+
+impl EventMetrics {
+    /// The duration histogram of App `app`.
+    fn duration(&self, app: &Arc<str>) -> &Histogram {
+        self.duration.get_or_init(|| {
+            metrics::histogram!(
+                "noctis_handler_duration_seconds",
+                "app" => Arc::clone(app),
+                "kind" => ErrorOrigin::Event.as_str()
+            )
+        })
+    }
+
+    /// The error counter of App `app`.
+    fn errors(&self, app: &Arc<str>) -> &Counter {
+        self.errors.get_or_init(|| {
+            metrics::counter!(
+                "noctis_handler_errors_total",
+                "app" => Arc::clone(app),
+                "kind" => ErrorOrigin::Event.as_str()
+            )
+        })
+    }
+}
+
 /// Records an event handler's duration since `started_at`.
 fn record_duration(app: &AppShared, started_at: Instant) {
-    metrics::histogram!(
-        "noctis_handler_duration_seconds",
-        "app" => Arc::clone(&app.app),
-        "kind" => ErrorOrigin::Event.as_str()
-    )
-    .record(started_at.elapsed().as_secs_f64());
+    app.event_metrics
+        .duration(&app.app)
+        .record(started_at.elapsed().as_secs_f64());
 }
 
 /// Counts one event handler failure.
 fn count_error(app: &AppShared) {
-    metrics::counter!(
-        "noctis_handler_errors_total",
-        "app" => Arc::clone(&app.app),
-        "kind" => ErrorOrigin::Event.as_str()
-    )
-    .increment(1);
+    app.event_metrics.errors(&app.app).increment(1);
 }
 
 /// A panic payload's message: `&str` or `String`, else a placeholder.
