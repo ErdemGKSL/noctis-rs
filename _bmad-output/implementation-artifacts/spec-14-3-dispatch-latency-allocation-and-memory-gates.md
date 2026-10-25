@@ -2,7 +2,8 @@
 title: 'Story 14.3: Dispatch latency, allocation and memory gates'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'a37158c0906622c1ea5105b42d0cca1bd5c0d05f'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
