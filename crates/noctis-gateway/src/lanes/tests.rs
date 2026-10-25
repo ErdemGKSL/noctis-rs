@@ -249,6 +249,10 @@ fn observed<T>(f: impl FnOnce(&Snapshotter) -> T) -> (T, Logs) {
         .with_writer(move || writer.clone())
         .finish();
     let out = tracing::subscriber::with_default(subscriber, || {
+        // A callsite first hit on another test thread while no subscriber
+        // was alive may have cached `Interest::never`; recompute it now
+        // that this one is.
+        tracing::callsite::rebuild_interest_cache();
         metrics::with_local_recorder(&recorder, || f(&snapshotter))
     });
     (out, logs)

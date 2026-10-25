@@ -319,12 +319,10 @@ fn global_bound_concurrent() {
                 let sender = sender.clone();
                 let recorder = &recorder;
                 scope.spawn(move || {
-                    quiet(|| {
-                        metrics::with_local_recorder(recorder, || {
-                            for id in 0..PER_THREAD {
-                                sender.push(m(thread, u64::from(thread) * PER_THREAD + id + 1));
-                            }
-                        });
+                    metrics::with_local_recorder(recorder, || {
+                        for id in 0..PER_THREAD {
+                            sender.push(m(thread, u64::from(thread) * PER_THREAD + id + 1));
+                        }
                     });
                 })
             })
@@ -355,79 +353,73 @@ fn global_bound_concurrent() {
 /// or is dropped when its partition holds none.
 #[test]
 fn eviction_is_per_partition() {
-    quiet(|| {
-        let (sender, receiver) = lanes_with(config(3, 2), n(2));
-        let shared = Arc::clone(&receiver.shared);
-        sender.push(t(0, 1));
-        sender.push(m(0, 1));
-        sender.push(m(1, 2));
-        assert_eq!(shared.depths().event, 3);
-        // Partition 1 holds no droppable: the pushed one is dropped.
-        sender.push(t(1, 2));
-        assert_eq!(event_tags(&shared, 1), ["M2"]);
-        // Partition 0 holds T1: it is evicted, the survivors keep their order.
-        sender.push(t(0, 3));
-        assert_eq!(event_tags(&shared, 0), ["M1", "T3"]);
-        assert_eq!(
-            shared.depths(),
-            LaneDepths {
-                interaction: 0,
-                event: 3,
-                overflow: 0
-            }
-        );
-        drop(receiver);
-    });
+    let (sender, receiver) = lanes_with(config(3, 2), n(2));
+    let shared = Arc::clone(&receiver.shared);
+    sender.push(t(0, 1));
+    sender.push(m(0, 1));
+    sender.push(m(1, 2));
+    assert_eq!(shared.depths().event, 3);
+    // Partition 1 holds no droppable: the pushed one is dropped.
+    sender.push(t(1, 2));
+    assert_eq!(event_tags(&shared, 1), ["M2"]);
+    // Partition 0 holds T1: it is evicted, the survivors keep their order.
+    sender.push(t(0, 3));
+    assert_eq!(event_tags(&shared, 0), ["M1", "T3"]);
+    assert_eq!(
+        shared.depths(),
+        LaneDepths {
+            interaction: 0,
+            event: 3,
+            overflow: 0
+        }
+    );
+    drop(receiver);
 }
 
 /// Eviction is O(1): droppables only at the back of a 200 000-item lane.
 #[test]
 fn eviction_complexity() {
-    quiet(|| {
-        const CAPACITY: usize = 200_000;
-        let (sender, receiver) = lanes(config(CAPACITY, 0));
-        for id in 1..CAPACITY as u64 {
-            sender.push(m(0, id));
-        }
-        sender.push(t(0, 1));
-        let template = typing(7);
-        let pushes: Vec<_> = (0..100_000)
-            .map(|_| {
-                on(
-                    0,
-                    InboundKind::Event(Box::new(Event::TypingStart(Box::new(template.clone())))),
-                )
-            })
-            .collect();
-        let started = std::time::Instant::now();
-        for inbound in pushes {
-            sender.push(inbound);
-        }
-        let elapsed = started.elapsed();
-        assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
-        assert_eq!(receiver.depths().event, CAPACITY);
-        let queues = receiver.shared.lock();
-        assert_eq!(queues.event.len(), CAPACITY);
-        assert_eq!(queues.event.droppable.len(), 1);
-    });
+    const CAPACITY: usize = 200_000;
+    let (sender, receiver) = lanes(config(CAPACITY, 0));
+    for id in 1..CAPACITY as u64 {
+        sender.push(m(0, id));
+    }
+    sender.push(t(0, 1));
+    let template = typing(7);
+    let pushes: Vec<_> = (0..100_000)
+        .map(|_| {
+            on(
+                0,
+                InboundKind::Event(Box::new(Event::TypingStart(Box::new(template.clone())))),
+            )
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    for inbound in pushes {
+        sender.push(inbound);
+    }
+    let elapsed = started.elapsed();
+    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    assert_eq!(receiver.depths().event, CAPACITY);
+    let queues = receiver.shared.lock();
+    assert_eq!(queues.event.len(), CAPACITY);
+    assert_eq!(queues.event.droppable.len(), 1);
 }
 
 /// A stalled consumer and endless droppables: the queue never grows.
 #[test]
 fn eviction_memory() {
-    quiet(|| {
-        let (sender, receiver) = lanes(config(8, 0));
-        for id in 1..=100_000 {
-            sender.push(t(0, id));
-        }
-        let queues = receiver.shared.lock();
-        assert_eq!(queues.event.len(), 8);
-        assert!(
-            queues.event.droppable.capacity() < 64,
-            "{}",
-            queues.event.droppable.capacity()
-        );
-    });
+    let (sender, receiver) = lanes(config(8, 0));
+    for id in 1..=100_000 {
+        sender.push(t(0, id));
+    }
+    let queues = receiver.shared.lock();
+    assert_eq!(queues.event.len(), 8);
+    assert!(
+        queues.event.droppable.capacity() < 64,
+        "{}",
+        queues.event.droppable.capacity()
+    );
 }
 
 /// A partition's overflow refills its own event lane; an event lane that

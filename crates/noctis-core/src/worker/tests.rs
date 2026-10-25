@@ -1256,19 +1256,19 @@ mod shutdown {
     use crate::{ErrorOrigin, ErrorReport, ErrorSink};
 
     /// A drain whose shutdown controls the test holds.
-    struct Running {
+    pub(super) struct Running {
         app: App,
         sender: LaneSender,
         controls: Shutdown,
         drain: AbortOnDrop,
-        recording: Arc<Recording>,
+        pub(super) recording: Arc<Recording>,
     }
 
     impl Running {
         /// Builds the App (with a recording `Event` sink) and spawns the
         /// drain; on a current-thread runtime the drain only runs at the
         /// next yield.
-        fn start(builder: &mut AppBuilder) -> Self {
+        pub(super) fn start(builder: &mut AppBuilder) -> Self {
             let recording = Arc::new(Recording::default());
             builder
                 .runtime(&Runtime::for_test())
@@ -1290,7 +1290,7 @@ mod shutdown {
             }
         }
 
-        fn push(&self, event: Event) {
+        pub(super) fn push(&self, event: Event) {
             self.sender.push(Inbound {
                 shard: ShardId::ONE,
                 received_at: Instant::now(),
@@ -1317,7 +1317,7 @@ mod shutdown {
         }
 
         /// Runs core's wind-down with `grace`, bounded by [`WAIT`].
-        async fn wind_down(&mut self, grace: Duration) {
+        pub(super) async fn wind_down(&mut self, grace: Duration) {
             let (_tx, mut events) = mpsc::unbounded_channel();
             let status = ShardStatus {
                 app: Arc::from("default"),
@@ -1338,7 +1338,7 @@ mod shutdown {
             .unwrap();
         }
 
-        fn kinds(&self) -> Vec<String> {
+        pub(super) fn kinds(&self) -> Vec<String> {
             self.recording.seen().into_iter().map(|s| s.kind).collect()
         }
     }
@@ -2854,6 +2854,128 @@ mod overhead {
         until("a", || log.count("a:5") == 1).await;
         h.close().await;
         assert_eq!(log.lines(), ["a:5"]);
+    }
+
+    /// A `GuildDelete` handler named `deleted` that logs `deleted:{id}`;
+    /// with a `gate`, it logs `start:{id}` and waits for the gate first.
+    fn deleted(ordered: bool, log: &Log, gate: Option<&Arc<Semaphore>>) -> EventHandler {
+        let log = log.clone();
+        let gate = gate.map(Arc::clone);
+        handler("deleted", ordered, move |_, e: GuildDelete| {
+            let log = log.clone();
+            let gate = gate.clone();
+            async move {
+                if let Some(gate) = gate {
+                    log.push(format!("start:{}", e.id));
+                    let _permit = gate.acquire().await;
+                }
+                log.push(format!("deleted:{}", e.id));
+                Ok(())
+            }
+        })
+    }
+
+    /// An `UnavailableGuild` handler named `outage` that logs
+    /// `outage:{id}`.
+    fn outage(ordered: bool, log: &Log) -> EventHandler {
+        let log = log.clone();
+        handler("outage", ordered, move |_, e: UnavailableGuild| {
+            let log = log.clone();
+            async move {
+                log.push(format!("outage:{}", e.id));
+                Ok(())
+            }
+        })
+    }
+
+    /// Runs `module` with its Module disabled in `GA`, pushes a plain
+    /// `GUILD_DELETE` and waits for one "module disabled here" trace per
+    /// handler.
+    async fn disabled_traces(module: Module, log: &Log) {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let h = Harness::start(App::builder().module(module));
+        h.app
+            .modules()
+            .set_enabled("m", Id::new(GA), false)
+            .await
+            .unwrap();
+        tracing::callsite::rebuild_interest_cache();
+        h.push(guild_delete(None));
+        until("both traces", || {
+            capture.lines_with(&["module disabled here"]).len() == 2
+        })
+        .await;
+        h.close().await;
+        for name in ["handler=\"outage\"", "handler=\"deleted\""] {
+            assert_eq!(
+                capture.lines_with(&["module disabled here", name]).len(),
+                1,
+                "{name}"
+            );
+        }
+        assert!(log.lines().is_empty());
+    }
+
+    /// An ordered accepting handler takes the original; the rejecting
+    /// concurrent one still runs (with no event) and traces stage 3.
+    #[tokio::test]
+    async fn ordered_accepting_then_concurrent_rejecting_traces() {
+        let log = Log::default();
+        let module = Module::new("m")
+            .__add(deleted(true, &log, None))
+            .__add(outage(false, &log));
+        disabled_traces(module, &log).await;
+    }
+
+    /// The rejecting concurrent handler behind an ordered accepting one is
+    /// still spawned at the wind-down and reports `Cancelled`.
+    #[tokio::test]
+    async fn ordered_accepting_then_concurrent_rejecting_cancelled() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = shutdown::Running::start(
+            App::builder().module(
+                Module::new("m")
+                    .__add(deleted(true, &log, Some(&gate)))
+                    .__add(outage(false, &log)),
+            ),
+        );
+        run.push(guild_delete(None));
+        until("deleted started", || log.count("start:1") == 1).await;
+        run.wind_down(Duration::from_millis(100)).await;
+        let seen = run.recording.seen();
+        assert!(
+            seen.iter()
+                .any(|s| s.kind == "cancelled" && s.handler.as_deref() == Some("outage")),
+            "{seen:?}"
+        );
+        assert_eq!(log.count("outage:1"), 0);
+    }
+
+    /// An ordered rejecting handler before an ordered accepting one: only
+    /// the accepting one is called, and with the Module disabled both
+    /// trace stage 3.
+    #[tokio::test]
+    async fn ordered_rejecting_then_ordered_accepting() {
+        let log = Log::default();
+        let h = Harness::start(
+            App::builder().module(
+                Module::new("m")
+                    .__add(outage(true, &log))
+                    .__add(deleted(true, &log, None)),
+            ),
+        );
+        h.push(guild_delete(None));
+        until("deleted", || log.count("deleted:1") == 1).await;
+        h.close().await;
+        assert_eq!(log.lines(), ["deleted:1"]);
+
+        let log = Log::default();
+        let module = Module::new("m")
+            .__add(outage(true, &log))
+            .__add(deleted(true, &log, None));
+        disabled_traces(module, &log).await;
     }
 
     /// `count` concurrent handlers on one event all start before any ends

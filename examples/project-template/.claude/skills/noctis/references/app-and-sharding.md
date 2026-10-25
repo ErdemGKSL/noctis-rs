@@ -1207,8 +1207,10 @@ The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `n
 `metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and
 `description`) lists every emitted metric, so you can build dashboards from it.
 `noctis::observe::describe_metrics()` registers descriptions and units (`Seconds` for
-`_seconds`, `Count` for `_total`) with your recorder; `App::run` calls it, so you
-never need to call it when the recorder is installed before `App::run`.
+`_seconds`, `Count` for `_total`) with your recorder; `App::run` calls it, so call it
+yourself only if you install the recorder later. A recorder installed after `App::run`
+misses the lane gauges and, after their first use, the event-handler and dropped-event
+metrics; the interaction metrics still reach it.
 
 ```rust
 for m in noctis::observe::METRICS {

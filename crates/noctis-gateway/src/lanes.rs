@@ -1031,7 +1031,7 @@ impl fmt::Debug for LaneReceiver {
 /// discarded without being counted. `Debug` prints the index and depths.
 ///
 /// ```
-/// use std::collections::{HashMap, VecDeque};
+/// use std::collections::VecDeque;
 /// use std::num::NonZeroUsize;
 ///
 /// use noctis_gateway::{Inbound, InboundKind, InboundSink, LaneConfig, lanes};
@@ -1075,7 +1075,7 @@ impl LanePartition {
     ///
     /// ```
     /// # #[tokio::main(flavor = "current_thread")] async fn main() {
-    /// use std::collections::{HashMap, VecDeque};
+    /// use std::collections::VecDeque;
     /// use std::num::NonZeroUsize;
     ///
     /// let (sender, receiver) = noctis_gateway::lanes(Default::default());
@@ -1099,7 +1099,7 @@ impl LanePartition {
     /// [`recv_batch`](Self::recv_batch) takes them; returns how many.
     ///
     /// ```
-    /// use std::collections::{HashMap, VecDeque};
+    /// use std::collections::VecDeque;
     /// use std::num::NonZeroUsize;
     ///
     /// let (_sender, receiver) = noctis_gateway::lanes(Default::default());
