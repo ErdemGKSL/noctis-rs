@@ -17,7 +17,9 @@ const FORBIDDEN: &[&str] = &[
 /// Matched case-insensitively: no port method may take a secret (NFR-6).
 const FORBIDDEN_ANY_CASE: &[&str] = &["token", "secret", "password", "credential", "api_key"];
 
+/// `blake3` is pure hashing (`RenderJob::key`, Story 15.1); it does no I/O.
 const ALLOWED_DEPENDENCIES: &[&str] = &[
+    "blake3",
     "bytes",
     "moka",
     "postcard",

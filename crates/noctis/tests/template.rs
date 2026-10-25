@@ -11,12 +11,12 @@
 
 use std::time::Duration;
 
-use noctis::image::unstable::ViewFn;
+use noctis::image::unstable::{RenderJob, TemplateDescriptor, ViewFn};
 use noctis::image::{
     AnimatedFormat, AnimationSpec, Classes, Format, Frame, Node, Size, Style, Tag, Template,
-    TemplateDescriptor, TemplateView, Theme, div, span, text, theme, tw, view,
+    TemplateView, Theme, div, span, text, theme, tw, view,
 };
-use noctis::ports::{RenderError, RenderJob, ValueError};
+use noctis::ports::{RenderError, ValueError};
 use noctis::{App, BuildViolation, Module};
 use serde::{Deserialize, Serialize};
 

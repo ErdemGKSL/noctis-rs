@@ -732,6 +732,34 @@ pub enum BuildViolation {
         /// The Renderer's error, with its source chain joined by `": "`.
         message: String,
     },
+    /// A second Renderer was set on one App (`.renderer(..)` twice, or
+    /// `.renderer(..)` together with the image plugin's `.theme(..)` /
+    /// `.image(..)`); the first is kept.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateRenderer {
+    ///     first: "my_bot::Fixed",
+    ///     second: "noctis_image::TakumiRenderer",
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "a Renderer is set twice: `my_bot::Fixed`, then `noctis_image::TakumiRenderer`: an \
+    ///      App has one Renderer; keep `.renderer(..)` or the image plugin \
+    ///      (`.theme(..)`/`.image(..)`), not both"
+    /// );
+    /// ```
+    #[error(
+        "a Renderer is set twice: `{first}`, then `{second}`: an App has one Renderer; keep \
+         `.renderer(..)` or the image plugin (`.theme(..)`/`.image(..)`), not both"
+    )]
+    DuplicateRenderer {
+        /// The kept Renderer's type name.
+        first: &'static str,
+        /// The rejected Renderer's type name.
+        second: &'static str,
+    },
     /// A mounted Module declares with `Module::uses::<R>()` a Route that no
     /// mounted Module handles (CID-04).
     #[error(

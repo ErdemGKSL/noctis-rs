@@ -556,7 +556,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 - Errors are a `HandlerError` wrapping a `RenderError`, found with
   `err.as_error().downcast_ref::<RenderError>()`:
   - `QueueFull`: the render queue is full; show a "busy, try again" notice;
-  - `NoRenderer`: no `.theme(..)`/`.image(..)` on the builder;
+  - `NoRenderer`: no `.theme(..)`/`.image(..)` (or `.renderer(..)`) on the builder;
   - `UnknownTemplate { id, version }`: not registered with `Module::template` (or a
     version skew);
   - `Unsupported { id, why }`: an animation with `fps` 0 or a duration under 1 ms, or
@@ -734,7 +734,7 @@ still fallback, whose `RenderOutput::format` is the still format), read through
 `app.renderer()`:
 
 ```rust
-use noctis::image::RenderJob;
+use noctis::image::unstable::RenderJob;   // outside semver (§12)
 
 let job = RenderJob::of(&card)?;                                 // upload_budget 20 MiB
 let out = app.renderer().expect("a Renderer").render(job).await?;
@@ -825,5 +825,15 @@ with `ImageConfig::font(..)` (never a font that differs between machines) and
 
 ## 12. Unstable
 
-Renderer internals (takumi types) are only under `noctis::image::unstable`, outside
-semver. Don't use them in normal bots.
+`noctis::image::unstable` holds the items **semver does not cover**; normal bots never
+need them:
+- the renderer-facing contract: `Renderer`, `RendererPorts`, `RenderJob` (with
+  `RenderJob::key`), `RenderOutput`, `TemplateDescriptor`, `ErasedView` and
+  `decode_template` (no stable path re-exports them);
+- takumi internals: `ViewFn`, `ClassCheck`, `ClassCheckMode`.
+
+Replace the takumi Renderer only through `AppBuilder::renderer(r)` with these types,
+never together with `.theme(..)`/`.image(..)` (`BuildViolation::DuplicateRenderer`);
+`ctx.render` still checks the output against the Upload Budget (empty is `Failed`, over
+it is `OverBudget`) and names the file by `RenderOutput::digest`. See `adapters.md` §2b
+and the template's `adapters::FixedRenderer`.

@@ -93,7 +93,7 @@ pub fn noctis::App::modules(&self) -> noctis::Modules
 pub fn noctis::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
-pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
+pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::image::unstable::Renderer>>
 pub fn noctis::App::resume_sessions(&self) -> bool
 pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
@@ -148,7 +148,7 @@ pub fn noctis::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -> &mut Se
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
-pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
+pub fn noctis::AppBuilder::renderer<R: noctis::image::unstable::Renderer>(&mut self, R) -> &mut Self
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::AppBuilder::resume_sessions(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
@@ -373,6 +373,9 @@ pub noctis::BuildViolation::DuplicateModule
 pub noctis::BuildViolation::DuplicateModule::id: &'static str
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
+pub noctis::BuildViolation::DuplicateRenderer
+pub noctis::BuildViolation::DuplicateRenderer::first: &'static str
+pub noctis::BuildViolation::DuplicateRenderer::second: &'static str
 pub noctis::BuildViolation::DuplicateRoute
 pub noctis::BuildViolation::DuplicateRoute::first_handler: &'static str
 pub noctis::BuildViolation::DuplicateRoute::first_module: &'static str
@@ -956,10 +959,9 @@ pub noctis::ErrorOrigin::Autocomplete
 pub noctis::ErrorOrigin::Command
 pub noctis::ErrorOrigin::Component
 pub noctis::ErrorOrigin::Event
-pub noctis::ErrorOrigin::Hook
 pub noctis::ErrorOrigin::Render
 impl noctis::ErrorOrigin
-pub const noctis::ErrorOrigin::ALL: [noctis::ErrorOrigin; 6]
+pub const noctis::ErrorOrigin::ALL: [noctis::ErrorOrigin; 5]
 pub const fn noctis::ErrorOrigin::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::ErrorOrigin
 pub fn noctis::ErrorOrigin::clone(&self) -> Self
@@ -1146,7 +1148,6 @@ pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::HandlerError
 pub fn noctis::HandlerError::from(E) -> Self
 pub type noctis::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
-pub proc macro noctis::#[derive(Hook)]
 #[non_exhaustive] pub struct noctis::HttpConfig
 pub noctis::HttpConfig::connect_timeout: core::time::Duration
 pub noctis::HttpConfig::dns_ttl_cap: core::time::Duration
@@ -3582,25 +3583,6 @@ impl core::fmt::Debug for noctis::image::RenderError
 pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::image::RenderError
 pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::image::RenderJob
-pub noctis::image::RenderJob::animation: core::option::Option<noctis::image::AnimationSpec>
-pub noctis::image::RenderJob::data: bytes::bytes::Bytes
-pub noctis::image::RenderJob::format: noctis::image::Format
-pub noctis::image::RenderJob::size: noctis::image::Size
-pub noctis::image::RenderJob::template_id: &'static str
-pub noctis::image::RenderJob::template_version: u32
-pub noctis::image::RenderJob::upload_budget: u64
-impl noctis::image::RenderJob
-pub const noctis::image::RenderJob::DEFAULT_UPLOAD_BUDGET: u64
-pub fn noctis::image::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
-impl core::clone::Clone for noctis::image::RenderJob
-pub fn noctis::image::RenderJob::clone(&self) -> Self
-impl core::cmp::Eq for noctis::image::RenderJob
-impl core::cmp::PartialEq for noctis::image::RenderJob
-pub fn noctis::image::RenderJob::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::image::RenderJob
-pub fn noctis::image::RenderJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::image::RenderJob
 pub struct noctis::image::RenderOptions
 impl noctis::image::RenderOptions
 pub const fn noctis::image::RenderOptions::animation(self, noctis::image::AnimationSpec) -> Self
@@ -3616,19 +3598,6 @@ impl core::fmt::Debug for noctis::image::RenderOptions
 pub fn noctis::image::RenderOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::image::RenderOptions
 impl core::marker::StructuralPartialEq for noctis::image::RenderOptions
-pub struct noctis::image::RenderOutput
-pub noctis::image::RenderOutput::bytes: bytes::bytes::Bytes
-pub noctis::image::RenderOutput::digest: [u8; 32]
-pub noctis::image::RenderOutput::format: noctis::image::OutputFormat
-pub noctis::image::RenderOutput::settings_used: noctis::image::EncodeSettings
-impl core::clone::Clone for noctis::image::RenderOutput
-pub fn noctis::image::RenderOutput::clone(&self) -> Self
-impl core::cmp::Eq for noctis::image::RenderOutput
-impl core::cmp::PartialEq for noctis::image::RenderOutput
-pub fn noctis::image::RenderOutput::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::image::RenderOutput
-pub fn noctis::image::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::image::RenderOutput
 #[non_exhaustive] pub struct noctis::image::RenderReport
 pub noctis::image::RenderReport::attachment: noctis::ui::Attachment
 pub noctis::image::RenderReport::format: noctis::image::OutputFormat
@@ -3726,17 +3695,7 @@ pub const noctis::image::Template::FORMAT: noctis::image::Format
 pub const noctis::image::Template::ID: &'static str
 pub const noctis::image::Template::SIZE: noctis::image::Size
 pub const noctis::image::Template::VERSION: u32
-pub fn noctis::image::Template::view() -> noctis::ports::ErasedView
-pub struct noctis::image::TemplateDescriptor
-pub noctis::image::TemplateDescriptor::id: &'static str
-pub noctis::image::TemplateDescriptor::version: u32
-pub noctis::image::TemplateDescriptor::view: noctis::ports::ErasedView
-impl noctis::image::TemplateDescriptor
-pub fn noctis::image::TemplateDescriptor::of<T: noctis::image::Template>() -> Self
-impl core::clone::Clone for noctis::image::TemplateDescriptor
-pub fn noctis::image::TemplateDescriptor::clone(&self) -> Self
-impl core::fmt::Debug for noctis::image::TemplateDescriptor
-pub fn noctis::image::TemplateDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn noctis::image::Template::view() -> noctis::image::unstable::ErasedView
 pub trait noctis::image::TemplateView
 pub fn noctis::image::TemplateView::view(&self, noctis::image::Frame) -> noctis::image::Node
 pub struct noctis::image::Theme
@@ -3948,6 +3907,75 @@ impl core::fmt::Debug for noctis::image::unstable::ClassCheckMode
 pub fn noctis::image::unstable::ClassCheckMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::image::unstable::ClassCheckMode
 impl core::marker::StructuralPartialEq for noctis::image::unstable::ClassCheckMode
+pub struct noctis::image::unstable::ErasedView(_)
+impl noctis::image::unstable::ErasedView
+pub fn noctis::image::unstable::ErasedView::downcast_ref<T: core::any::Any>(&self) -> core::option::Option<&T>
+pub fn noctis::image::unstable::ErasedView::new<T: core::any::Any + core::marker::Send + core::marker::Sync>(T) -> Self
+impl core::clone::Clone for noctis::image::unstable::ErasedView
+pub fn noctis::image::unstable::ErasedView::clone(&self) -> Self
+impl core::fmt::Debug for noctis::image::unstable::ErasedView
+pub fn noctis::image::unstable::ErasedView::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::image::unstable::RenderJob
+pub noctis::image::unstable::RenderJob::animation: core::option::Option<noctis::image::AnimationSpec>
+pub noctis::image::unstable::RenderJob::data: bytes::bytes::Bytes
+pub noctis::image::unstable::RenderJob::format: noctis::image::Format
+pub noctis::image::unstable::RenderJob::size: noctis::image::Size
+pub noctis::image::unstable::RenderJob::template_id: &'static str
+pub noctis::image::unstable::RenderJob::template_version: u32
+pub noctis::image::unstable::RenderJob::upload_budget: u64
+impl noctis::image::unstable::RenderJob
+pub const noctis::image::unstable::RenderJob::DEFAULT_UPLOAD_BUDGET: u64
+pub fn noctis::image::unstable::RenderJob::key(&self, &[u8]) -> [u8; 32]
+pub fn noctis::image::unstable::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
+impl core::clone::Clone for noctis::image::unstable::RenderJob
+pub fn noctis::image::unstable::RenderJob::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::unstable::RenderJob
+impl core::cmp::PartialEq for noctis::image::unstable::RenderJob
+pub fn noctis::image::unstable::RenderJob::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::unstable::RenderJob
+pub fn noctis::image::unstable::RenderJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::unstable::RenderJob
+pub struct noctis::image::unstable::RenderOutput
+pub noctis::image::unstable::RenderOutput::bytes: bytes::bytes::Bytes
+pub noctis::image::unstable::RenderOutput::digest: [u8; 32]
+pub noctis::image::unstable::RenderOutput::format: noctis::image::OutputFormat
+pub noctis::image::unstable::RenderOutput::settings_used: noctis::image::EncodeSettings
+impl core::clone::Clone for noctis::image::unstable::RenderOutput
+pub fn noctis::image::unstable::RenderOutput::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::unstable::RenderOutput
+impl core::cmp::PartialEq for noctis::image::unstable::RenderOutput
+pub fn noctis::image::unstable::RenderOutput::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::unstable::RenderOutput
+pub fn noctis::image::unstable::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::unstable::RenderOutput
+pub trait noctis::image::unstable::Renderer: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::image::unstable::Renderer::bind(&self, noctis::image::unstable::RendererPorts)
+pub fn noctis::image::unstable::Renderer::register(&self, &[noctis::image::unstable::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
+pub fn noctis::image::unstable::Renderer::render(&self, noctis::image::unstable::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::unstable::RenderOutput, noctis::image::RenderError>>
+impl<R: noctis::image::unstable::Renderer + ?core::marker::Sized> noctis::image::unstable::Renderer for alloc::rcs::arc::Arc<R>
+pub fn alloc::rcs::arc::Arc<R>::bind(&self, noctis::image::unstable::RendererPorts)
+pub fn alloc::rcs::arc::Arc<R>::register(&self, &[noctis::image::unstable::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
+pub fn alloc::rcs::arc::Arc<R>::render(&self, noctis::image::unstable::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::unstable::RenderOutput, noctis::image::RenderError>>
+#[non_exhaustive] pub struct noctis::image::unstable::RendererPorts
+pub noctis::image::unstable::RendererPorts::asset_store: alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>
+pub noctis::image::unstable::RendererPorts::render_cache: core::option::Option<alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>>
+impl noctis::image::unstable::RendererPorts
+pub fn noctis::image::unstable::RendererPorts::new(alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>) -> Self
+pub fn noctis::image::unstable::RendererPorts::with_render_cache(self, alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>) -> Self
+impl core::clone::Clone for noctis::image::unstable::RendererPorts
+pub fn noctis::image::unstable::RendererPorts::clone(&self) -> Self
+impl core::fmt::Debug for noctis::image::unstable::RendererPorts
+pub fn noctis::image::unstable::RendererPorts::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::image::unstable::TemplateDescriptor
+pub noctis::image::unstable::TemplateDescriptor::id: &'static str
+pub noctis::image::unstable::TemplateDescriptor::version: u32
+pub noctis::image::unstable::TemplateDescriptor::view: noctis::image::unstable::ErasedView
+impl noctis::image::unstable::TemplateDescriptor
+pub fn noctis::image::unstable::TemplateDescriptor::of<T: noctis::image::Template>() -> Self
+impl core::clone::Clone for noctis::image::unstable::TemplateDescriptor
+pub fn noctis::image::unstable::TemplateDescriptor::clone(&self) -> Self
+impl core::fmt::Debug for noctis::image::unstable::TemplateDescriptor
+pub fn noctis::image::unstable::TemplateDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::image::unstable::ViewFn
 impl noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::call(&self, &[u8], noctis::image::Frame) -> core::result::Result<noctis::image::Node, noctis::image::RenderError>
@@ -3958,220 +3986,7 @@ pub fn noctis::image::unstable::ViewFn::clone(&self) -> Self
 impl core::fmt::Debug for noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::image::unstable::ViewFn
-pub mod noctis::lifecycle
-#[non_exhaustive] pub struct noctis::lifecycle::AllShardsReady
-pub noctis::lifecycle::AllShardsReady::shards: core::ops::range::Range<u32>
-pub noctis::lifecycle::AllShardsReady::total: u32
-impl core::clone::Clone for noctis::lifecycle::AllShardsReady
-pub fn noctis::lifecycle::AllShardsReady::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::AllShardsReady
-impl core::cmp::PartialEq for noctis::lifecycle::AllShardsReady
-pub fn noctis::lifecycle::AllShardsReady::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::AllShardsReady
-pub fn noctis::lifecycle::AllShardsReady::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::AllShardsReady
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::AllShardsReady
-pub const noctis::lifecycle::AllShardsReady::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::AllShardsReady
-pub const noctis::lifecycle::AllShardsReady::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::AppStarted
-pub noctis::lifecycle::AppStarted::publisher: bool
-impl core::clone::Clone for noctis::lifecycle::AppStarted
-pub fn noctis::lifecycle::AppStarted::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::AppStarted
-impl core::cmp::PartialEq for noctis::lifecycle::AppStarted
-pub fn noctis::lifecycle::AppStarted::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::AppStarted
-pub fn noctis::lifecycle::AppStarted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::AppStarted
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
-pub const noctis::lifecycle::AppStarted::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::AppStarted
-pub const noctis::lifecycle::AppStarted::NAME: &'static str
-pub struct noctis::lifecycle::HookCtx(_)
-impl noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
-pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
-pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
-pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
-pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
-pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
-pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
-impl core::clone::Clone for noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::lifecycle::HookCtx(_)
-impl noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
-pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
-pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
-pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
-pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
-pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
-pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
-impl core::clone::Clone for noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::lifecycle::HookCtx
-pub fn noctis::lifecycle::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub trait noctis::lifecycle::HookEvent: noctis::__private::core::lifecycle::sealed::Sealed + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
-pub const noctis::lifecycle::HookEvent::NAME: &'static str
-pub struct noctis::lifecycle::LifecycleHook
-impl core::clone::Clone for noctis::lifecycle::LifecycleHook
-pub fn noctis::lifecycle::LifecycleHook::clone(&self) -> Self
-impl core::fmt::Debug for noctis::lifecycle::LifecycleHook
-pub fn noctis::lifecycle::LifecycleHook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::lifecycle::LifecycleHook
-impl core::clone::Clone for noctis::lifecycle::LifecycleHook
-pub fn noctis::lifecycle::LifecycleHook::clone(&self) -> Self
-impl core::fmt::Debug for noctis::lifecycle::LifecycleHook
-pub fn noctis::lifecycle::LifecycleHook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-#[non_exhaustive] pub struct noctis::lifecycle::ModuleToggled
-pub noctis::lifecycle::ModuleToggled::enabled: bool
-pub noctis::lifecycle::ModuleToggled::module: &'static str
-pub noctis::lifecycle::ModuleToggled::reset: bool
-pub noctis::lifecycle::ModuleToggled::scope: noctis::ModuleScope
-impl core::clone::Clone for noctis::lifecycle::ModuleToggled
-pub fn noctis::lifecycle::ModuleToggled::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ModuleToggled
-impl core::cmp::PartialEq for noctis::lifecycle::ModuleToggled
-pub fn noctis::lifecycle::ModuleToggled::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ModuleToggled
-pub fn noctis::lifecycle::ModuleToggled::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ModuleToggled
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ModuleToggled
-pub const noctis::lifecycle::ModuleToggled::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ModuleToggled
-pub const noctis::lifecycle::ModuleToggled::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::PublishCompleted
-pub noctis::lifecycle::PublishCompleted::clear: bool
-pub noctis::lifecycle::PublishCompleted::report: noctis::publish::PublishReport
-pub noctis::lifecycle::PublishCompleted::scope: noctis::publish::PublishScope
-impl core::clone::Clone for noctis::lifecycle::PublishCompleted
-pub fn noctis::lifecycle::PublishCompleted::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::PublishCompleted
-impl core::cmp::PartialEq for noctis::lifecycle::PublishCompleted
-pub fn noctis::lifecycle::PublishCompleted::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::PublishCompleted
-pub fn noctis::lifecycle::PublishCompleted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::PublishCompleted
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishCompleted
-pub const noctis::lifecycle::PublishCompleted::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishCompleted
-pub const noctis::lifecycle::PublishCompleted::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::PublishFailed
-pub noctis::lifecycle::PublishFailed::clear: bool
-pub noctis::lifecycle::PublishFailed::dry_run: bool
-pub noctis::lifecycle::PublishFailed::error: noctis::publish::PublishError
-pub noctis::lifecycle::PublishFailed::scope: noctis::publish::PublishScope
-impl core::clone::Clone for noctis::lifecycle::PublishFailed
-pub fn noctis::lifecycle::PublishFailed::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::PublishFailed
-impl core::cmp::PartialEq for noctis::lifecycle::PublishFailed
-pub fn noctis::lifecycle::PublishFailed::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::PublishFailed
-pub fn noctis::lifecycle::PublishFailed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::PublishFailed
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishFailed
-pub const noctis::lifecycle::PublishFailed::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::PublishFailed
-pub const noctis::lifecycle::PublishFailed::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::ShardDisconnected
-pub noctis::lifecycle::ShardDisconnected::close_code: core::option::Option<u16>
-pub noctis::lifecycle::ShardDisconnected::shard: u32
-impl core::clone::Clone for noctis::lifecycle::ShardDisconnected
-pub fn noctis::lifecycle::ShardDisconnected::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShardDisconnected
-impl core::cmp::PartialEq for noctis::lifecycle::ShardDisconnected
-pub fn noctis::lifecycle::ShardDisconnected::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShardDisconnected
-pub fn noctis::lifecycle::ShardDisconnected::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardDisconnected
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardDisconnected
-pub const noctis::lifecycle::ShardDisconnected::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardDisconnected
-pub const noctis::lifecycle::ShardDisconnected::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::ShardFatal
-pub noctis::lifecycle::ShardFatal::close_code: core::option::Option<u16>
-pub noctis::lifecycle::ShardFatal::shard: u32
-impl core::clone::Clone for noctis::lifecycle::ShardFatal
-pub fn noctis::lifecycle::ShardFatal::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShardFatal
-impl core::cmp::PartialEq for noctis::lifecycle::ShardFatal
-pub fn noctis::lifecycle::ShardFatal::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShardFatal
-pub fn noctis::lifecycle::ShardFatal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardFatal
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardFatal
-pub const noctis::lifecycle::ShardFatal::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardFatal
-pub const noctis::lifecycle::ShardFatal::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::ShardReady
-pub noctis::lifecycle::ShardReady::shard: u32
-impl core::clone::Clone for noctis::lifecycle::ShardReady
-pub fn noctis::lifecycle::ShardReady::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShardReady
-impl core::cmp::PartialEq for noctis::lifecycle::ShardReady
-pub fn noctis::lifecycle::ShardReady::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShardReady
-pub fn noctis::lifecycle::ShardReady::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardReady
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardReady
-pub const noctis::lifecycle::ShardReady::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardReady
-pub const noctis::lifecycle::ShardReady::NAME: &'static str
-#[non_exhaustive] pub struct noctis::lifecycle::ShardResumed
-pub noctis::lifecycle::ShardResumed::shard: u32
-impl core::clone::Clone for noctis::lifecycle::ShardResumed
-pub fn noctis::lifecycle::ShardResumed::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShardResumed
-impl core::cmp::PartialEq for noctis::lifecycle::ShardResumed
-pub fn noctis::lifecycle::ShardResumed::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShardResumed
-pub fn noctis::lifecycle::ShardResumed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShardResumed
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardResumed
-pub const noctis::lifecycle::ShardResumed::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShardResumed
-pub const noctis::lifecycle::ShardResumed::NAME: &'static str
-#[non_exhaustive] pub enum noctis::lifecycle::ShutdownReason
-pub noctis::lifecycle::ShutdownReason::AllShardsEnded
-pub noctis::lifecycle::ShutdownReason::Requested
-pub noctis::lifecycle::ShutdownReason::Signal
-pub noctis::lifecycle::ShutdownReason::StartupFailed
-impl noctis::lifecycle::ShutdownReason
-pub const fn noctis::lifecycle::ShutdownReason::as_str(self) -> &'static str
-impl core::clone::Clone for noctis::lifecycle::ShutdownReason
-pub fn noctis::lifecycle::ShutdownReason::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShutdownReason
-impl core::cmp::PartialEq for noctis::lifecycle::ShutdownReason
-pub fn noctis::lifecycle::ShutdownReason::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShutdownReason
-pub fn noctis::lifecycle::ShutdownReason::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for noctis::lifecycle::ShutdownReason
-pub fn noctis::lifecycle::ShutdownReason::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for noctis::lifecycle::ShutdownReason
-pub fn noctis::lifecycle::ShutdownReason::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for noctis::lifecycle::ShutdownReason
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShutdownReason
-#[non_exhaustive] pub struct noctis::lifecycle::ShutdownStarted
-pub noctis::lifecycle::ShutdownStarted::reason: noctis::lifecycle::ShutdownReason
-impl core::clone::Clone for noctis::lifecycle::ShutdownStarted
-pub fn noctis::lifecycle::ShutdownStarted::clone(&self) -> Self
-impl core::cmp::Eq for noctis::lifecycle::ShutdownStarted
-impl core::cmp::PartialEq for noctis::lifecycle::ShutdownStarted
-pub fn noctis::lifecycle::ShutdownStarted::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::lifecycle::ShutdownStarted
-pub fn noctis::lifecycle::ShutdownStarted::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::lifecycle::ShutdownStarted
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
-pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
-impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
-pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
+pub fn noctis::image::unstable::decode_template<T: noctis::image::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
 pub mod noctis::observe
 pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
 #[non_exhaustive] pub struct noctis::observe::MetricInfo
@@ -4299,14 +4114,6 @@ impl core::hash::Hash for noctis::ports::EncodeSettings
 pub fn noctis::ports::EncodeSettings::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ports::EncodeSettings
 impl core::marker::StructuralPartialEq for noctis::ports::EncodeSettings
-pub struct noctis::ports::ErasedView(_)
-impl noctis::ports::ErasedView
-pub fn noctis::ports::ErasedView::downcast_ref<T: core::any::Any>(&self) -> core::option::Option<&T>
-pub fn noctis::ports::ErasedView::new<T: core::any::Any + core::marker::Send + core::marker::Sync>(T) -> Self
-impl core::clone::Clone for noctis::ports::ErasedView
-pub fn noctis::ports::ErasedView::clone(&self) -> Self
-impl core::fmt::Debug for noctis::ports::ErasedView
-pub fn noctis::ports::ErasedView::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::ports::Format
 pub noctis::ports::Format::Jpeg
 pub noctis::ports::Format::Jpeg::quality: u8
@@ -4564,52 +4371,6 @@ impl core::fmt::Debug for noctis::ports::RenderError
 pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::ports::RenderError
 pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::ports::RenderJob
-pub noctis::ports::RenderJob::animation: core::option::Option<noctis::image::AnimationSpec>
-pub noctis::ports::RenderJob::data: bytes::bytes::Bytes
-pub noctis::ports::RenderJob::format: noctis::image::Format
-pub noctis::ports::RenderJob::size: noctis::image::Size
-pub noctis::ports::RenderJob::template_id: &'static str
-pub noctis::ports::RenderJob::template_version: u32
-pub noctis::ports::RenderJob::upload_budget: u64
-impl noctis::ports::RenderJob
-pub const noctis::ports::RenderJob::DEFAULT_UPLOAD_BUDGET: u64
-pub fn noctis::ports::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
-impl core::clone::Clone for noctis::ports::RenderJob
-pub fn noctis::ports::RenderJob::clone(&self) -> Self
-impl core::cmp::Eq for noctis::ports::RenderJob
-impl core::cmp::PartialEq for noctis::ports::RenderJob
-pub fn noctis::ports::RenderJob::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::ports::RenderJob
-pub fn noctis::ports::RenderJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::ports::RenderJob
-pub struct noctis::ports::RenderOutput
-pub noctis::ports::RenderOutput::bytes: bytes::bytes::Bytes
-pub noctis::ports::RenderOutput::digest: [u8; 32]
-pub noctis::ports::RenderOutput::format: noctis::image::OutputFormat
-pub noctis::ports::RenderOutput::settings_used: noctis::image::EncodeSettings
-impl core::clone::Clone for noctis::ports::RenderOutput
-pub fn noctis::ports::RenderOutput::clone(&self) -> Self
-impl core::cmp::Eq for noctis::ports::RenderOutput
-impl core::cmp::PartialEq for noctis::ports::RenderOutput
-pub fn noctis::ports::RenderOutput::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::ports::RenderOutput
-pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
-pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ports::Renderer::bind(&self, noctis::ports::RendererPorts)
-pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
-pub fn noctis::ports::Renderer::render(&self, noctis::image::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::RenderOutput, noctis::image::RenderError>>
-#[non_exhaustive] pub struct noctis::ports::RendererPorts
-pub noctis::ports::RendererPorts::asset_store: alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>
-pub noctis::ports::RendererPorts::render_cache: core::option::Option<alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>>
-impl noctis::ports::RendererPorts
-pub fn noctis::ports::RendererPorts::new(alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>) -> Self
-pub fn noctis::ports::RendererPorts::with_render_cache(self, alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>) -> Self
-impl core::clone::Clone for noctis::ports::RendererPorts
-pub fn noctis::ports::RendererPorts::clone(&self) -> Self
-impl core::fmt::Debug for noctis::ports::RendererPorts
-pub fn noctis::ports::RendererPorts::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
@@ -4663,17 +4424,7 @@ pub const noctis::ports::Template::FORMAT: noctis::image::Format
 pub const noctis::ports::Template::ID: &'static str
 pub const noctis::ports::Template::SIZE: noctis::image::Size
 pub const noctis::ports::Template::VERSION: u32
-pub fn noctis::ports::Template::view() -> noctis::ports::ErasedView
-pub struct noctis::ports::TemplateDescriptor
-pub noctis::ports::TemplateDescriptor::id: &'static str
-pub noctis::ports::TemplateDescriptor::version: u32
-pub noctis::ports::TemplateDescriptor::view: noctis::ports::ErasedView
-impl noctis::ports::TemplateDescriptor
-pub fn noctis::ports::TemplateDescriptor::of<T: noctis::image::Template>() -> Self
-impl core::clone::Clone for noctis::ports::TemplateDescriptor
-pub fn noctis::ports::TemplateDescriptor::clone(&self) -> Self
-impl core::fmt::Debug for noctis::ports::TemplateDescriptor
-pub fn noctis::ports::TemplateDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn noctis::ports::Template::view() -> noctis::image::unstable::ErasedView
 #[non_exhaustive] pub enum noctis::ports::ValueError
 pub noctis::ports::ValueError::Empty
 pub noctis::ports::ValueError::Malformed
@@ -4692,7 +4443,6 @@ impl core::fmt::Display for noctis::ports::ValueError
 pub fn noctis::ports::ValueError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::ports::ValueError
 impl core::marker::StructuralPartialEq for noctis::ports::ValueError
-pub fn noctis::ports::decode_template<T: noctis::image::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
 pub fn noctis::ports::decode_value<T: serde_core::de::DeserializeOwned>(u8, &[u8]) -> core::result::Result<core::option::Option<T>, noctis::ports::ValueError>
 pub fn noctis::ports::encode_value<T: serde_core::ser::Serialize + ?core::marker::Sized>(u8, &T) -> core::result::Result<bytes::bytes::Bytes, noctis::ports::ValueError>
 pub mod noctis::ports::memory
@@ -5068,7 +4818,7 @@ pub fn noctis::prelude::App::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
-pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
+pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::image::unstable::Renderer>>
 pub fn noctis::prelude::App::resume_sessions(&self) -> bool
 pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
@@ -5123,7 +4873,7 @@ pub fn noctis::prelude::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
-pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::renderer<R: noctis::image::unstable::Renderer>(&mut self, R) -> &mut Self
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::prelude::AppBuilder::resume_sessions(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
@@ -5345,10 +5095,9 @@ pub noctis::prelude::ErrorOrigin::Autocomplete
 pub noctis::prelude::ErrorOrigin::Command
 pub noctis::prelude::ErrorOrigin::Component
 pub noctis::prelude::ErrorOrigin::Event
-pub noctis::prelude::ErrorOrigin::Hook
 pub noctis::prelude::ErrorOrigin::Render
 impl noctis::prelude::ErrorOrigin
-pub const noctis::prelude::ErrorOrigin::ALL: [noctis::prelude::ErrorOrigin; 6]
+pub const noctis::prelude::ErrorOrigin::ALL: [noctis::prelude::ErrorOrigin; 5]
 pub const fn noctis::prelude::ErrorOrigin::as_str(self) -> &'static str
 impl core::clone::Clone for noctis::prelude::ErrorOrigin
 pub fn noctis::prelude::ErrorOrigin::clone(&self) -> Self
@@ -5456,37 +5205,6 @@ pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::from(E) -> Self
 pub type noctis::prelude::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
-pub proc macro noctis::prelude::#[derive(Hook)]
-pub struct noctis::prelude::HookCtx(_)
-impl noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
-pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
-pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
-pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
-pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
-pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
-pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
-impl core::clone::Clone for noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::prelude::HookCtx(_)
-impl noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
-pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
-pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
-pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
-pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
-pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
-pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
-impl core::clone::Clone for noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::prelude::HookCtx
-pub fn noctis::prelude::HookCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::InputOverrides
 pub noctis::prelude::InputOverrides::description: core::option::Option<noctis::prelude::Text>
 pub noctis::prelude::InputOverrides::label: core::option::Option<noctis::prelude::Text>
@@ -7444,7 +7162,7 @@ pub fn noctis::testkit::TestApp::command(&self, &str) -> noctis::testkit::Comman
 pub fn noctis::testkit::TestApp::guild(self, noctis::testkit::TestGuild) -> Self
 pub fn noctis::testkit::TestApp::http_fake(&self) -> &noctis::testkit::fake::FakeDiscordHttp
 pub fn noctis::testkit::TestApp::message_command(&self, &str) -> noctis::testkit::MenuRun<'_>
-pub fn noctis::testkit::TestApp::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
+pub fn noctis::testkit::TestApp::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::image::unstable::Renderer>>
 pub fn noctis::testkit::TestApp::select(&self, noctis::testkit::TestComponent) -> noctis::testkit::SelectRun<'_>
 pub async fn noctis::testkit::TestApp::stop(self) -> core::result::Result<(), noctis::testkit::TestError>
 pub fn noctis::testkit::TestApp::submit(&self, noctis::testkit::ModalForm) -> noctis::testkit::SubmitRun<'_>

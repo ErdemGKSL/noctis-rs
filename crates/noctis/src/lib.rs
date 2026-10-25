@@ -2137,11 +2137,14 @@ pub mod ports {
     //!   method returns.
     //! - [`encode_value`] and [`decode_value`]: typed values as postcard with
     //!   a leading schema byte; a schema mismatch reads as a miss.
-    //! - The render contract: [`Template`], [`ErasedView`],
-    //!   [`TemplateDescriptor`], [`RenderJob`], [`decode_template`], [`Size`],
+    //! - The stable half of the render contract: [`Template`], [`Size`],
     //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Frame`],
-    //!   [`OutputFormat`], [`RenderOutput`], [`EncodeSettings`],
-    //!   [`RenderError`] and the [`Renderer`] port.
+    //!   [`OutputFormat`], [`EncodeSettings`], [`RenderError`] and
+    //!   [`RenderCap`]. The renderer-facing items (`Renderer`,
+    //!   `RendererPorts`, `RenderJob`, `RenderOutput`, `TemplateDescriptor`,
+    //!   `ErasedView` and `decode_template`) live only in
+    //!   `noctis::image::unstable` (feature `image`, AD-2): semver does not
+    //!   cover them, and a replacement Renderer needs only them.
     //! - [`memory`]: the bounded in-memory default of every port.
     //! - [`Namespaced`]: core's wrapper around each byte store, prefixing
     //!   every key with `<app_id>:<port>:` (port segments `ref`, `session`,
@@ -2172,11 +2175,10 @@ pub mod ports {
 
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, CacheStore, DiscordCache,
-        EncodeSettings, ErasedView, Format, Frame, GuildAccessList, IdentifyQueue, Lease,
-        LocaleSource, ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore,
-        RenderCache, RenderCap, RenderError, RenderJob, RenderOutput, Renderer, RendererPorts,
-        SessionStore, Size, Template, TemplateDescriptor, ValueError, decode_template,
-        decode_value, encode_value,
+        EncodeSettings, Format, Frame, GuildAccessList, IdentifyQueue, Lease, LocaleSource,
+        ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore, RenderCache,
+        RenderCap, RenderError, SessionStore, Size, Template, ValueError, decode_value,
+        encode_value,
     };
 
     pub use noctis_core::{IntoPort, Namespaced, NamespacedPort, Shared};
@@ -2282,7 +2284,8 @@ pub mod image {
     //!   [`ThemeErrorKind`], `[TW-02]`); [`theme!`] embeds it. Its tokens are
     //!   read through [`ThemeTokens`] by [`ThemeNamespace`].
     //! - The contract: [`Template`], [`Frame`], [`Size`], [`Format`],
-    //!   [`AnimationSpec`], [`AnimatedFormat`] and [`TemplateDescriptor`].
+    //!   [`AnimationSpec`], [`AnimatedFormat`], [`OutputFormat`],
+    //!   [`EncodeSettings`], [`RenderError`] and [`RenderCap`].
     //! - The class errors: [`InvalidClasses`], [`UnknownClass`] and
     //!   [`Suggestion`].
     //! - Rendering: [`AppBuilderImageExt`] (`.theme(..)`, `.image(..)`,
@@ -2369,6 +2372,14 @@ pub mod image {
     //!   named by the key (`<first 16 hex>.<ext>`), except a degraded
     //!   (uncached) render, which is named by its bytes. The view's code is not in
     //!   the key: bump the Template's `version` when its look changes.
+    //! - Replacing the Renderer (FR-37): `AppBuilder::renderer(r)` takes any
+    //!   [`unstable::Renderer`] instead of `.theme(..)`/`.image(..)` (both
+    //!   on one App are `BuildViolation::DuplicateRenderer`); Templates,
+    //!   views and handlers do not change. `ctx.render` checks every
+    //!   Renderer's output (empty is `RenderError::Failed`, longer than
+    //!   `RenderJob::upload_budget` is `RenderError::OverBudget`) and names
+    //!   the attachment by its digest; [`unstable::RenderJob::key`] gives a
+    //!   custom Renderer a deterministic render key.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2431,20 +2442,66 @@ pub mod image {
     pub use noctis_image::{ImageSrc, RemoteConfig, RemoteImage, RemoteUrlError};
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderCap,
-        RenderError, RenderJob, RenderOutput, Size, Template, TemplateDescriptor,
+        RenderError, Size, Template,
     };
 
     pub mod unstable {
-        //! Renderer-facing items. **Semver does not cover them**: they may
-        //! change in any release. Bots do not need them.
+        //! Renderer-facing items (AD-2). **Semver does not cover them**: they
+        //! may change in any release. Bots that render through `.theme(..)`/
+        //! `.image(..)` do not need them; a replacement Renderer needs only
+        //! them (plus the stable [`Template`](super::Template),
+        //! [`OutputFormat`](super::OutputFormat),
+        //! [`EncodeSettings`](super::EncodeSettings),
+        //! [`RenderError`](super::RenderError) and
+        //! [`BoxFuture`](crate::ports::BoxFuture)).
         //!
-        //! - [`ViewFn`]: what a Template's
-        //!   [`ErasedView`](crate::ports::ErasedView) holds; it decodes the
-        //!   Template value and calls its view.
+        //! - The Renderer port: [`Renderer`] (`render`, `register`, `bind`;
+        //!   implemented for `Arc<R>`), set with `AppBuilder::renderer(r)`,
+        //!   and [`RendererPorts`], the App's namespaced `AssetStore` and
+        //!   `RenderCache` handed to `bind`.
+        //! - What it gets and returns: [`RenderJob`] (with
+        //!   [`RenderJob::key`], the deterministic render key over every job
+        //!   field, the Noctis version and the renderer's identity),
+        //!   [`RenderOutput`] (its `digest` names the attachment),
+        //!   [`TemplateDescriptor`], [`ErasedView`] and [`decode_template`]
+        //!   (reads the Template value back from `RenderJob::data`).
+        //! - [`ViewFn`]: what a Template's [`ErasedView`] holds; it decodes
+        //!   the Template value and calls its view.
         //! - [`ClassCheck`] and [`ClassCheckMode`]: the runtime half of
         //!   `[TW-01]`, which validates `Classes::dynamic` strings.
+        //!
+        //! ```
+        //! use noctis::image::unstable::{Renderer, RenderJob, RenderOutput, TemplateDescriptor};
+        //! use noctis::image::{EncodeSettings, OutputFormat, RenderError};
+        //! use noctis::ports::BoxFuture;
+        //!
+        //! struct Fixed(bytes::Bytes);
+        //!
+        //! impl Renderer for Fixed {
+        //!     fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        //!         let out = RenderOutput {
+        //!             bytes: self.0.clone(),
+        //!             digest: job.key(b"fixed=1"),
+        //!             format: OutputFormat::Png,
+        //!             settings_used: EncodeSettings { size: job.size, quality: None, fps: None, frames: 1 },
+        //!         };
+        //!         Box::pin(async move { Ok(out) })
+        //!     }
+        //!
+        //!     fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        //!         Ok(())
+        //!     }
+        //! }
+        //!
+        //! let mut builder = noctis::App::builder();
+        //! builder.renderer(Fixed(bytes::Bytes::from_static(b"\x89PNG")));
+        //! ```
 
         pub use noctis_image::{ClassCheck, ClassCheckMode, ViewFn};
+        pub use noctis_ports::{
+            ErasedView, RenderJob, RenderOutput, Renderer, RendererPorts, TemplateDescriptor,
+            decode_template,
+        };
     }
 }
 

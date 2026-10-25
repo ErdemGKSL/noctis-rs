@@ -15,12 +15,13 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use bytes::Bytes;
+use noctis::image::unstable::{ErasedView, RenderJob};
 use noctis::image::{
     AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Font, Format, Frame, ImageConfig,
     ImagePlugin, Node, RenderCap, RenderCaps, RenderError, Style, Template, TemplateView, Theme,
     ThemeErrorKind, div, theme, view,
 };
-use noctis::ports::{EncodeSettings, ErasedView, OutputFormat, RenderJob, Size, ValueError};
+use noctis::ports::{EncodeSettings, OutputFormat, Size, ValueError};
 use noctis::{App, AppBuilder, BuildError, BuildViolation, Module, Runtime};
 use serde::{Deserialize, Serialize};
 
@@ -282,7 +283,7 @@ fn plugin_messages(err: &BuildError) -> Vec<String> {
 async fn render<T: Template>(
     app: &App,
     template: &T,
-) -> Result<noctis::ports::RenderOutput, RenderError> {
+) -> Result<noctis::image::unstable::RenderOutput, RenderError> {
     app.renderer()
         .expect("a Renderer")
         .render(RenderJob::of(template).unwrap())

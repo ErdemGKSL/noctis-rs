@@ -1180,7 +1180,7 @@ struct RendererPlugin(Arc<AtomicUsize>);
 impl Plugin for RendererPlugin {
     fn install(&self, app: &mut AppBuilder) {
         self.0.fetch_add(1, Ordering::SeqCst);
-        app.renderer(Arc::new(FakeRenderer));
+        app.renderer(FakeRenderer);
     }
 }
 
@@ -1193,6 +1193,83 @@ async fn plugin_installs_renderer_once() {
         .unwrap();
     assert!(app.has_renderer());
     assert_eq!(installs.load(Ordering::SeqCst), 1);
+}
+
+/// A Renderer counting its `register` and `bind` calls.
+#[derive(Default)]
+struct Counting {
+    registers: AtomicUsize,
+    binds: AtomicUsize,
+}
+
+impl Renderer for Counting {
+    fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        Box::pin(async { Err(RenderError::QueueFull) })
+    }
+
+    fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        self.registers.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn bind(&self, _: RendererPorts) {
+        self.binds.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn fr_37_a_second_renderer_is_duplicate_renderer() {
+    let first = Arc::new(Counting::default());
+    let err = App::builder()
+        .renderer(Arc::clone(&first))
+        .renderer(FakeRenderer)
+        .build()
+        .unwrap_err();
+    let expected = BuildViolation::DuplicateRenderer {
+        first: std::any::type_name::<Arc<Counting>>(),
+        second: std::any::type_name::<FakeRenderer>(),
+    };
+    assert_eq!(err.violations(), std::slice::from_ref(&expected));
+    assert_eq!(
+        expected.to_string(),
+        format!(
+            "a Renderer is set twice: `{}`, then `{}`: an App has one Renderer; keep \
+             `.renderer(..)` or the image plugin (`.theme(..)`/`.image(..)`), not both",
+            std::any::type_name::<Arc<Counting>>(),
+            std::any::type_name::<FakeRenderer>()
+        )
+    );
+    // The first Renderer is the kept one: it got the Templates.
+    assert_eq!(first.registers.load(Ordering::SeqCst), 1);
+
+    // A plugin's Renderer after `.renderer(..)` is a duplicate too.
+    let installs = Arc::new(AtomicUsize::new(0));
+    let err = App::builder()
+        .renderer(Counting::default())
+        .plugin(RendererPlugin(Arc::clone(&installs)))
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::DuplicateRenderer {
+            first: std::any::type_name::<Counting>(),
+            second: std::any::type_name::<FakeRenderer>(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn fr_37_arc_renderers_reach_the_inner_one_once() {
+    let inner = Arc::new(Counting::default());
+    let app = App::builder().renderer(Arc::clone(&inner)).build().unwrap();
+    assert!(app.has_renderer());
+    assert_eq!(inner.registers.load(Ordering::SeqCst), 1);
+    assert_eq!(inner.binds.load(Ordering::SeqCst), 1);
+    let erased = Arc::clone(&inner) as Arc<dyn Renderer>;
+    let app = App::builder().renderer(erased).build().unwrap();
+    assert!(app.has_renderer());
+    assert_eq!(inner.registers.load(Ordering::SeqCst), 2);
+    assert_eq!(inner.binds.load(Ordering::SeqCst), 2);
 }
 
 /// A Template for the register tests.

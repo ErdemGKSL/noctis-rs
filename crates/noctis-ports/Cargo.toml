@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+blake3.workspace = true
 bytes.workspace = true
 moka = { workspace = true, features = ["sync"] }
 postcard = { workspace = true, features = ["alloc"] }

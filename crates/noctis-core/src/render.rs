@@ -75,7 +75,9 @@ pub struct RenderReport {
 ///
 /// Without an App or a Renderer it fails with [`RenderError::NoRenderer`]
 /// (no metric, no report). An animation over its format's fps cap fails
-/// with [`RenderError::OverCap`] before the Renderer is called. Every other
+/// with [`RenderError::OverCap`] before the Renderer is called; an empty
+/// output fails with [`RenderError::Failed`] and one over the job's Upload
+/// Budget with [`RenderError::OverBudget`]. Every other
 /// failure is a [`RenderError`] inside the returned [`HandlerError`]; all
 /// of them except `QueueFull` are reported to the [`ErrorOrigin::Render`]
 /// sink.
@@ -117,18 +119,35 @@ pub(crate) async fn render<T: Template>(
     .await
 }
 
-/// Renders `job` and wraps the output, measuring the render.
+/// Renders `job`, checks the output against the job's Upload Budget and
+/// wraps it, measuring the accepted render.
+///
+/// Every Renderer's output is checked here, so a custom Renderer cannot hand
+/// the Responder an empty or over-budget file (ATT-01): an empty output is
+/// [`RenderError::Failed`], one longer than [`RenderJob::upload_budget`] is
+/// [`RenderError::OverBudget`].
 async fn render_job(
     app: &Arc<str>,
     renderer: &dyn Renderer,
     template: &'static str,
     job: RenderJob,
 ) -> Result<RenderReport, RenderError> {
+    let budget = job.upload_budget;
     let started = Instant::now();
     let output = {
         let _in_flight = InFlight::enter(app);
         renderer.render(job).await?
     };
+    if output.bytes.is_empty() {
+        return Err(RenderError::failed("the Renderer returned no bytes"));
+    }
+    let len = u64::try_from(output.bytes.len()).unwrap_or(u64::MAX);
+    if len > budget {
+        return Err(RenderError::OverBudget {
+            budget,
+            smallest: len,
+        });
+    }
     metrics::histogram!(
         "noctis_render_duration_seconds",
         "app" => Arc::clone(app),

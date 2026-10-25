@@ -125,6 +125,63 @@ impl RenderJob {
             upload_budget: Self::DEFAULT_UPLOAD_BUDGET,
         })
     }
+
+    /// The deterministic render key of this job as drawn by `renderer`: a
+    /// blake3 hash that covers every job field, the Noctis version and the
+    /// renderer's own identity.
+    ///
+    /// A custom [`Renderer`] passes its name, version and asset versions as
+    /// `renderer` (for example `b"my-renderer=2;fonts=1"`), returns the key
+    /// as [`RenderOutput::digest`], and may use it as its
+    /// [`RenderCache`] key (the cache is bound through [`Renderer::bind`]).
+    /// Equal keys name equal attachments. The takumi Renderer keeps its own
+    /// render key (AD-15).
+    ///
+    /// Every variable-length field is hashed as its `u64` little-endian
+    /// length plus its bytes, and every integer is fixed-width little-endian,
+    /// so no two distinct inputs share a framing.
+    #[must_use]
+    pub fn key(&self, renderer: &[u8]) -> [u8; 32] {
+        fn bytes(hasher: &mut blake3::Hasher, value: &[u8]) {
+            hasher.update(&(value.len() as u64).to_le_bytes());
+            hasher.update(value);
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        bytes(&mut hasher, b"noctis.render.job.v1");
+        bytes(&mut hasher, env!("CARGO_PKG_VERSION").as_bytes());
+        bytes(&mut hasher, renderer);
+        bytes(&mut hasher, self.template_id.as_bytes());
+        hasher.update(&self.template_version.to_le_bytes());
+        bytes(&mut hasher, &self.data);
+        hasher.update(&self.size.width().to_le_bytes());
+        hasher.update(&self.size.height().to_le_bytes());
+        let (tag, quality) = match self.format {
+            Format::Png => (0u8, 0u8),
+            Format::Jpeg { quality } => (1, quality),
+            Format::Webp { quality } => (2, quality),
+            Format::WebpLossless => (3, 0),
+        };
+        hasher.update(&[tag, quality]);
+        match self.animation {
+            None => {
+                hasher.update(&[0]);
+            }
+            Some(spec) => {
+                hasher.update(&[1]);
+                hasher.update(&spec.duration.as_nanos().to_le_bytes());
+                hasher.update(&spec.fps.to_le_bytes());
+                let (tag, quality) = match spec.format {
+                    AnimatedFormat::Webp { quality } => (0u8, quality),
+                    AnimatedFormat::Gif => (1, 0),
+                    AnimatedFormat::Apng => (2, 0),
+                };
+                hasher.update(&[tag, quality]);
+            }
+        }
+        hasher.update(&self.upload_budget.to_le_bytes());
+        *hasher.finalize().as_bytes()
+    }
 }
 
 /// Reads a Template value back from [`RenderJob::data`].
@@ -350,7 +407,7 @@ pub struct RenderOutput {
     /// The render's digest, which names the attachment; the takumi
     /// Renderer uses its render cache key, except for a degraded
     /// (uncached) render, which is named by the blake3 hash of its bytes
-    /// (AD-15, AD-22).
+    /// (AD-15, AD-22). A custom Renderer uses [`RenderJob::key`].
     pub digest: [u8; 32],
     /// The encoded format.
     pub format: OutputFormat,
@@ -473,8 +530,8 @@ pub enum RenderError {
     Failed(#[source] Box<dyn Error + Send + Sync>),
     /// The App has no [`Renderer`]; only core returns it.
     #[error(
-        "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`) on the \
-         AppBuilder"
+        "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`), or \
+         `.renderer(..)`, on the AppBuilder"
     )]
     NoRenderer,
     /// The Template's view panicked; the render pool survives.
@@ -590,6 +647,22 @@ pub trait Renderer: Send + Sync + 'static {
     /// when the App builds. The default ignores them.
     fn bind(&self, ports: RendererPorts) {
         let _ = ports;
+    }
+}
+
+/// An `Arc` of a Renderer is that Renderer: `Arc<dyn Renderer>` and
+/// `Arc<R>` go wherever a Renderer does.
+impl<R: Renderer + ?Sized> Renderer for Arc<R> {
+    fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        (**self).render(job)
+    }
+
+    fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        (**self).register(templates)
+    }
+
+    fn bind(&self, ports: RendererPorts) {
+        (**self).bind(ports);
     }
 }
 
@@ -761,8 +834,8 @@ mod tests {
     fn render_error_no_renderer_and_panicked() {
         assert_eq!(
             RenderError::NoRenderer.to_string(),
-            "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`) on \
-             the AppBuilder"
+            "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`), or \
+             `.renderer(..)`, on the AppBuilder"
         );
         let panicked = RenderError::Panicked {
             message: "boom".to_owned(),
@@ -953,5 +1026,175 @@ mod tests {
         assert!(ports.render_cache.is_none());
         let ports = ports.with_render_cache(Arc::new(crate::memory::MemoryRenderCache::new()));
         assert!(ports.render_cache.is_some());
+    }
+    fn base_job() -> RenderJob {
+        RenderJob {
+            template_id: "card",
+            template_version: 1,
+            data: Bytes::from_static(b"\x01\x02"),
+            size: Size::new(64, 32),
+            format: Format::Png,
+            animation: None,
+            upload_budget: 1000,
+        }
+    }
+
+    fn hex(digest: [u8; 32]) -> String {
+        use std::fmt::Write as _;
+        digest.iter().fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+    }
+
+    #[test]
+    fn fr_37_key_is_deterministic() {
+        assert_eq!(base_job().key(b"fixed=1"), base_job().key(b"fixed=1"));
+        assert_eq!(base_job().clone().key(b""), base_job().key(b""));
+    }
+
+    #[test]
+    fn fr_37_key_covers_every_field() {
+        let anim = AnimationSpec::new(
+            Duration::from_secs(1),
+            10,
+            AnimatedFormat::Webp { quality: 80 },
+        );
+        let with = |f: fn(&mut RenderJob)| {
+            let mut job = base_job();
+            f(&mut job);
+            job
+        };
+        let animated = |spec: AnimationSpec| {
+            let mut job = base_job();
+            job.animation = Some(spec);
+            job.key(b"fixed=1")
+        };
+        let base = base_job().key(b"fixed=1");
+        let keys = [
+            base,
+            base_job().key(b"fixed=2"),
+            with(|j| j.template_id = "cards").key(b"fixed=1"),
+            with(|j| j.template_version = 2).key(b"fixed=1"),
+            with(|j| j.data = Bytes::from_static(b"\x01\x03")).key(b"fixed=1"),
+            with(|j| j.size = Size::new(65, 32)).key(b"fixed=1"),
+            with(|j| j.size = Size::new(64, 33)).key(b"fixed=1"),
+            with(|j| j.format = Format::Jpeg { quality: 80 }).key(b"fixed=1"),
+            with(|j| j.format = Format::Jpeg { quality: 81 }).key(b"fixed=1"),
+            with(|j| j.format = Format::Webp { quality: 80 }).key(b"fixed=1"),
+            with(|j| j.format = Format::WebpLossless).key(b"fixed=1"),
+            animated(anim),
+            animated(AnimationSpec {
+                duration: anim.duration + Duration::from_nanos(1),
+                ..anim
+            }),
+            animated(AnimationSpec { fps: 11, ..anim }),
+            animated(AnimationSpec {
+                format: AnimatedFormat::Webp { quality: 81 },
+                ..anim
+            }),
+            animated(AnimationSpec {
+                format: AnimatedFormat::Gif,
+                ..anim
+            }),
+            animated(AnimationSpec {
+                format: AnimatedFormat::Apng,
+                ..anim
+            }),
+            with(|j| j.upload_budget = 1001).key(b"fixed=1"),
+        ];
+        let distinct: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            keys.len(),
+            "every changed field changes the key"
+        );
+    }
+
+    #[test]
+    fn fr_37_key_framing_is_unambiguous() {
+        let with_id = |id| RenderJob {
+            template_id: id,
+            ..base_job()
+        };
+        assert_ne!(with_id("c").key(b"ab"), with_id("bc").key(b"a"));
+        let empty = RenderJob {
+            data: Bytes::new(),
+            ..base_job()
+        };
+        let zero = RenderJob {
+            data: Bytes::from_static(&[0]),
+            ..base_job()
+        };
+        assert_ne!(empty.key(b"r"), zero.key(b"r"));
+        assert_ne!(base_job().key(b""), base_job().key(&[0]));
+        assert_ne!(base_job().key(b""), base_job().key(b"fixed=1"));
+    }
+
+    #[test]
+    fn fr_37_key_golden_unicode() {
+        let job = RenderJob {
+            template_id: "kart.ş",
+            template_version: 7,
+            data: Bytes::from("😀é".as_bytes()),
+            size: Size::new(934, 282),
+            format: Format::Webp { quality: 90 },
+            animation: Some(AnimationSpec::new(
+                Duration::from_millis(1500),
+                24,
+                AnimatedFormat::Gif,
+            )),
+            upload_budget: RenderJob::DEFAULT_UPLOAD_BUDGET,
+        };
+        assert_eq!(
+            (env!("CARGO_PKG_VERSION"), hex(job.key("uzak=1".as_bytes()))),
+            (
+                "0.1.0",
+                "6d2ea91e73083d0c7ecd84e93e6943d9df50a7919a99d20907dcc677fe032242".to_owned()
+            ),
+            "the golden key pins the Noctis version; re-pin it on a version bump"
+        );
+    }
+
+    #[test]
+    fn fr_37_arc_forwards_every_method() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Counting {
+            render: AtomicUsize,
+            register: AtomicUsize,
+            bind: AtomicUsize,
+        }
+        impl Renderer for Counting {
+            fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+                self.render.fetch_add(1, Ordering::Relaxed);
+                Box::pin(async { Err(RenderError::QueueFull) })
+            }
+            fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+                self.register.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+            fn bind(&self, _: RendererPorts) {
+                self.bind.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        fn drive<R: Renderer>(renderer: &R) {
+            drop(renderer.render(base_job()));
+            renderer.register(&[]).unwrap();
+            renderer.bind(RendererPorts::new(Arc::new(
+                crate::memory::MemoryAssetStore::new(),
+            )));
+        }
+
+        let inner = Arc::new(Counting::default());
+        let erased: Arc<dyn Renderer> = Arc::clone(&inner) as Arc<dyn Renderer>;
+        let outer: Arc<Arc<dyn Renderer>> = Arc::new(erased);
+        drive(&outer);
+        drive(&inner);
+        assert_eq!(inner.render.load(Ordering::Relaxed), 2);
+        assert_eq!(inner.register.load(Ordering::Relaxed), 2);
+        assert_eq!(inner.bind.load(Ordering::Relaxed), 2);
     }
 }

@@ -21,7 +21,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | `AssetStore` | fetched remote images (avatars, icons, emoji) | `get`, `put` | byte-bounded memory | `.asset_store(..)` |
 | `LocaleSource` | runtime overlays of content strings, loaded once at startup (one `load` per locale with a file, content keys only; a failure or a rejected pair stops startup with `Error::LocaleOverlay`; see i18n §8) | `load(locale)` | none | `.locale_source(..)` |
 | `GuildAccessList` | per-App guild allow/deny lists (white-label), asked at pipeline stage 3 (`app-and-sharding.md` §10) | `allows(guild)` | allow all (`GuildAccess` is the ready allow/deny list) | `.guild_access(..)` (never namespaced) |
-| `Renderer` (driven port, not a store) | turns a `RenderJob` into `RenderOutput` | `render(job)` | `noctis-image` local pool | `.renderer(..)` |
+| `Renderer` (driven port, not a store; `noctis::image::unstable`, outside semver, §2b) | turns a `RenderJob` into `RenderOutput` | `render(job)`, `register`, `bind` | the takumi Renderer from `.theme(..)`/`.image(..)` | `.renderer(..)` (never together with `.theme`/`.image`) |
 
 ### 1.1 The in-memory defaults (`noctis::ports::memory`)
 
@@ -394,9 +394,99 @@ changes incompatibly; old entries then read as misses.
 
 ## 2b. Render contract (`Renderer`)
 
-The seam between core and the image renderer, in `noctis::ports` with no image
-dependency. You normally write Templates with the image API (Epic 10, [planned]);
-implement `Renderer` only to replace the renderer.
+The seam between core and the image renderer (FR-37). You normally write Templates with
+the image API (`images.md`) and let `.theme(..)`/`.image(..)` install the takumi
+Renderer; implement `Renderer` only to replace it (a remote render service, or a test
+double that answers fixed bytes).
+
+**Unstable paths.** The renderer-facing items live **only** in
+`noctis::image::unstable` (feature `image`): `Renderer`, `RendererPorts`, `RenderJob`,
+`RenderOutput`, `TemplateDescriptor`, `ErasedView` and `decode_template`. **Semver does
+not cover them**: they may change in any release, so pin the Noctis version when you
+ship a custom Renderer. A replacement Renderer needs only them plus the stable
+`Template`, `Size`, `Format`, `AnimationSpec`, `AnimatedFormat`, `Frame`,
+`OutputFormat`, `EncodeSettings`, `RenderError`, `RenderCap` (in `noctis::image` and
+`noctis::ports`) and `noctis::ports::{BoxFuture, RenderCache, AssetStore}`.
+
+**Installing it.** `AppBuilder::renderer<R: Renderer>(r)` takes any Renderer by value,
+also `Arc<R>` or `Arc<dyn Renderer>` (`Renderer` is implemented for `Arc<R>`, forwarding
+every method). An App has **one** Renderer: a second `.renderer(..)`, or `.renderer(..)`
+together with the image plugin (`.theme(..)`/`.image(..)`), fails `build()` with
+`BuildViolation::DuplicateRenderer { first, second }` (both type names; the first is
+kept): "a Renderer is set twice: `{first}`, then `{second}`: an App has one Renderer;
+keep `.renderer(..)` or the image plugin (`.theme(..)`/`.image(..)`), not both". Modules,
+Templates, views and handlers do not change: `ctx.render(card)` renders through whichever
+Renderer the App has. `register` gets every registered Template at `build()` (an error is
+`BuildViolation::TemplateRejected`), and `bind` gets the App's namespaced ports once.
+
+**What core checks.** `ctx.render` sets `job.upload_budget` to what this interaction's
+upload accepts (`attachment_size_limit`, else `Limits::attachment_bytes`, 20 MiB), then
+checks **every** Renderer's output before it builds the attachment (ATT-01):
+- empty `bytes`: `RenderError::Failed` (displays "render failed", source "the Renderer
+  returned no bytes");
+- more than `job.upload_budget` bytes: `RenderError::OverBudget { budget, smallest }`
+  (`smallest` = the output's length); exactly the budget is accepted.
+
+Both are reported to the `Render` Error Sink (no `noctis_render_rejected_total` reason)
+and no file is sent. A Renderer's own errors pass through unchanged (`QueueFull` is not
+reported, the rest are). An accepted output is named by its digest:
+`<first 16 hex of digest>.<format.extension()>`, so equal digests are one file name.
+
+**The render key.** `RenderJob::key(&self, renderer: &[u8]) -> [u8; 32]` is a
+deterministic blake3 key over every job field (Template id, version, data, size, format
+and quality, animation, upload budget), the Noctis version and `renderer`, your
+Renderer's own identity: pass its name, version and asset versions
+(`b"my-renderer=2;fonts=3"`), and bump them when its output changes. Return the key as
+`RenderOutput::digest`, and use it as your `RenderCache` key if you cache (the App's
+cache arrives in `bind`). The takumi Renderer keeps its own key (`images.md` §9).
+
+```rust
+use noctis::bytes::Bytes;
+use noctis::image::unstable::{RenderJob, RenderOutput, Renderer, TemplateDescriptor};
+use noctis::image::{EncodeSettings, OutputFormat, RenderError};
+use noctis::ports::BoxFuture;
+
+/// Answers every render with fixed bytes: a handler-test double, and the skeleton of a
+/// remote Renderer (send `job` to the service in `render`, return its bytes).
+pub struct FixedRenderer {
+    bytes: Bytes,
+    format: OutputFormat,
+}
+
+impl FixedRenderer {
+    pub const ID: &'static [u8] = b"noctis-template.fixed=1";
+
+    pub fn new(bytes: Bytes, format: OutputFormat) -> Self {
+        Self { bytes, format }
+    }
+}
+
+impl Renderer for FixedRenderer {
+    fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        let output = RenderOutput {
+            bytes: self.bytes.clone(),
+            digest: job.key(Self::ID),
+            format: self.format,
+            settings_used: EncodeSettings { size: job.size, quality: None, fps: None, frames: 1 },
+        };
+        Box::pin(async move { Ok(output) })
+    }
+
+    fn register(&self, _templates: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        Ok(())
+    }
+}
+
+// Instead of `.theme(..)`/`.image(..)`; no font needed.
+let app = App::builder()
+    .module(modules::profile::module())
+    .renderer(FixedRenderer::new(Bytes::from_static(b"\x89PNG"), OutputFormat::Png))
+    .build()?;
+```
+
+The template ships this as `adapters::FixedRenderer` (`src/adapters/fixed_renderer.rs`).
+
+The contract's traits:
 
 ```rust
 pub trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {
@@ -431,7 +521,7 @@ replacement `Renderer` may cache its own way or ignore the render cache.
 | --- | --- |
 | `ErasedView` | `ErasedView::new(view)`, `downcast_ref::<T>() -> Option<&T>`; `Clone` shares the value; `Debug` hides it |
 | `TemplateDescriptor` | `{ id: &'static str, version: u32, view: ErasedView }`, `TemplateDescriptor::of::<T>()` |
-| `RenderJob` | `{ template_id: &'static str, template_version: u32, data: Bytes, size: Size, format: Format, animation: Option<AnimationSpec> }`; `RenderJob::of(&template) -> Result<RenderJob, ValueError>`; `data` is plain postcard, no schema byte |
+| `RenderJob` | `{ template_id: &'static str, template_version: u32, data: Bytes, size: Size, format: Format, animation: Option<AnimationSpec>, upload_budget: u64 }`; `RenderJob::of(&template) -> Result<RenderJob, ValueError>` (budget `RenderJob::DEFAULT_UPLOAD_BUDGET`, 20 MiB); `data` is plain postcard, no schema byte; `job.key(renderer: &[u8]) -> [u8; 32]`, the render key above |
 | `decode_template` | `decode_template::<T>(data: &[u8]) -> Result<T, ValueError>` (`Malformed`, `Trailing`) |
 | `Size` | `Size::new(width, height)` (const; a zero side panics, a compile error in a `const`), `Size::try_new(..) -> Option<Size>`, `width()`, `height()` |
 | `Format` | `Png`, `Jpeg { quality: u8 }`, `Webp { quality: u8 }`, `WebpLossless` |
@@ -439,9 +529,9 @@ replacement `Renderer` may cache its own way or ignore the render cache.
 | `AnimatedFormat` | `Webp { quality: u8 }`, `Gif`, `Apng` |
 | `Frame` | `{ index: u32, count: u32 }`; `Frame::STILL` = `{ index: 0, count: 1 }` |
 | `OutputFormat` | `Png`, `Jpeg`, `Webp`, `Gif`, `Apng`; `extension()` → `"png"`, `"jpg"`, `"webp"`, `"gif"`, `"png"` (Discord shows APNG as `.png`); `From<Format>`, `From<AnimatedFormat>` |
-| `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }`; `digest` names the attachment (the takumi Renderer uses its render cache key, except a degraded (uncached) render, which is named by its bytes) |
+| `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }`; `digest` names the attachment (a custom Renderer uses `RenderJob::key`; the takumi Renderer uses its render cache key, except a degraded (uncached) render, which is named by its bytes) |
 | `EncodeSettings` | `{ size: Size, quality: Option<u8>, fps: Option<u16>, frames: u32 }` |
-| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, …, `RemoteImage { id, image, reason }`, `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
+| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, `OverBudget { budget, smallest }`, `NoRenderer`, …, `RemoteImage { id, image, reason }`, `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
 
 The render enums are closed (exhaustive `match` is fine); the render structs have
 public fields, except `Size`, which validates.

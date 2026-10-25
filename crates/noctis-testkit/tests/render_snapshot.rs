@@ -84,7 +84,10 @@ async fn a_testapp_snapshots_through_its_renderer() -> Result<(), TestError> {
         .renderer(Arc::clone(&fake))
         .module(Module::new("cards").template::<FakeCard>());
     let app = TestApp::build(&mut builder).await?;
-    assert!(Arc::ptr_eq(app.renderer().unwrap(), &fake));
+    // `.renderer(..)` wraps the given `Arc` (Story 15.1): the App holds
+    // this Renderer, not a copy.
+    assert!(app.renderer().is_some());
+    assert_eq!(Arc::strong_count(&fake), 2);
     // The committed `tests/snapshots/fake_card.png` holds shade 120. One
     // channel off by 2 everywhere: within a channel delta of 2 only.
     assert_render_snapshot!(

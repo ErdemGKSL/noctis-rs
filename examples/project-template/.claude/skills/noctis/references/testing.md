@@ -342,6 +342,12 @@ async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
   compared frame by frame). Register the Template on the App
   (`Module::template::<T>()`); an unregistered one fails with the Renderer's
   `UnknownTemplate` error. Without a Renderer it fails with "no Renderer".
+- **Handler tests without takumi.** To test a rendering handler without fonts or the
+  render pool, build the `TestApp` with `.renderer(FixedRenderer::new(bytes, format))`
+  (the template's `adapters::FixedRenderer`, `adapters.md` §2b) instead of
+  `.theme(..)`/`.image(..)`: the same Module and handler upload exactly those bytes,
+  named `<first 16 hex of job.key(FixedRenderer::ID)>.<ext>`. Never set both (a
+  `BuildViolation::DuplicateRenderer`); pixel snapshots need the real Renderer.
 - **Files.** The snapshot is `tests/snapshots/<name>.png` of the calling crate. The first
   run writes it (creating the directory); **commit it**. On a mismatch, a size mismatch or
   an undecodable stored file the test panics and writes the actual render to

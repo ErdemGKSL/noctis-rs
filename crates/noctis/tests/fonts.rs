@@ -9,11 +9,11 @@
     reason = "tests panic with the failing case"
 )]
 
+use noctis::image::unstable::RenderJob;
 use noctis::image::{
     AppBuilderImageExt, Font, Frame, ImageConfig, Node, RenderError, StaticImage, Style, Template,
     TemplateView, theme, view,
 };
-use noctis::ports::RenderJob;
 use noctis::{App, BuildViolation, Module, Runtime};
 use serde::{Deserialize, Serialize};
 
@@ -164,7 +164,7 @@ async fn rgba<T: Template>(app: &App, template: &T) -> Vec<u8> {
 async fn try_render<T: Template>(
     app: &App,
     template: &T,
-) -> Result<noctis::ports::RenderOutput, RenderError> {
+) -> Result<noctis::image::unstable::RenderOutput, RenderError> {
     app.renderer()
         .expect("a Renderer")
         .render(RenderJob::of(template).unwrap())

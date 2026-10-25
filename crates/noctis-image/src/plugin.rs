@@ -1,7 +1,6 @@
 //! [`ImageConfig`], [`ImagePlugin`] and [`AppBuilderImageExt`]: how an App
 //! gets its Renderer.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use noctis_core::{AppBuilder, BuildViolation, Plugin};
@@ -377,7 +376,7 @@ impl Plugin for ImagePlugin {
         } else {
             ClassCheckMode::Warn
         };
-        app.renderer(Arc::new(TakumiRenderer::new(RendererConfig {
+        app.renderer(TakumiRenderer::new(RendererConfig {
             pool,
             fonts: registry,
             images,
@@ -388,7 +387,7 @@ impl Plugin for ImagePlugin {
             still_fallback,
             caps,
             remote,
-        })));
+        }));
     }
 }
 

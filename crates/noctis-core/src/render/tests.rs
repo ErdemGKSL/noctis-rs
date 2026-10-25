@@ -74,6 +74,12 @@ enum Answer {
     OverBudget,
     OverCap,
     SizeMismatch,
+    /// `n` bytes, digest `[0xAB; 32]`, PNG.
+    Sized(usize),
+    /// No bytes.
+    Empty,
+    /// These bytes, digest and format.
+    Output(&'static [u8], [u8; 32], OutputFormat),
 }
 
 /// A Renderer answering `answer` at once; it snapshots the metrics and
@@ -137,6 +143,24 @@ impl Renderer for Fake {
                     settings_used: fake_settings(job.size),
                 })
             }
+            Answer::Sized(len) => Ok(RenderOutput {
+                digest: [0xAB; 32],
+                bytes: Bytes::from(vec![0x42; len]),
+                format: OutputFormat::Png,
+                settings_used: fake_settings(job.size),
+            }),
+            Answer::Empty => Ok(RenderOutput {
+                digest: [0xAB; 32],
+                bytes: Bytes::new(),
+                format: OutputFormat::Png,
+                settings_used: fake_settings(job.size),
+            }),
+            Answer::Output(bytes, digest, format) => Ok(RenderOutput {
+                digest,
+                bytes: Bytes::from_static(bytes),
+                format,
+                settings_used: fake_settings(job.size),
+            }),
             Answer::QueueFull => Err(RenderError::QueueFull),
             Answer::Unknown => Err(RenderError::UnknownTemplate {
                 id: "card".to_owned(),
@@ -603,4 +627,131 @@ async fn a_size_mismatch_is_reported_without_a_rejected_reason() {
     let seen = sink.seen();
     assert_eq!(seen.len(), 1, "{seen:?}");
     assert_eq!(seen[0].kind, format!("error:{err}"));
+}
+
+/// Renders `card()` through a fake answering `answer` on an App whose
+/// detached Upload Budget is `budget`, with a local metrics recorder.
+async fn render_checked(
+    answer: Answer,
+    budget: usize,
+) -> (HandlerResult<RenderReport>, Vec<Sample>, Arc<Recording>) {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = metrics::set_default_local_recorder(&recorder);
+    let sink = Arc::new(Recording::default());
+    let mut limits = Limits::default();
+    limits.attachment_bytes = budget;
+    let app = app_with(Some(Fake::new(answer)), &sink, limits);
+    let result = render(&parts(&app), card(), RenderOptions::new()).await;
+    (result, snapshot_of(&snapshotter), sink)
+}
+
+fn has_metric(snapshot: &[Sample], name: &str) -> bool {
+    snapshot.iter().any(|(n, ..)| n == name)
+}
+
+#[tokio::test]
+async fn fr_37_att_01_output_at_the_budget_is_accepted() {
+    for len in [999, 1000] {
+        let (result, snapshot, sink) = render_checked(Answer::Sized(len), 1000).await;
+        let report = result.unwrap();
+        assert_eq!(report.attachment.bytes().len(), len);
+        assert!(has_metric(&snapshot, "noctis_render_duration_seconds"));
+        assert!(sink.seen().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn fr_37_att_01_output_over_the_budget_is_over_budget() {
+    let (result, snapshot, sink) = render_checked(Answer::Sized(1001), 1000).await;
+    let err = result.unwrap_err();
+    assert!(matches!(
+        render_error(&err),
+        RenderError::OverBudget {
+            budget: 1000,
+            smallest: 1001
+        }
+    ));
+    assert!(!has_metric(&snapshot, "noctis_render_rejected_total"));
+    assert!(!has_metric(&snapshot, "noctis_render_duration_seconds"));
+    let seen = sink.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].origin, ErrorOrigin::Render);
+    assert_eq!(seen[0].kind, format!("error:{err}"));
+}
+
+#[tokio::test]
+async fn fr_37_att_01_detached_budget_is_the_attachment_limit() {
+    let limit = Limits::default().attachment_bytes;
+    assert_eq!(limit, 20_971_520);
+    let (result, ..) = render_checked(Answer::Sized(limit), limit).await;
+    assert_eq!(result.unwrap().attachment.bytes().len(), limit);
+    let (result, ..) = render_checked(Answer::Sized(limit + 1), limit).await;
+    assert!(matches!(
+        render_error(&result.unwrap_err()),
+        RenderError::OverBudget {
+            budget: 20_971_520,
+            smallest: 20_971_521
+        }
+    ));
+}
+
+#[tokio::test]
+async fn fr_37_empty_output_fails_and_is_reported() {
+    use std::error::Error as _;
+
+    let (result, snapshot, sink) = render_checked(Answer::Empty, 1000).await;
+    let err = result.unwrap_err();
+    let error = render_error(&err);
+    assert!(matches!(error, RenderError::Failed(_)));
+    assert_eq!(error.to_string(), "render failed");
+    assert_eq!(
+        error.source().map(ToString::to_string).as_deref(),
+        Some("the Renderer returned no bytes")
+    );
+    assert!(!has_metric(&snapshot, "noctis_render_rejected_total"));
+    assert!(!has_metric(&snapshot, "noctis_render_duration_seconds"));
+    assert_eq!(sink.seen().len(), 1);
+}
+
+#[tokio::test]
+async fn fr_37_custom_output_is_named_by_its_digest_and_format() {
+    let name = |bytes, digest, format| async move {
+        let (result, ..) = render_checked(Answer::Output(bytes, digest, format), 1000).await;
+        result.unwrap().attachment.name().to_owned()
+    };
+    for (format, ext) in [
+        (OutputFormat::Png, "png"),
+        (OutputFormat::Jpeg, "jpg"),
+        (OutputFormat::Webp, "webp"),
+        (OutputFormat::Gif, "gif"),
+        (OutputFormat::Apng, "png"),
+    ] {
+        assert_eq!(
+            name(b"img", [0x01; 32], format).await,
+            format!("{}.{ext}", "01".repeat(8))
+        );
+    }
+    // Equal bytes, two digests: two names; equal digests, other bytes: one.
+    let a = name(b"same", [0x01; 32], OutputFormat::Png).await;
+    let b = name(b"same", [0x02; 32], OutputFormat::Png).await;
+    assert_ne!(a, b);
+    let c = name(b"other", [0x01; 32], OutputFormat::Png).await;
+    assert_eq!(a, c);
+}
+
+#[tokio::test]
+async fn fr_37_renderer_errors_pass_through_unchanged() {
+    let (result, _, sink) = render_checked(Answer::QueueFull, 1000).await;
+    assert!(matches!(
+        render_error(&result.unwrap_err()),
+        RenderError::QueueFull
+    ));
+    assert!(sink.seen().is_empty());
+    let (result, _, sink) = render_checked(Answer::Failed, 1000).await;
+    assert!(matches!(
+        render_error(&result.unwrap_err()),
+        RenderError::Failed(_)
+    ));
+    assert_eq!(sink.seen().len(), 1);
 }

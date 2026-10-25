@@ -16,12 +16,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
+use noctis::image::unstable::RenderJob;
 use noctis::image::{
     AppBuilderImageExt, Font, Frame, ImageConfig, Node, RemoteConfig, RemoteImage, RenderError,
     Template, TemplateView, theme, view,
 };
 use noctis::ports::memory::MemoryAssetStore;
-use noctis::ports::{AssetStore, BoxFuture, PortError, RenderJob};
+use noctis::ports::{AssetStore, BoxFuture, PortError};
 use noctis::{App, Module, Runtime};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

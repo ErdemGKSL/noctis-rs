@@ -1774,6 +1774,8 @@ pub struct AppBuilder {
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
+    /// The type name of the set Renderer, for [`BuildViolation::DuplicateRenderer`].
+    renderer_type: &'static str,
     /// The mounted Module trees, in mount order.
     modules: Vec<Module>,
     /// The raw `(capacity, overflow)` of the event lane; `build` checks it.
@@ -1904,6 +1906,7 @@ impl AppBuilder {
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
+            renderer_type: "",
             modules: Vec::new(),
             event_lane: (DEFAULT_EVENT_CAPACITY.get(), DEFAULT_OVERFLOW_CAPACITY),
             handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
@@ -2802,11 +2805,17 @@ impl AppBuilder {
         self
     }
 
-    /// Sets the [`Renderer`] (none by default; the image plugin sets it).
+    /// Sets the App's [`Renderer`] (none by default; the image plugin's
+    /// `.theme(..)`/`.image(..)` set the takumi one). `ctx.render` renders
+    /// every Template through it, checks its output against the job's
+    /// Upload Budget and names the attachment by its digest.
+    ///
+    /// Any `R: Renderer` goes in, including `Arc<R>` and
+    /// `Arc<dyn Renderer>`. An App has one Renderer: a second one (another
+    /// `.renderer(..)`, or the image plugin) is a
+    /// [`BuildViolation::DuplicateRenderer`], and the first is kept.
     ///
     /// ```
-    /// use std::sync::Arc;
-    ///
     /// use noctis_ports::{BoxFuture, RenderError, RenderJob, RenderOutput, Renderer, TemplateDescriptor};
     ///
     /// struct Fake;
@@ -2820,10 +2829,19 @@ impl AppBuilder {
     /// }
     ///
     /// let mut builder = noctis_core::App::builder();
-    /// builder.renderer(Arc::new(Fake));
+    /// builder.renderer(Fake);
     /// ```
-    pub fn renderer(&mut self, renderer: Arc<dyn Renderer>) -> &mut Self {
-        self.renderer = Some(renderer);
+    pub fn renderer<R: Renderer>(&mut self, renderer: R) -> &mut Self {
+        let second = std::any::type_name::<R>();
+        if self.renderer.is_some() {
+            self.violations.push(BuildViolation::DuplicateRenderer {
+                first: self.renderer_type,
+                second,
+            });
+        } else {
+            self.renderer = Some(Arc::new(renderer));
+            self.renderer_type = second;
+        }
         self
     }
 

@@ -1,5 +1,7 @@
 //! `ImageConfig` defaults and setters.
 
+use std::sync::Arc;
+
 use super::*;
 
 #[test]
