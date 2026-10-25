@@ -38,6 +38,12 @@ pub(crate) struct Row {
     pub(crate) id: String,
     /// `None` when the Enforcement cell could not be classified (already reported).
     pub(crate) class: Option<Class>,
+    /// The rendered Enforcement cell; empty when the row has none.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read only by the v1 rules audit unit test")
+    )]
+    pub(crate) enforcement: String,
 }
 
 /// The parsed catalog.
@@ -159,6 +165,11 @@ pub(crate) fn parse(markdown: &str, problems: &mut Problems) -> Catalog {
                 problems.add(id, "duplicate catalog row");
                 continue;
             }
+            let enforcement_text = enforcement
+                .and_then(|ix| cells.get(ix))
+                .filter(|c| !c.padded)
+                .map(|c| c.text.clone())
+                .unwrap_or_default();
             let class = match enforcement {
                 None => {
                     problems.add(id, "table has no Enforcement column");
@@ -181,6 +192,7 @@ pub(crate) fn parse(markdown: &str, problems: &mut Problems) -> Catalog {
             catalog.rows.push(Row {
                 id: id.to_owned(),
                 class,
+                enforcement: enforcement_text,
             });
         }
     }

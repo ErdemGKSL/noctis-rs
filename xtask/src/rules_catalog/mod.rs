@@ -28,9 +28,19 @@
 //!   (`cv2_03`).
 //!
 //! A requirement listed in `xtask/rules-pending.toml` is pending; a pending
-//! requirement that already has evidence fails, so the list only shrinks. The
-//! `custom_id` constants table is compared with the `pub const`s of
-//! `crates/noctis-codec/src` unless the `custom-id-constants` check is pending.
+//! requirement that already has evidence fails, so the list only shrinks. Since
+//! Story 14.4 every entry (`[[rule]]` and `[[check]]`) must carry `p2 = true`
+//! (a P2-feature requirement); an otherwise valid entry without it is reported
+//! and still kept pending. The `custom_id` constants table is compared with the
+//! `pub const`s of `crates/noctis-codec/src` unless the `custom-id-constants`
+//! check is pending.
+//!
+//! # v1 rules audit
+//!
+//! The catalog's `## v1 rules audit` section lists the by-construction,
+//! runtime-only and documentation-only/alias rows. It is not checked by the
+//! CLI; the unit test `audit::tests::real_catalog_audit_is_complete` keeps those
+//! lists equal to this classification.
 //!
 //! # Output
 //!
@@ -41,6 +51,8 @@
 //! requirement met and none pending, and `pending` counts the pending rule
 //! entries (one row can have several).
 
+#[cfg(test)]
+mod audit;
 mod catalog;
 pub(crate) mod pending;
 mod scan;

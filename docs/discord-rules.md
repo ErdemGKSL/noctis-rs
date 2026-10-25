@@ -147,7 +147,7 @@ points straight back to this file.
 | **REG-03** Unique names per type per scope | No two global `CHAT_INPUT` with the same name; same for each type and per guild. Global and guild commands may share a name; different types may share a name. **[D]** | [AC §Registering a Command](https://discord.com/developers/docs/interactions/application-commands#registering-a-command) | App-build | Same-name chat-input registrations are **merged** (FR-9), not rejected; same-name context-menu commands are a `BuildError`. `App::build` lowers every Module's descriptors (and `Module::base` / `Module::group` declarations) into `noctis_rules` declarations and runs `noctis_rules::command::validate_merge` once, per scope; each broken rule is one `BuildViolation::Command` whose notes name the Modules and end with the scope (`scope: global` / `scope: guild <id>`). |
 | **REG-04** Merge conflicts | Merged registrations must not conflict on metadata (META-01/02), must not create a duplicate leaf path, and must keep CMD-11/12/13/05 after merging **[D]** + **[N]** (FR-9) | AC (as above) | App-build | `App::build()` merges all Modules, then runs the full structural validator on the merged trees. `App::build` lowers every Module's descriptors (and `Module::base` / `Module::group` declarations) into `noctis_rules` declarations and runs `noctis_rules::command::validate_merge` once, per scope; each broken rule is one `BuildViolation::Command` whose notes name the Modules and end with the scope (`scope: global` / `scope: guild <id>`). Two Modules declaring different `Module::base` / `Module::group` descriptions for one node are REG-04, and so is a declaration for a path no handler registers. |
 | **REG-05** Create quota | 200 application command **creates** per day per guild; bulk overwrite counts new commands toward it **[D]** | [AC §Registering a Command](https://discord.com/developers/docs/interactions/application-commands#registering-a-command) | Runtime (Publish) | Publish canonicalizes the local and remote commands (Discord's defaults and server fields do not count), diffs them and writes nothing when equal (FR-13). `TargetReport::diff()` lists one `+ create` / `~ update` / `- delete` line per change and `creates()` counts the `+` lines; a dry run (`--dry-run`) prints the JSON, the diff and `creates: N (REG-05: …)` and writes nothing. |
-| **REG-06** Command permission overwrites | Max 100 per command per guild; needs a Bearer token **[D]** | [AC §Permissions](https://discord.com/developers/docs/interactions/application-commands#permissions) | (out of scope) | Noctis does not edit overwrites in v1. |
+| **REG-06** Command permission overwrites | Max 100 per command per guild; needs a Bearer token **[D]** | [AC §Permissions](https://discord.com/developers/docs/interactions/application-commands#permissions) | (out of scope for v1) | Noctis does not edit overwrites in v1. |
 
 ## 7. Interactions and responses
 
@@ -250,7 +250,7 @@ Every "–" is a compile error raised by the sealed placement traits (`TopLevel`
 | **MSG-03** Allowed mentions exclusivity | `parse` is mutually exclusive with `users` / `roles` for the same type (`parse: ["users"]` + `users: [...]` is invalid) **[D]** | [MSG §Allowed Mentions](https://discord.com/developers/docs/resources/message#allowed-mentions-object) | Compile-time (by construction) | `noctis::ui::Mentions` with `Users`/`Roles` = `None \| All \| Only(ids)`: `All` carries no ids, so the invalid combination cannot be built. |
 | **MSG-04** Allowed mention ids | `users` ≤ 100, `roles` ≤ 100 **[D]** | [MSG §Allowed Mentions](https://discord.com/developers/docs/resources/message#allowed-mentions-object) | Runtime | `noctis_ui::validate` counts `Users::Only` / `Roles::Only` ids (paths `allowed_mentions.users`, `allowed_mentions.roles`). |
 | **MSG-05** Mention defaults | Interactions and webhooks parse only user mentions by default; Text Display mentions ping **[D]** | [MSG §Default Settings](https://discord.com/developers/docs/resources/message#allowed-mentions-object-default-settings-for-allowed-mentions) | Compile-time (by construction) | Every V2 and legacy body sends `allowed_mentions`, default `parse: []`; `mentions` takes a `Mentions`, never an `Option`, so pinging is opt-in. `ctx.reply_text(text)` (Story 8.1) sends the text unchanged in one Text Display with `allowed_mentions: {"parse": []}`, so a mention in it pings nobody (unit test `msg_05_reply_text_pings_nobody`). Nothing is escaped automatically: `noctis::ui::escape_markdown` and `escape_mentions` (Story 8.2) neutralize user text before it goes into a Text Display (Markdown with backslashes; mentions with a U+200B, so the two commute), and a message listing `<@id>` still sends `{"parse": []}` unless `.mentions(..)` opts in (test `msg_05_listed_mentions_ping_nobody`, `noctis/tests/escape.rs`). |
-| **MSG-06** `nonce`, stickers | `nonce` ≤ 25 chars; `sticker_ids` ≤ 3 **[D]** | [MSG §Create Message](https://discord.com/developers/docs/resources/message#create-message) | Runtime | |
+| **MSG-06** `nonce`, stickers | `nonce` ≤ 25 chars; `sticker_ids` ≤ 3 **[D]** | [MSG §Create Message](https://discord.com/developers/docs/resources/message#create-message) | Runtime | No typed message carries `nonce` or stickers in v1: V2 forbids stickers (CV2-02) and `LegacyMessage` is plain text (FR-23). `noctis_rules::message::validate_nonce` / `validate_sticker_ids` serve raw-REST callers (unit test `msg_06_nonce_and_stickers`). |
 | **MSG-07** Flags per endpoint | Create: `SUPPRESS_EMBEDS, SUPPRESS_NOTIFICATIONS, IS_VOICE_MESSAGE, IS_COMPONENTS_V2`; Edit: `SUPPRESS_EMBEDS` (set/unset), `IS_COMPONENTS_V2` (set only); webhooks/follow-ups per research §2.3 **[D]** | [MSG §Create Message](https://discord.com/developers/docs/resources/message#create-message) | Compile-time (by construction) | Per-endpoint flag types with consts only for the allowed flags: `CreateFlags` (Create Message, Execute Webhook: `SUPPRESS_EMBEDS`, `SUPPRESS_NOTIFICATIONS`), `EditFlags` (Edit Message, Edit Original Interaction Response, Edit Webhook Message, callback type 7: `SUPPRESS_EMBEDS`, always sent) and `CallbackFlags` (callback type 4, follow-ups: `SUPPRESS_EMBEDS`, `EPHEMERAL`, `SUPPRESS_NOTIFICATIONS`). `IS_COMPONENTS_V2` is added by V2 bodies only; `IS_VOICE_MESSAGE` is not offered in v1. The webhook client takes `CreateFlags` on `ExecuteWebhook::flags` and `EditFlags` on `EditWebhookMessage::flags`. |
 | **MSG-08** Edit replaces components | PATCH replaces `components` wholesale; `attachments` must list every attachment to keep **[D]** | [MSG §Edit Message](https://discord.com/developers/docs/resources/message#edit-message) | Runtime (by construction) | Views always re-render the whole tree. Every edit body (type-7 `data`, `PATCH @original`, a follow-up edit, a bot-token channel edit) carries `attachments`: the Responder keeps each used attachment the target message already holds by id (`{"id": "<snowflake>"}`, ids learned from the source message and from Discord's responses), uploads the rest as new entries, and leaves out the ones the View no longer uses, so Discord drops them; a legacy edit sends `[]` (FR-30, Story 9.1; unit tests `msg_08_*` in `noctis-core`). |
 | **MSG-09** Non-empty message | A message needs at least one of content, embeds, sticker_ids, components, files or poll **[D]**; a V2 message needs at least one component **[C]** | [MSG §Create Message](https://discord.com/developers/docs/resources/message#create-message) | Runtime | `noctis_ui::validate`: a V2 message with no top-level component, or a legacy message whose content is empty or whitespace-only and that has no Action Row, is rejected before sending. |
@@ -634,7 +634,113 @@ tests/boundary/
   contains the id's snake token: `cv2_03` in `fn cv2_03_forty_one_fails()`.
 - A requirement whose test lands in a later story is listed in
   `xtask/rules-pending.toml` with the story that adds it. An entry whose test already
-  exists fails the check, so the list only shrinks; it is empty by Story 14.4, except entries for Epic 15 stories.
+  exists fails the check, so the list only shrinks; it has been empty since Story 14.4; an entry must carry `p2 = true` and belong to a P2 feature.
+
+---
+
+## v1 rules audit
+
+Story 14.4 (2026-10-25) audited every row before v1 (FR-75, FR-79, NFR-10, AD-3, AD-4).
+`xtask rules-catalog` reports every Compile-time, App-build and Runtime requirement as
+met, `xtask/rules-pending.toml` is empty, and `real_catalog_audit_is_complete`
+(xtask) keeps the three lists below equal to what `rules-catalog` derives from the
+Enforcement column. No rule's input is static while it is checked only at runtime:
+every row below has a reason why its input is known only when the program runs.
+
+### By construction
+
+Each rule holds because the API cannot express the violation; the file carries a
+`// [<ID>]` line on the rejected code (a trybuild fixture, a `compile_fail` doctest in
+the named source file, or both).
+
+| Rule | Evidence (`// [<ID>]`) |
+|---|---|
+| OPT-12 | `crates/noctis-core/src/autocomplete.rs` doctest |
+| OPT-14 | `crates/noctis-rules/src/command/option.rs` doctest |
+| LOC-04 | fixture `crates/noctis/tests/ui-i18n/loc/LOC-04_missing_default_key.rs` (also `LOC-04_wrong_arg_count.rs`, `LOC-04_wrong_arg_type.rs`) |
+| CTX-02 | fixture `crates/noctis/tests/ui/ctx/CTX-02_user_command_description.rs`; `crates/noctis-rules/src/command/mod.rs` doctest |
+| CTX-03 | `crates/noctis-rules/src/command/mod.rs` doctest |
+| META-05 | fixture `crates/noctis/tests/ui/meta/META-05_dm_permission.rs`; `crates/noctis-rules/src/command/meta.rs` doctest |
+| INT-03 | fixture `crates/noctis/tests/ui/int/INT-03_second_reply.rs`; `crates/noctis-core/src/responder.rs` doctest |
+| INT-04 | fixture `crates/noctis/tests/ui/int/INT-04_modal_manual_show_modal.rs`; `crates/noctis-core/src/command.rs` doctest |
+| INT-06 | fixture `crates/noctis/tests/ui/int/INT-06_autocomplete_auto_defer.rs`; `crates/noctis-core/src/autocomplete.rs` doctest |
+| INT-08 | fixture `crates/noctis/tests/ui/int/INT-08_defer_flags.rs`; `crates/noctis-core/src/responder.rs` doctest |
+| INT-09 | fixture `crates/noctis/tests/ui/int/INT-09_callback_crossposted.rs`; `crates/noctis-ui/src/message/flags.rs` doctest |
+| INT-10 | fixture `crates/noctis/tests/ui/int/INT-10_edit_ephemerality.rs`; `crates/noctis-core/src/responder.rs` doctest |
+| CID-05 | `crates/noctis-codec/src/refs.rs` doctest |
+| CID-07 | `crates/noctis-codec/src/bounded_str.rs` doctest |
+| CV2-01 | fixture `crates/noctis/tests/ui/cv2/CV2-01_v2_flag_not_settable.rs`; `crates/noctis-ui/src/message/flags.rs` doctest |
+| CV2-02 | fixture `crates/noctis/tests/ui/cv2/CV2-02_v2_message_content.rs`; `crates/noctis-ui/src/message/mod.rs` doctest |
+| CV2-12 | fixture `crates/noctis/tests/ui/cv2/CV2-12_file_from_string.rs`; `crates/noctis-ui/src/component/media.rs` doctest |
+| CV2-14 | fixture `crates/noctis/tests/ui/cv2/CV2-14_set_numeric_id.rs`; `crates/noctis-ui/src/component/text.rs` doctest |
+| MSG-03 | fixture `crates/noctis/tests/ui/msg/MSG-03_all_with_ids.rs`; `crates/noctis-ui/src/message/mentions.rs` doctest |
+| MSG-05 | fixture `crates/noctis/tests/ui/msg/MSG-05_message_without_mentions.rs`; `crates/noctis-ui/src/message/mentions.rs` doctest |
+| MSG-07 | fixture `crates/noctis/tests/ui/msg/MSG-07_create_ephemeral.rs`; `crates/noctis-ui/src/message/flags.rs` doctest |
+| ATT-05 | `crates/noctis-ui/src/attachment.rs` doctest |
+| ATT-07 | fixture `crates/noctis/tests/ui-image/att/ATT-07_still_format.rs` |
+| WH-01 | `crates/noctis-core/src/webhook.rs` doctest |
+| WH-03 | `crates/noctis-ui/src/message/static_msg.rs` doctest |
+| GW-07 | fixture `crates/noctis/tests/ui/gw/GW-07_member_request_too_many_ids.rs`; `crates/noctis-gateway/src/command.rs` doctest |
+
+These are Gate 2's 25 by-construction rules plus LOC-04, which FR-42 made an enforced
+rule after Gate 2 (`i18n!` derives every accessor from the default locale). INT-05
+stays a diagnosed rule: its Compile-time tier is decided by the text before the first
+`;` (`#[command]`/`#[handler]` check).
+
+### Runtime only
+
+Every tier of these rows is `Runtime` or `Startup`. Each input is dynamic, so no
+earlier tier can see it.
+
+| Rule | Why its input is dynamic |
+|---|---|
+| LOC-06 | The invoked names and the user's and guild's locales arrive in each interaction payload. |
+| META-04 | The application's enabled integration types are Discord-side settings, read with `GET /applications/@me` at Publish. |
+| REG-05 | The create count depends on the remote command set fetched at Publish, and the daily quota is a Discord-side counter. |
+| INT-01 | The deadline is wall-clock time measured from gateway receipt of each interaction. |
+| INT-02 | The token's 15-minute lifetime is wall-clock time measured from gateway receipt. |
+| INT-07 | Suggestions are computed by the handler per keystroke from the user's partial input. |
+| INT-11 | The installation owners (`authorizing_integration_owners`) come with each interaction, and the cap is a per-interaction runtime counter. |
+| INT-12 | Whether a message follows a defer depends on the order of calls (and the auto-defer timer) at run time. |
+| INT-13 | Whether a request is an interaction callback, and whether a proxy is configured, is decided per request at run time. |
+| CV2-16 | Raw components are arbitrary JSON values built at run time. |
+| MOD-09 | Submitted values are user input, and uploaded files are bounded by the interaction's `attachment_size_limit`. |
+| MSG-04 | Allowed-mention id lists are snowflake `Vec`s of unknown length, usually from user input or a database. |
+| MSG-06 | No typed message carries `nonce` or stickers in v1; the validators only see values raw-REST callers pass at run time. |
+| MSG-08 | The attachments to keep are those of the target message, known only from Discord's responses. |
+| MSG-09 | `Components` stays extendable after `components!` (`.push`), and `components! {}` is a valid start, so only the tree at send time is final. |
+| ATT-01 | File bytes are produced at run time, and the effective limit is the interaction's `attachment_size_limit`. |
+| ATT-02 | The request size is the sum of runtime file bytes and the serialized `payload_json`. |
+| ATT-03 | The used attachments, kept and new, are only known once the View is rendered against the target message. |
+| ATT-04 | The `files[n]` numbering follows the runtime set of new files. |
+| WH-05 | The channel kind is known only from Discord (`Webhooks::create`) or from stored credentials (`Webhook::in_channel`). |
+| RL-01 | Buckets and `Retry-After` come from Discord's responses. |
+| RL-02 | The cluster layout (Shard Range, proxy) comes from the environment and builder at startup. |
+| RL-03 | The 401/403/429 counts are server responses over time. |
+| RL-04 | Undocumented limits surface only as Discord's 429 responses. |
+| GW-04 | The send rate is the number of user commands per shard over a sliding window of time. |
+| VC-01 | The owning shard depends on the runtime shard count and Shard Range. |
+| VC-02 | The call state per guild changes at run time. |
+
+### Documentation only and aliases
+
+| Rule | Status |
+|---|---|
+| CMD-14 | permitted; documented so the validator does not reject a valid tree |
+| REG-06 | out of scope for v1 (Noctis does not edit permission overwrites) |
+| MSG-02 | no embed API in v1 (`LegacyMessage` is plain text, FR-23; V2 forbids embeds, CV2-02) |
+| LOC-05 | alias of CMD-05 (the longest localization counts in the 8000 budget; unit test `cmd_05_counts_the_longest_localization`) |
+| MOD-08 | alias of CID-01 (a Modal is its own Route, so its `custom_id` is the Route's encoding) |
+
+Two enforced rows also carry a documentation-only half, confirmed here:
+
+- CMD-07: the discovery restriction ("apps with discovery enabled cannot contain any
+  age-restricted commands") is not checkable locally and stays documentation-only;
+  the `nsfw` value and its merge conflicts are enforced.
+- LOC-04: "partial localization permitted" holds. A key missing in a non-default
+  Locale is a `[LOC-04]` `deprecated` warning, never an error, and falls back to the
+  sibling's, then the default's text; only a key missing in the default locale fails
+  to compile.
 
 ---
 
@@ -642,7 +748,7 @@ tests/boundary/
 
 | Rule | What is unconfirmed | Noctis interpretation |
 |---|---|---|
-| CV2-04 | The 4000-character Text Display budget is enforced by the API but not in Discord's docs; the counting unit (code points, UTF-16 units, bytes) is unknown. | Count the larger of code points and UTF-16 units; limit configurable. |
+| CV2-04 | The 4000-character Text Display budget is enforced by the API but not in Discord's docs; the counting unit (code points, UTF-16 units, bytes) is unknown. | PRD Q1 (unanswered as of 2026-10-25): count the larger of code points and UTF-16 units; limit configurable. |
 | CID-01 | "1-100 characters": unit not specified. | Noctis encodes ASCII only, so the unit is irrelevant for framework-built ids; user strings are budgeted after escaping. |
 | CMD-02, CMD-04, OPT-09, MOD-*, MSG-01 | "characters" for names, descriptions, labels and content: unit not specified. | Count the larger of code points and UTF-16 units. |
 | CMD-05 | 8000-character command budget: unit not specified; which "value" properties count beyond choice values is not spelled out. | Count name + description + choice values (string form for numbers) per field, longest localization per field; larger of code points / UTF-16. |
@@ -650,7 +756,7 @@ tests/boundary/
 | CMD-11 | Discord does not state "a name cannot be both a subcommand and a group" in one sentence; it follows from the option tree (a `SUB_COMMAND` cannot hold subcommands). | Enforced as a hard error. |
 | INT-06 | "Autocomplete cannot be deferred" is implied by the callback-type table, not stated. | No defer for autocomplete. |
 | ATT-03 | 10 attachments per message is widely used but not in the current docs. | Configurable constant, default 10. |
-| CV2-17 | 2048 characters for Media Gallery item and Thumbnail URLs is documented only for Component Embeds, not for messages; the counting unit is unspecified. | Default 2048 in `Limits::media_url_len`, counted with `discord_len`; configurable. |
+| CV2-17 | 2048 characters for Media Gallery item and Thumbnail URLs is documented only for Component Embeds, not for messages; the counting unit is unspecified. | PRD Q4 (unanswered as of 2026-10-25): default 2048 in `Limits::media_url_len`, counted with `discord_len`; configurable. |
 | RL-04 | Per-resource limits such as channel renames are undocumented. | Not hard-coded; handled as 429s. |
 | OPT-13 | Allowed extension syntax is not specified. | A dot followed by one or more ASCII letters or digits (`.pdf`, `.PNG`, `.7z`); `.tar.gz` and bare `pdf` are rejected. |
 | META-02 | Whether a leaf that leaves a field unset conflicts with one that sets it. | Without an explicit base declaration every command under a base must agree, unset included; with one, unset leaves inherit it and set ones must match. |
@@ -658,4 +764,5 @@ tests/boundary/
 | CV2-09 | The minimum String Select option count, and when the default-value count is checked. | 1-25 options; the default count (default_values, or default-flagged options) must lie in [min_values, max_values] only when there is at least one. |
 | ATT-01 | Whether a lowered Limits::attachment_bytes applies when the interaction reports attachment_size_limit. | The interaction's value, when given, replaces the field. |
 | MOD-06 | Allowed file_types entry syntax. | Same as OPT-13. |
+| CV2-02 (PRD Q5) | Whether an update answering a modal submit may switch a legacy message to V2. | PRD Q5 (unanswered as of 2026-10-25): Noctis converts as for a component update (flag set; `content: null, embeds: [], poll: null, sticker_ids: []`); a Discord rejection surfaces as the typed HTTP error, with no fallback (unit test `cv2_02_modal_submit_update_of_a_legacy_source_clears_it`). |
 | MSG-09 | Whether whitespace-only `content` counts as present, and whether a V2 message with attachments but no component is accepted. | Whitespace-only content counts as empty; a V2 message needs at least one top-level component. |

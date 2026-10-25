@@ -1022,7 +1022,7 @@ mod routes {
 
     /// Matrix 2: one Route in two Modules.
     #[tokio::test]
-    async fn duplicate_across_modules() {
+    async fn cid_04_duplicate_across_modules() {
         let err = builder()
             .module(Module::new("a").__add(button("m::Buy", "shop.buy")))
             .module(Module::new("b").__add(button("m::Buy2", "shop.buy")))
@@ -1041,7 +1041,7 @@ mod routes {
 
     /// Matrix 3: the same struct added twice in one Module.
     #[test]
-    fn duplicate_in_one_module() {
+    fn cid_04_duplicate_in_one_module() {
         let m = Module::new("a")
             .__add(button("m::Buy", "shop.buy"))
             .__add(button("m::Buy", "shop.buy"));
@@ -1052,7 +1052,7 @@ mod routes {
 
     /// Matrix 4: a Button and a Modal share an id.
     #[test]
-    fn duplicate_across_families() {
+    fn cid_04_duplicate_across_families() {
         let m = Module::new("a")
             .__add(button("m::X", "x"))
             .__add(modal("m::XForm", "x"));
@@ -1063,7 +1063,7 @@ mod routes {
     /// Matrix 5: three handlers of one id give two violations, each
     /// against the first.
     #[test]
-    fn three_handlers() {
+    fn cid_04_three_handlers() {
         let roots = ["a", "b", "c"].map(|id| Module::new(id).__add(button("m::X", "x")));
         let (_, v) = fold(&roots);
         assert_eq!(
@@ -1077,7 +1077,7 @@ mod routes {
 
     /// Matrix 6 and 11: distinct ids fold into one map; none is fine.
     #[test]
-    fn distinct_routes() {
+    fn cid_04_distinct_routes() {
         let m = Module::new("shop")
             .__add(button("m::Buy", "shop.buy"))
             .module(Module::new("shop/sell").__add(button("m::Sell", "shop.sell")))
@@ -1103,7 +1103,7 @@ mod routes {
 
     /// Matrix 7: `uses` satisfied by a sibling or a child.
     #[test]
-    fn uses_satisfied() {
+    fn cid_04_uses_satisfied() {
         let a = Module::new("a").uses::<TBuy>();
         let b = Module::new("b").__add(button("m::Buy", "shop.buy"));
         assert!(fold(&[a.clone(), b]).1.is_empty());
@@ -1113,7 +1113,7 @@ mod routes {
 
     /// Matrix 8: `uses` without a mounted handler.
     #[tokio::test]
-    async fn uses_unmounted() {
+    async fn cid_04_uses_unmounted() {
         let err = builder()
             .module(Module::new("a").uses::<TBuy>())
             .build()
@@ -1137,7 +1137,7 @@ mod routes {
     /// Matrix 9: duplicate declarations give one violation; declarations
     /// on unmounted Modules none. Duplicates come before unmounted Routes.
     #[test]
-    fn uses_deduplicated_and_ordered() {
+    fn cid_04_uses_deduplicated_and_ordered() {
         let a = Module::new("a").uses::<TBuy>().uses::<TBuy>();
         let (_, v) = fold(&[a]);
         assert_eq!(v, [unmounted("a")]);
@@ -1645,7 +1645,7 @@ mod boot_flags {
 
     /// B7: a kept Module that `uses` a pruned Route is CID-04.
     #[test]
-    fn uses_of_a_pruned_route() {
+    fn cid_04_uses_of_a_pruned_route() {
         let roots = [
             Module::new("shop")
                 .flags(["shop"])

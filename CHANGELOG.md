@@ -9,6 +9,25 @@ everything else bumps the patch version.
 
 ## [Unreleased]
 
+### Rules catalog (v1 audit)
+
+- `xtask/rules-pending.toml` is empty, and every entry it may hold must now carry
+  `p2 = true` (a P2-feature requirement); `xtask rules-catalog` fails on an untagged
+  `[[rule]]` or `[[check]]`.
+- The CID-04 App-build tests in `noctis-core` cite their rule id (`cid_04_*`), so the
+  last pending entry is gone: `rules-catalog: ok (135 rules: 130 covered, 0 pending,
+  3 documentation-only, 2 aliases)`.
+- `docs/discord-rules.md` has a `## v1 rules audit` section: the by-construction rules
+  with their `// [<ID>]` evidence, every runtime-only rule with the reason its input is
+  dynamic, and the documentation-only rows and aliases. The xtask unit test
+  `real_catalog_audit_is_complete` keeps it equal to the classifier.
+- PRD Q1 (Text Display counting unit), Q4 (media URL length) and Q5 (legacy to V2 on a
+  modal-submit update) are still unanswered; the Unconfirmed values table names each
+  with its conservative interpretation, and every `Limits` default is unchanged. Q5's
+  conversion is pinned by `cv2_02_modal_submit_update_of_a_legacy_source_clears_it`.
+- MSG-06 documents that no typed message carries `nonce` or stickers in v1 (the
+  validators serve raw-REST callers); REG-06 reads "out of scope for v1".
+
 ### Performance budgets (PRD Q3)
 
 The NFR-1, NFR-3 and NFR-9 targets were `[ASSUMPTION]`s until the first

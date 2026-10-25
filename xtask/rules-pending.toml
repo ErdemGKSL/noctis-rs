@@ -6,14 +6,11 @@
 #              "by-construction" (fixture or compile_fail doctest line carrying // [ID]),
 #              or "unit" (a #[test] fn whose name cites the snake id, e.g. cv2_03)
 #   story    = "<epic>.<story>" that adds the test
-# Each [[check]] keeps a whole check pending (name, story); the only check
-# name is "custom-id-constants", no longer pending since Story 2.2.
+#   p2       = true (required): the requirement belongs to a P2 feature
+# Each [[check]] keeps a whole check pending (name, story, p2 = true); the only
+# check name is "custom-id-constants", no longer pending since Story 2.2.
 #
 # An entry whose requirement already has a test fails the check, so this list
-# only shrinks: remove an entry in the story that adds its test. It must be
-# empty by Story 14.4, except entries for Epic 15 stories.
-
-[[rule]]
-id = "CID-04"
-evidence = "unit"
-story = "7.1"
+# only shrinks: remove an entry in the story that adds its test. The file has
+# been empty since Story 14.4 and may hold only P2-feature entries (prefix
+# commands and other opt-in P2 features); an entry without p2 = true fails.

@@ -127,6 +127,35 @@ async fn update_is_one_type_7_callback() {
     assert_eq!(fx.requests()[0].2["data"]["flags"], 32768);
 }
 
+/// PRD Q5 (unanswered; maintainer decisions §2): an update answering a modal
+/// submit opened from a legacy message converts it to V2 exactly as a
+/// component update does, clearing the legacy fields (CV2-02).
+#[tokio::test]
+async fn cv2_02_modal_submit_update_of_a_legacy_source_clears_it() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.submit(
+        Declared::Update,
+        source(MessageFormat::Legacy, Ephemerality::Public),
+    );
+    let _ = modal_responder(&shared)
+        .update(v2("a"))
+        .await
+        .unwrap()
+        .done();
+    assert_eq!(
+        fx.requests(),
+        [(
+            Method::POST,
+            UPDATE_CB.to_owned(),
+            json!({ "type": 7, "data": {
+                "flags": 32768, "content": null, "embeds": [], "poll": null, "sticker_ids": [],
+                "components": v2_components("a"), "allowed_mentions": { "parse": [] },
+                "attachments": [],
+            } })
+        )]
+    );
+}
+
 /// Matrix 22 (defensive guard): the typed component API never accepts a
 /// legacy body (CV2-01, compile time: `ui/cv2/CV2-01_component_update_legacy.rs`);
 /// should one reach the shared state, a legacy body over a V2 source is still

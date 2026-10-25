@@ -92,7 +92,7 @@ fn repo(test: &'static str) -> Repo {
     )
     .with(
         "xtask/rules-pending.toml",
-        "[[check]]\nname = \"custom-id-constants\"\nstory = \"2.2\"\n",
+        "[[check]]\nname = \"custom-id-constants\"\nstory = \"2.2\"\np2 = true\n",
     )
 }
 
@@ -505,7 +505,9 @@ fn f14_empty_suite_is_no_error_by_itself() {
     let out = repo("f14")
         .without(&format!("{CV205}.rs"))
         .without(&format!("{CV205}.stderr"))
-        .pending("[[rule]]\nid = \"CV2-05\"\nevidence = \"diagnosed\"\nstory = \"4.1\"\n")
+        .pending(
+            "[[rule]]\nid = \"CV2-05\"\nevidence = \"diagnosed\"\nstory = \"4.1\"\np2 = true\n",
+        )
         .run();
     assert_exit(
         &out,
@@ -606,8 +608,8 @@ fn p1_p3_pending_and_missing() {
     let out = repo("p1")
         .with("crates/x/src/lib.rs", "")
         .pending(
-            "[[rule]]\nid = \"CV2-03\"\nevidence = \"unit\"\nstory = \"4.3\"\n\n\
-             [[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"6.6\"\n",
+            "[[rule]]\nid = \"CV2-03\"\nevidence = \"unit\"\nstory = \"4.3\"\np2 = true\n\n\
+             [[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"6.6\"\np2 = true\n",
         )
         .run();
     assert_exit(
@@ -635,7 +637,9 @@ fn p3_missing_by_construction() {
 #[test]
 fn p2_satisfied_pending() {
     let out = repo("p2")
-        .pending("[[rule]]\nid = \"CV2-03\"\nevidence = \"diagnosed\"\nstory = \"4.4\"\n")
+        .pending(
+            "[[rule]]\nid = \"CV2-03\"\nevidence = \"diagnosed\"\nstory = \"4.4\"\np2 = true\n",
+        )
         .run();
     assert_problems(
         &out,
@@ -708,11 +712,11 @@ fn p7_story_format() {
 
 #[test]
 fn p8_duplicates() {
-    let entry = "[[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"6.6\"\n";
+    let entry = "[[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"6.6\"\np2 = true\n";
     let out = repo("p8")
         .with("crates/x/src/lib.rs", "#[test]\nfn cv2_03_x() {}\n")
         .pending(&format!(
-            "{entry}\n{entry}\n[[check]]\nname = \"custom-id-constants\"\nstory = \"2.2\"\n"
+            "{entry}\n{entry}\n[[check]]\nname = \"custom-id-constants\"\nstory = \"2.2\"\np2 = true\n"
         ))
         .run();
     assert_problems(
@@ -769,6 +773,51 @@ fn p11_invalid_toml_keeps_other_checks() {
         err.contains("custom-id constant REF_LEN: not defined"),
         "{err}"
     );
+}
+
+#[test]
+fn p12_untagged_rule_and_check() {
+    let out = repo("p12")
+        .with(
+            "xtask/rules-pending.toml",
+            "[[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"15.4\"\n\n\
+             [[check]]\nname = \"custom-id-constants\"\nstory = \"2.2\"\n",
+        )
+        .with("crates/x/src/lib.rs", "#[test]\nfn cv2_03_x() {}\n")
+        .run();
+    assert_problems(
+        &out,
+        &[
+            "rules-pending.toml: INT-01 (unit): only a P2-feature rule may stay pending; add its \
+             test or tag the entry p2 = true",
+            "rules-pending.toml: check custom-id-constants: only a P2-feature check may stay \
+             pending; tag the entry p2 = true",
+        ],
+    );
+}
+
+#[test]
+fn p13_p2_wrong_type() {
+    for (test, value) in [("p13_string", "\"true\""), ("p13_int", "1")] {
+        let out = repo(test)
+            .pending(&format!(
+                "[[rule]]\nid = \"INT-01\"\nevidence = \"unit\"\nstory = \"15.4\"\np2 = {value}\n"
+            ))
+            .run();
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{err}");
+        let pending_lines: Vec<&str> = err
+            .lines()
+            .filter(|l| l.starts_with("rules-catalog: rules-pending.toml: "))
+            .collect();
+        assert_eq!(pending_lines.len(), 1, "{err}");
+        assert!(!pending_lines[0].contains("P2-feature"), "{err}");
+        // The whole file is rejected, so the constants check runs (P11).
+        assert!(
+            err.contains("custom-id constant REF_LEN: not defined"),
+            "{err}"
+        );
+    }
 }
 
 // K1-K7.
