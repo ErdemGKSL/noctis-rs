@@ -2,8 +2,8 @@
 title: 'Story 14.1: Adapter conformance suites'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
-baseline_revision: 'dc12a2804bb83f1b7c95f7638f5edfe4fde0c51e'
+status: 'in-progress'
+baseline_revision: 'eac15b7e29d0e60cd7c5aed3d0dfc65fd20eab0b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
