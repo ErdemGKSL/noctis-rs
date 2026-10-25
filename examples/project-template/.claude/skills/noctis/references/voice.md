@@ -83,8 +83,10 @@ impl Join {
 | `call.leave()` | Same as `voice.leave(guild)`, but a stale handle returns `Interrupted` and sends nothing. |
 
 **One call per guild (VC-02).**
-- Calling `join` for the channel the call is already in sends nothing and returns the
-  same call.
+- Calling `join` for the channel the call is already connected to sends nothing and
+  returns the same call.
+- Calling `join` again for the same channel while the first join is still pending
+  interrupts the first one (it returns `VoiceError::Interrupted`) and sends op 4 again.
 - Calling `join` for another channel of the same guild moves the call there.
 - A pending join that a newer join replaces returns `VoiceError::Interrupted`.
 - When the bot is disconnected (a moderator kicks it, or Discord sends its own voice
@@ -119,6 +121,9 @@ token:
     `ShardClosed`, `SendLimit`.
   - It shares the per-shard GW-04 window of 110 commands per 60 s with presence sets
     and member requests.
+  - The App needs the `GUILD_VOICE_STATES` intent to receive the answers
+    (`VOICE_STATE_UPDATE`, `VOICE_SERVER_UPDATE`). Op 4 is sent without it, but the
+    answers never arrive. The `voice` feature adds the intent.
 - `VoiceStateRequest::join(guild, channel)` or `VoiceStateRequest::leave(guild)` build
   the request, then `.self_mute(bool)` and `.self_deaf(bool)` set the flags. Read it
   back with `.guild()` and `.channel()`.

@@ -2,16 +2,23 @@
 title: 'Story 17.1: Voice connections through Noctis''s gateway'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '4dce2ab77862f152c2e50f935bc27ac2d489cbde'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-17-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template's voice module and tests/voice.rs are not built or tested by any running gate, and the template CI steps for --features voice will fail when CI is re-enabled.
+    evidence: |-
+      examples/project-template is excluded from the workspace; the new template-build steps live only in .github/workflows-disabled/ci.yml; the memlog records that the template does not build at its baseline (pre-existing) and the voice module was checked only in a scratch crate. Story 14.2 restores the template build and moves CI back; at that point run cargo build/test --release --features voice in the template and fix leave_answers_privately if TestApp does not own guild 100.
+    location: >-
+      examples/project-template/tests/voice.rs; .github/workflows-disabled/ci.yml (template-build)
+    severity: medium
 ---
 
 <intent-contract>
@@ -135,6 +142,49 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 39 findings — high 0, medium 9, low 17, false 12, maybe-false 1
+- findings:
+  - `[medium]` `[patch]` (blind) A refused move of an existing entry keeps the new channel in `Entry.channel` — verified: `begin_join` writes `channel`/`join` before the send, and `join_inner` removes only when `created`; Songbird has already replaced its `connection` with an unsent in-progress one. Patch: on a refused send stage, drop the call locally and remove the entry when this join is still its latest (`remove_join`), whether or not it was created.
+  - `[medium]` `[patch]` (blind) A refused replace of a pending join leaves a zombie entry counted by `active_calls()` and the gauge — same root cause as the row above (the local reset at voice.rs:367-372 runs before the refused send); same patch.
+  - `[medium]` `[patch]` (blind) A panic in a Shutdown Task skips `close_all` and the rest of AD-21 — verified: `run_shutdown_tasks` polls `(task.run)(self)` and its future with no `catch_unwind`, unlike hooks/middleware in core. Patch: run each task under `catch_unwind` and log the panic by task name.
+  - `[low]` `[reject]` (blind) Joins after `take_all` during shutdown create a call that is never left — real but needs a handler to start a join inside the shutdown window; the fix adds a shutting-down flag and branch.
+  - `[low]` `[patch]` (blind) A refused op 4 leave at shutdown is logged only at `debug` — verified at plugin.rs:189; the bot then stays visibly in voice with no default-level signal. Patch: log at `warn`.
+  - `[low]` `[reject]` (blind) A late own VSU for a replaced join overwrites the channel mirror and Songbird's progress — verified Songbird's `apply_state_update` resets to the newer channel when Discord's following VSU(B) arrives (ordered handlers), so the state self-corrects; the remaining transient needs a new guard.
+  - `[false]` `[reject]` (blind) Docs say "first READY", code stores the "last READY" — every READY carries the same bot user id, so both wordings describe the same observable value.
+  - `[low]` `[patch]` (blind) `update_voice_state` accepts op 4 without `GUILD_VOICE_STATES`, so a raw caller never sees its own VSU — the spec fixes the error set (no `MissingIntent` refusal); patch documents the intent requirement on `GatewayHandle::update_voice_state` and in the skill's `voice.md`.
+  - `[low]` `[patch]` (blind) A second `join` to the same channel while the first is pending interrupts the first — verified (voice.rs:367-372 and Songbird's `should_actually_join`); sharing the pending join adds machinery, so patch documents the behaviour in `Voice::join` and `voice.md`.
+  - `[low]` `[patch]` (blind) Missing tests: `NotReady`, a loose budget assertion in `shutdown_tasks_cut_at_budget`, duplicate task names — `NotReady` is untested and reachable with `IdentifyReply::Ignore`; the budget test only asserts `< 10 s`. Patch adds the `NotReady` test and an upper bound near the 200 ms budget; duplicate names are not a defect.
+  - `[low]` `[reject]` (blind) READY is deserialized a second time for `d.user.id` — once per IDENTIFY, serde skips the guild list; negligible cost, and the alternative is more than a direct correction.
+  - `[low]` `[patch]` (blind) `remove_where`'s predicate is named `keep` but `true` removes — verified call.rs:180-190. Patch: rename it `should_remove`.
+  - `[false]` `[reject]` (blind) Redundant closure in `vc_01_errors` trips clippy — `cargo clippy --release -p noctis-gateway --all-targets --all-features -- -D warnings` passes.
+  - `[medium]` `[defer]` (blind) Template voice CI steps will fail when CI is re-enabled; template tests unverified — the template does not build at its baseline (pre-existing, Story 14.2); deferred with what settles it.
+  - `[low]` `[reject]` (blind) The template shows `VoiceError`'s `Display` to users — ephemeral, invoker-only, no secrets (driver reason never carries a token); mapping each variant is more than a direct correction.
+  - `[low]` `[reject]` (blind) `deny.toml` advisory ignores are global, not voice-scoped — cargo-deny ignores are global by design and each entry is commented as voice-only; a scoped gate is new machinery for a hypothetical future dependency.
+  - `[false]` `[reject]` (blind) `## 17. Voice` numbering may clash — the headings run 1..17 with no gap or duplicate; the rules-catalog test passes.
+  - `[medium]` `[patch]` (edge) Shutdown Task panic unwinds `shut_down` before `close_all` — same root cause as the blind panic row; same patch.
+  - `[medium]` `[patch]` (edge) `wind_down` still waits the full grace after Shutdown Tasks spent up to 5 s — verified app.rs:1220-1226; `AppBuilder::shutdown_grace` documents "at most the grace period plus 7 s", and AD-21 measures the hook runner from `ShutdownStarted + shutdown_grace`. Patch: pass `grace.saturating_sub(elapsed since shutdown started)` to `wind_down`.
+  - `[medium]` `[patch]` (edge) A refused move leaves the entry reporting the new channel — same root cause as the first blind row; same patch.
+  - `[low]` `[reject]` (edge) A leave's late own VSU(null) removes a newer join's entry — real, already recorded as an accepted race in the memlog; needs `/leave` then `/join` within one gateway round trip, and the fix needs pending-leave tracking.
+  - `[low]` `[reject]` (edge) A join started during the Shutdown Task is never left — duplicate of the blind shutdown-join row; same reasoning.
+  - `[maybe-false]` `[reject]` (edge) A pending entry's shutdown leave gets no VSU(null), so the task waits its budget — would need Discord's behaviour for op 4 `null` when the bot never reached a channel; if true it costs at most the 5 s budget plus one warning (low), so rejected with this note.
+  - `[low]` `[patch]` (vgap) The `AppStarted` gauge binding is never exercised alone — pre-verified. Patch: an e2e test that never calls `app.voice()` before `run` and asserts `noctis_voice_calls{app} == 1` after a pending join.
+  - `[low]` `[patch]` (vgap) The 5 s cap on Shutdown Tasks is not tested — pre-verified. Patch: a core test with a grace above 5 s and a never-ending task (paused clock if possible) asserting the cut at 5 s.
+  - `[low]` `[patch]` (vgap) `VoiceConfig::self_deaf(false)` never reaches an asserted frame — pre-verified. Patch: an e2e test with `self_deaf(false)` asserting `d.self_deaf == false` on a join and on a no-call leave frame.
+  - `[low]` `[patch]` (vgap) `VoiceError::NotReady` has no test — pre-verified; filed `defer` because of the harness, but `FakeGatewayConfig { identify: IdentifyReply::Ignore, .. }` holds READY back. Grouped with the blind missing-tests row; same patch.
+  - `[medium]` `[defer]` (vgap) The template's `tests/voice.rs` is on no running gate — grouped with the blind template-CI row; deferred to Story 14.2.
+  - `[false]` `[reject]` (intent D1) Songbird `gateway` feature vs decision §10 — the spec deliberately settled it (Always line, Design Notes): `Call`/`Shard::Generic` exist only under `gateway`, and both reasons behind §10 still hold; the maintainer delegated such decisions.
+  - `[false]` `[reject]` (intent D2) Core shutdown-task seam and `current_user_id` exceed scope — the spec deliberately settled both (Tasks, Design Notes "Shutdown seam", "Bot user id"); lanes and the drain are untouched.
+  - `[false]` `[reject]` (intent D3) "`cancel` drops the calls" and grace 0 — settled by the spec's shutdown/grace-0 matrix rows and Design Notes.
+  - `[false]` `[reject]` (intent D4) Join success not tested — settled by the spec's Design Notes (needs a real voice server; Story 17.4).
+  - `[false]` `[reject]` (intent D5) Move reconnection only checked on the mirror — the spec's "moved" row settles the observable outcome; Songbird reconnects on the following VSERVU.
+  - `[false]` `[reject]` (intent D6) No dedicated call-map invariant test — every removal path asserts `active_calls()`/the gauge per scenario as the spec's matrix requires; the one known race is the edge row above.
+  - `[medium]` `[defer]` (intent D7) The template does not build with `--features voice` in a running check — grouped with the template-CI rows; deferred to Story 14.2.
+  - `[false]` `[reject]` (intent D8) deps-check edges redefined by a dev-only testkit edge — the spec's manifest task names `noctis-testkit` as a dev-dependency and forbids only the reverse edge.
+  - `[false]` `[reject]` (intent D9) Advisory ignores beyond the AC's license/duplicate allowance — `cargo deny check` must pass (AC 1) and each ignore is justified in `deny.toml` as the AC asks for new dependency issues.
+  - `[low]` `[patch]` (intent D10) `noctis_voice_calls` missing from `noctis::observe::METRICS` — verified: METRICS already lists feature-gated `noctis_render_*` rows and the template `AGENTS.md` says noctis emits only METRICS rows. Patch: add the row (label `app`, gauge) and update the count test.
+  - `[false]` `[reject]` (intent D11) Enforcement lives outside `noctis-rules` — `noctis-rules` is the rule-id registry for runtime rules, as for GW-*; the spec assigns enforcement to gateway and voice.
+
 ## Design Notes
 
 **Why Songbird's `gateway` feature is on (decision).** Verification of songbird 0.6.1 found that `Call`, `shards::Shard::Generic` and `VoiceUpdate` exist only under `gateway`, so AD-30's literal plan (driver only) cannot build. `gateway` adds only async-trait, dashmap, flume, parking_lot and tokio. It does not add twilight or serenity, and it does not create a send path, so both reasons behind §10 still hold: no twilight pin and no op 4 outside GW-04. The `Songbird` manager is compiled but never constructed or re-exported. `tws` plus `rustls` is the websocket/TLS pair: tokio-websockets uses its `ring` feature, and reqwest 0.12 `rustls-tls` uses ring. A scratch resolve showed no `aws-lc-rs`. Amendment line for AD-30 and §10: "Songbird features are `driver`, `gateway` (only for `Call`/`Shard::Generic`; its `Songbird` manager is never used), `rustls`, `tws`."
@@ -178,3 +228,12 @@ If core drops the task at the budget, its drop guard drops the remaining Calls; 
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - In `examples/project-template`: `cargo build --release`, `cargo build --release --features voice`, `cargo test --release --features voice` -- ok
 - `cargo hack` is run by the gate script only, never by the implementer.
+
+## Auto Run Result
+
+- **Summary:** New `noctis-voice` crate (Songbird driver behind the `voice` feature) joins/leaves/moves voice calls through Noctis's own gateway: op 4 `update_voice_state` on `GatewayHandle`, own VSU/VServerU routed to Songbird, `Voice` handle with `join`/`leave`/`active_calls`, `noctis_voice_calls` gauge, Shutdown Task that leaves every call within AD-21's budget, rules-catalog voice section, template `/join` `/leave` module and voice usage-skill reference.
+- **Files changed:** `crates/noctis-voice/*` (new crate: call registry, config, errors, plugin, shard bridge, `Voice` API, e2e tests); `crates/noctis-gateway/src/{command,shard,lib}.rs` (op 4 command, READY user id); `crates/noctis-core/src/{app,observe,plugin}.rs` (+tests: Shutdown Tasks with catch_unwind, 5 s cap, grace accounting); `crates/noctis/*` (feature + re-exports, UI tests); `crates/noctis-rules`, `docs/discord-rules.md`, `xtask/*` (rules catalog, deps-check, api snapshot); `deny.toml` (voice-only advisory ignores); `examples/project-template/*` (voice module, locales, tests, skill `voice.md`, AGENTS.md).
+- **Review findings (pass 1):** 39 findings — high 0, medium 9, low 17, false 12, maybe-false 1. Patched: 6 medium (refused move/replace leaves stale or zombie entry x3 → drop call and `remove_join` on refused send; Shutdown Task panic skips `close_all` x2 → `catch_unwind` per task; `wind_down` waited full grace after tasks → subtract elapsed) and 9 low (warn on refused shutdown leave, intent doc on `update_voice_state`, pending-join interruption documented, `NotReady` test and tighter budget bound, `remove_where` predicate renamed `should_remove`, AppStarted gauge e2e test, 5 s cap test, `self_deaf(false)` frame test). Deferred: 1 medium (template voice module/tests unbuilt; CI steps in workflows-disabled; settles in Story 14.2). Rejected: 8 low/maybe-false (joins during shutdown window, late VSU races self-correcting or accepted, READY double-deserialize, VoiceError Display in template, global deny ignores, pending-leave without VSU(null) costs at most budget) and 12 false, each with reason in the triage log.
+- **Follow-up review recommended:** true — first pass patched 6 medium (0 high). Named risk: the refused-send cleanup in `join_inner`/`remove_join` and the Shutdown Task `catch_unwind` + grace subtraction change call-registry and AD-21 shutdown timing paths that were not re-reviewed after patching.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** template voice code not compiled by any gate until Story 14.2; accepted races (leave-then-join within one gateway round trip; joins started during shutdown are never left); Discord behaviour for op 4 null on a never-connected pending call unverified (bounded by the 5 s budget).

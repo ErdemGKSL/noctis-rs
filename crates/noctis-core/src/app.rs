@@ -7,13 +7,14 @@ use std::fmt;
 use std::future::Future;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::{Range, RangeInclusive};
+use std::panic::AssertUnwindSafe;
 use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt, StreamExt};
 use noctis_codec::{PayloadKey, PayloadKeys};
 use noctis_gateway::{
     CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, EventTypeFlags, Gateway,
@@ -1226,12 +1227,15 @@ impl App {
         tracing::info!(target: "noctis::app", reason = reason.as_str(), grace = ?grace, "shutdown started");
         self.shared.lifecycle.send(LifecycleEvent::ShutdownStarted);
         hooks.shutdown_started(reason);
+        let tasks_started = Instant::now();
         watch.during(self.run_shutdown_tasks(grace)).await;
         gateway.close_all(if self.resume_sessions {
             CloseMode::Resumable
         } else {
             CloseMode::Fresh
         });
+        // The Shutdown Tasks' time counts against the grace.
+        let grace = grace.saturating_sub(tasks_started.elapsed());
         wind_down(grace, controls, drain, &mut watch).await;
         let closed = watch
             .during(tokio::time::timeout(
@@ -1260,9 +1264,21 @@ impl App {
             .iter()
             .enumerate()
             .map(|(index, task)| {
-                let fut = (task.run)(self);
+                // A panic in the closure or its future ends only that task.
+                let started = std::panic::catch_unwind(AssertUnwindSafe(|| (task.run)(self)));
+                let name = task.name;
                 async move {
-                    fut.await;
+                    let panicked = match started {
+                        Ok(fut) => AssertUnwindSafe(fut).catch_unwind().await.is_err(),
+                        Err(_) => true,
+                    };
+                    if panicked {
+                        tracing::error!(
+                            target: "noctis::app",
+                            task = name,
+                            "shutdown task panicked"
+                        );
+                    }
                     index
                 }
             })

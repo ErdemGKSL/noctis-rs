@@ -15,13 +15,15 @@ use std::time::{Duration, Instant};
 
 use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use noctis::gateway::{GatewayError, GatewayHandle, Presence};
+use noctis::lifecycle::{AppStarted, HookCtx};
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker};
 use noctis::voice::{CallHandle, Voice, VoiceConfig, VoiceError};
 use noctis::{Runtime, Token};
 use noctis_testkit::fake::{
-    FakeDiscordHttp, FakeGateway, FrameKind, GatewayBot, RecordedFrame, SessionStartLimit,
+    FakeDiscordHttp, FakeGateway, FakeGatewayConfig, FrameKind, GatewayBot, IdentifyReply,
+    RecordedFrame, SessionStartLimit,
 };
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
@@ -73,6 +75,54 @@ fn channel(n: u64) -> Id<ChannelMarker> {
     Id::new(n)
 }
 
+/// Starts `FakeDiscordHttp` (4 shards) and a `FakeGateway` with `config`.
+async fn start_fakes(config: FakeGatewayConfig) -> (FakeDiscordHttp, Arc<FakeGateway>) {
+    snapshotter();
+    let http = FakeDiscordHttp::start_with(GatewayBot {
+        shards: 4,
+        session_start_limit: SessionStartLimit {
+            max_concurrency: 16,
+            ..SessionStartLimit::default()
+        },
+        ..GatewayBot::default()
+    })
+    .await
+    .unwrap();
+    let gw = Arc::new(FakeGateway::start_with(config).await.unwrap());
+    (http, gw)
+}
+
+/// An App builder with voice against both fakes (shards 0..2 of 4).
+fn voice_builder(
+    app: &str,
+    http: &FakeDiscordHttp,
+    gw: &FakeGateway,
+    config: VoiceConfig,
+    grace: Duration,
+) -> AppBuilder {
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .app_id(app)
+        .token(Token::new("fake-token").unwrap())
+        .http_proxy(http.url())
+        .gateway_url(gw.url())
+        .shard_total(4)
+        .shard_range(0..2)
+        .shutdown_grace(grace)
+        .voice(config);
+    builder
+}
+
+/// Polls `done` until it holds, for at most [`WAIT`].
+async fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 /// A running App with voice against both fakes.
 struct Running {
     gw: Arc<FakeGateway>,
@@ -86,30 +136,10 @@ struct Running {
 
 impl Running {
     async fn start(app: &'static str, config: VoiceConfig, grace: Duration) -> Self {
-        snapshotter();
-        let http = FakeDiscordHttp::start_with(GatewayBot {
-            shards: 4,
-            session_start_limit: SessionStartLimit {
-                max_concurrency: 16,
-                ..SessionStartLimit::default()
-            },
-            ..GatewayBot::default()
-        })
-        .await
-        .unwrap();
-        let gw = Arc::new(FakeGateway::start().await.unwrap());
-        let mut builder = App::builder();
-        builder
-            .runtime(&Runtime::for_test())
-            .app_id(app)
-            .token(Token::new("fake-token").unwrap())
-            .http_proxy(http.url())
-            .gateway_url(gw.url())
-            .shard_total(4)
-            .shard_range(0..2)
-            .shutdown_grace(grace)
-            .voice(config);
-        let app_built = builder.build().unwrap();
+        let (http, gw) = start_fakes(FakeGatewayConfig::default()).await;
+        let app_built = voice_builder(app, &http, &gw, config, grace)
+            .build()
+            .unwrap();
         let gateway = app_built.gateway();
         let voice = app_built.voice();
         let (stop, stopped) = oneshot::channel();
@@ -140,11 +170,7 @@ impl Running {
 
     /// Polls `done` until it holds, for at most [`WAIT`].
     async fn until(&self, what: &str, done: impl Fn() -> bool) {
-        let deadline = Instant::now() + WAIT;
-        while !done() {
-            assert!(Instant::now() < deadline, "timed out waiting for {what}");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        until(what, done).await;
     }
 
     /// Stops the App and waits for `run_until` to return.
@@ -585,4 +611,149 @@ async fn shutdown_without_confirmation_is_cut() {
     assert!(started.elapsed() < Duration::from_secs(10));
     assert_eq!(running.op4_channels(guild), [json!("80"), Value::Null]);
     assert_eq!(running.voice.active_calls(), 0);
+}
+
+/// VC-02: a refused move of a pending call drops the call: the pending join
+/// is `Interrupted`, nothing stays in the map.
+#[tokio::test(flavor = "multi_thread")]
+async fn vc_02_refused_move_drops_the_call() {
+    let running = Running::default("vc-refused-move").await;
+    let guild = guild_on(0, 9);
+    let pending = running.join(guild, channel(90));
+    running.wait_op4(guild, 1).await;
+    let presence = running.gateway.presence();
+    while presence.set_shard(0, Presence::online()).is_ok() {}
+    let refused = finished(running.join(guild, channel(91))).await;
+    assert!(
+        matches!(
+            refused,
+            Err(VoiceError::Gateway(GatewayError::SendLimit {
+                shard: 0,
+                ..
+            }))
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(running.voice.active_calls(), 0);
+    assert!(running.voice.call(guild).is_none());
+    assert_eq!(
+        finished(pending).await.err(),
+        Some(VoiceError::Interrupted { guild })
+    );
+    running
+        .until("the gauge", || running.gauge() == Some(0.0))
+        .await;
+    running.stop().await;
+}
+
+/// `self_deaf(false)` reaches the join frame and a leave without a call.
+#[tokio::test(flavor = "multi_thread")]
+async fn self_deaf_false_reaches_op4() {
+    let config = VoiceConfig::default().self_deaf(false);
+    let running = Running::start("vc-undeaf", config, Duration::from_secs(10)).await;
+    let guild = guild_on(1, 10);
+    let _join = running.join(guild, channel(100));
+    running.wait_op4(guild, 1).await;
+    let free = guild_on(0, 10);
+    running.voice.leave(free).await.unwrap();
+    running.wait_op4(free, 1).await;
+    for target in [guild, free] {
+        let (_, d) = running
+            .op4()
+            .into_iter()
+            .find(|(_, d)| d["guild_id"] == json!(target.to_string()))
+            .unwrap();
+        assert_eq!(d["self_deaf"], json!(false), "{d}");
+    }
+    running.stop().await;
+}
+
+/// The shards run but no READY arrived: `NotReady`, no call.
+#[tokio::test(flavor = "multi_thread")]
+async fn join_before_ready_is_not_ready() {
+    let (http, gw) = start_fakes(FakeGatewayConfig {
+        identify: IdentifyReply::Ignore,
+        ..FakeGatewayConfig::default()
+    })
+    .await;
+    let app = voice_builder(
+        "vc-not-ready",
+        &http,
+        &gw,
+        VoiceConfig::default(),
+        Duration::from_secs(1),
+    )
+    .build()
+    .unwrap();
+    let voice = app.voice();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let run = tokio::spawn(app.run_until(async {
+        let _ = stopped.await;
+    }));
+    until("an IDENTIFY", || {
+        gw.frames().iter().any(|f| f.op() == Some(2))
+    })
+    .await;
+    assert_eq!(
+        voice.join(guild_on(0, 11), channel(110)).await.err(),
+        Some(VoiceError::NotReady)
+    );
+    assert_eq!(voice.active_calls(), 0);
+    let _ = stop.send(());
+    finished(run).await.unwrap();
+}
+
+/// Where the `AppStarted` hook below puts `ctx.voice()`.
+#[derive(Default)]
+struct VoiceSlot(std::sync::Mutex<Option<Voice>>);
+
+/// Takes the App's `Voice` from a context (which binds no label).
+#[derive(Hook)]
+struct GrabVoice;
+
+impl GrabVoice {
+    #[handler]
+    async fn handle(self, ctx: HookCtx, _ev: AppStarted) -> HandlerResult<()> {
+        let slot = ctx.state::<VoiceSlot>().expect("registered");
+        *slot.0.lock().unwrap() = Some(ctx.voice());
+        Ok(())
+    }
+}
+
+/// `AppStarted` alone binds the gauge's `app` label: `app.voice()` is never
+/// called.
+#[tokio::test(flavor = "multi_thread")]
+async fn app_started_binds_the_gauge() {
+    let (http, gw) = start_fakes(FakeGatewayConfig::default()).await;
+    let mut builder = voice_builder(
+        "vc-started",
+        &http,
+        &gw,
+        VoiceConfig::default(),
+        Duration::from_secs(1),
+    );
+    builder
+        .state(VoiceSlot::default())
+        .module(Module::new("grab").add::<GrabVoice>());
+    let app = builder.build().unwrap();
+    let gateway = app.gateway();
+    let slot = app.state::<VoiceSlot>().unwrap();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let run = tokio::spawn(app.run_until(async {
+        let _ = stopped.await;
+    }));
+    until("the bot user id and the hook", || {
+        gw.dispatch("TYPING_START", json!({})) >= 2
+            && gateway.current_user_id() == Some(Id::new(BOT))
+            && slot.0.lock().unwrap().is_some()
+    })
+    .await;
+    let voice = slot.0.lock().unwrap().clone().unwrap();
+    let guild = guild_on(0, 12);
+    let join = tokio::spawn(voice.join(guild, channel(120)));
+    until("the pending call", || voice.active_calls() == 1).await;
+    until("the gauge", || calls_gauge("vc-started") == Some(1.0)).await;
+    let _ = stop.send(());
+    finished(run).await.unwrap();
+    assert!(finished(join).await.is_err());
 }

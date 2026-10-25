@@ -966,7 +966,9 @@ impl GatewayHandle {
     /// Sends `request` (op 4 Voice State Update) to its guild's owning shard
     /// (VC-01). It counts against that shard's GW-04 budget, the same window
     /// as presence updates and member requests. Never blocks; nothing is
-    /// queued after an error.
+    /// queued after an error. The App needs the `GUILD_VOICE_STATES` intent
+    /// to receive Discord's answers (`VOICE_STATE_UPDATE`,
+    /// `VOICE_SERVER_UPDATE`); the `voice` feature's plugin adds it.
     ///
     /// ```
     /// use noctis_gateway::{GatewayError, GatewayHandle, VoiceStateRequest};

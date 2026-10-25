@@ -1154,6 +1154,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_render_queue_depth` | gauge | `app` | this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame |
 | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full` \| `unknown_template` \| `unsupported` \| `over_cap`) | renders rejected before drawing |
 | `noctis_discord_cache_update_errors_total` | counter | `app` | Discord cache updates that failed or exceeded 1 s; the event or interaction still reaches its handlers (one `noctis::cache` warning per outage) |
+| `noctis_voice_calls` | gauge | `app` | live and pending voice calls (feature `voice`, see `voice.md` §5) |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
 `autocomplete` are emitted today; `component` and `render` join with their handlers.

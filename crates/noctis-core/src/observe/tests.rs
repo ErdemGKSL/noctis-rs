@@ -60,9 +60,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 23);
+    assert_eq!(METRICS.len(), 24);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 23);
+    assert_eq!(names.len(), 24);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -113,6 +113,7 @@ fn catalog_static() {
             ("noctis_render_queue_depth", &["app"][..]),
             ("noctis_render_rejected_total", &["app", "reason"][..]),
             ("noctis_discord_cache_update_errors_total", &["app"][..]),
+            ("noctis_voice_calls", &["app"][..]),
         ]
     );
 }
@@ -329,7 +330,7 @@ async fn recorded_set_core() {
     // the Ref lookups in `pipeline::tests::refs`; the render rows in
     // `render::tests`; the Discord cache update errors in
     // `discord_cache::tests`; the rate-limit row in the testkit's
-    // `rate_limits.rs`.
+    // `rate_limits.rs`; the voice gauge in noctis-voice's `voice_gateway.rs`.
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
@@ -342,6 +343,7 @@ async fn recorded_set_core() {
                 && name != "noctis_rate_limited_total"
                 && !name.starts_with("noctis_render_")
                 && name != "noctis_discord_cache_update_errors_total"
+                && name != "noctis_voice_calls"
         })
         .collect();
     assert_eq!(seen, all, "{snapshot:?}");

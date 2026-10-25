@@ -54,7 +54,9 @@ impl Voice {
     /// Sends op 4 from the guild's owning shard (VC-01) and resolves once
     /// Discord answered and the voice driver connected, within
     /// `VoiceConfig::join_timeout`. Joining the channel the call is already
-    /// connected to sends nothing and returns the same call. The returned
+    /// connected to sends nothing and returns the same call; a second join
+    /// to the same channel while the first is still pending interrupts the
+    /// first ([`VoiceError::Interrupted`]) and sends op 4 again. The returned
     /// future is `Send + 'static`: it can be spawned.
     ///
     /// # Errors
@@ -111,10 +113,11 @@ impl Voice {
                 Ok(join) => join,
                 Err(error) => {
                     let error = map_send_error(guild, error, &joining.shard);
+                    // Drop the unsent join locally, then its entry: a
+                    // refused op 4 leaves no call behind (VC-02).
+                    call.update_state(String::new(), None::<ChannelId>);
                     drop(call);
-                    if joining.created {
-                        shared.remove_generation(guild, joining.generation);
-                    }
+                    shared.remove_join(guild, joining.generation, joining.join);
                     return Err(error);
                 }
             }

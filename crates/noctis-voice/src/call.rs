@@ -38,7 +38,6 @@ pub(crate) struct Entry {
 pub(crate) struct Joining {
     pub(crate) generation: u64,
     pub(crate) join: u64,
-    pub(crate) created: bool,
     pub(crate) call: Arc<tokio::sync::Mutex<Call>>,
     pub(crate) shard: Arc<NoctisShard>,
 }
@@ -139,7 +138,6 @@ impl VoiceShared {
             return Joining {
                 generation: entry.generation,
                 join,
-                created: false,
                 call: Arc::clone(&entry.call),
                 shard: Arc::clone(&entry.shard),
             };
@@ -165,7 +163,6 @@ impl VoiceShared {
         let joining = Joining {
             generation: entry.generation,
             join,
-            created: true,
             call: Arc::clone(&entry.call),
             shard: Arc::clone(&entry.shard),
         };
@@ -176,16 +173,16 @@ impl VoiceShared {
         joining
     }
 
-    /// Removes `guild`'s entry when `keep` says so.
+    /// Removes `guild`'s entry when `should_remove` returns `true` for it.
     fn remove_where(
         &self,
         guild: Id<GuildMarker>,
-        keep: impl FnOnce(&Entry) -> bool,
+        should_remove: impl FnOnce(&Entry) -> bool,
     ) -> Option<Entry> {
         let mut calls = self.calls();
         let removed = calls
             .get(&guild)
-            .is_some_and(keep)
+            .is_some_and(should_remove)
             .then(|| calls.remove(&guild))
             .flatten();
         let len = calls.len();

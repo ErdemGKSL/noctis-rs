@@ -186,7 +186,7 @@ async fn leave_all(shared: &VoiceShared) {
         let mut call = entry.call.lock().await;
         match call.leave().await {
             Ok(()) => confirmations.push(left),
-            Err(error) => tracing::debug!(
+            Err(error) => tracing::warn!(
                 target: "noctis::voice",
                 guild = guild.get(),
                 %error,

@@ -100,6 +100,7 @@ const fn row(
 /// | `noctis_render_queue_depth` | gauge | `app` (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame) |
 /// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`, `over_cap`) |
 /// | `noctis_discord_cache_update_errors_total` | counter | `app` (failed or timed-out Discord cache updates; the event or interaction still runs) |
+/// | `noctis_voice_calls` | gauge | `app` (live and pending voice calls; feature `voice`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -245,6 +246,12 @@ pub const METRICS: &[MetricInfo] = &[
         &["app"],
         "Discord cache updates that failed or exceeded 1 s; the event or interaction still \
          reaches its handlers.",
+    ),
+    row(
+        "noctis_voice_calls",
+        MetricType::Gauge,
+        &["app"],
+        "Live and pending voice calls (feature `voice`)",
     ),
 ];
 

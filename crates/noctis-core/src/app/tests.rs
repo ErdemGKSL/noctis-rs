@@ -2924,12 +2924,65 @@ async fn shutdown_tasks_cut_at_budget() {
     let app = builder.build().unwrap();
     let started = Instant::now();
     shut_down_unconnected(&app).await;
-    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(started.elapsed() < Duration::from_secs(2));
     assert_eq!(dropped.load(Ordering::SeqCst), 1);
     assert_eq!(finished.load(Ordering::SeqCst), 1);
     let warnings = capture.lines_with(&["WARN", "shutdown tasks did not finish in time"]);
     assert_eq!(warnings.len(), 1, "{}", capture.text());
     assert!(warnings[0].contains("stuck") && !warnings[0].contains("quick"));
+}
+
+/// Above 5 s of grace the tasks are cut at `SHUTDOWN_TASK_BUDGET`, not at
+/// the grace.
+#[tokio::test(start_paused = true)]
+async fn shutdown_tasks_capped_at_five_seconds() {
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::from_secs(8))
+        .shutdown_task("stuck", |_| std::future::pending::<()>());
+    let app = builder.build().unwrap();
+    let started = Instant::now();
+    app.run_shutdown_tasks(app.shutdown_grace()).await;
+    assert_eq!(started.elapsed(), SHUTDOWN_TASK_BUDGET);
+}
+
+/// A panic in a task's closure or future ends only that task: the others
+/// finish and the shutdown completes (shards closed).
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_tasks_survive_a_panic() {
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let finished = Arc::new(AtomicUsize::new(0));
+    let done = Arc::clone(&finished);
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::from_millis(500))
+        .shutdown_task("closure", |_| -> std::future::Ready<()> {
+            panic!("closure panic")
+        })
+        .shutdown_task("future", |_| async { panic!("future panic") })
+        .shutdown_task("quick", move |_| {
+            let done = Arc::clone(&done);
+            async move {
+                done.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+    let app = builder.build().unwrap();
+    shut_down_unconnected(&app).await;
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        app.gateway().presence().set(Presence::online()),
+        Err(noctis_gateway::GatewayError::NotRunning)
+    );
+    let errors = capture.lines_with(&["ERROR", "shutdown task panicked"]);
+    assert_eq!(errors.len(), 2, "{}", capture.text());
+    assert!(
+        capture.text().contains("shutdown complete"),
+        "{}",
+        capture.text()
+    );
 }
 
 /// With a grace of zero no Shutdown Task runs.
