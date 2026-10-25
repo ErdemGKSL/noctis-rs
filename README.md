@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 95 of 107" src="https://img.shields.io/badge/stories-95%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 98 of 107" src="https://img.shields.io/badge/stories-98%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,14 +25,14 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–13 and 15 are done
+> **Noctis is under active development and not yet published.** Epics 1–13, 15 and 16 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
-> module operations, opt-in extras). Epic 16 (event pipeline throughput) is in progress
-> (2 of 3 stories done), Epic 17 (voice and music bots) is in progress (2 of 4 stories
-> done), and Epic 14 (launch readiness) is next.
+> module operations, opt-in extras, event pipeline throughput). Epic 17 (voice and music
+> bots) is in progress (3 of 4 stories done), and Epic 14 (launch readiness) is in
+> progress (1 of 9 stories done).
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -253,10 +253,10 @@ done. Live per-story status is in
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | ✅ Done |
-| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
+| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (1 / 9) |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
-| 16 | Event pipeline throughput | P1 | 🔨 In progress (2 / 3) |
-| 17 | Voice and music bots | P1 | 🔨 In progress (2 / 4) |
+| 16 | Event pipeline throughput | P1 | ✅ Done |
+| 17 | Voice and music bots | P1 | 🔨 In progress (3 / 4) |
 
 **What already works**
 
@@ -369,12 +369,14 @@ done. Live per-story status is in
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
   - Prefix commands through `PrefixPlugin` (feature `prefix`), reusing slash Commands.
-- **Event pipeline throughput (in progress).**
+- **Event pipeline throughput.**
   - A criterion bench of the event pipeline
     (throughput, latency percentiles, push cost) with a recorded baseline, and an
     exact-count allocation test per event path.
   - Lanes split into per-shard partitions with global bounds, one drain task per
     partition with batched pops, and per-guild ordering.
+  - Lower per-event and per-handler overhead: handlers that reject an event get no
+    clone, metric handles are cached, and a single concurrent handler runs inline.
 - **Voice and music bots (in progress).** The `noctis-voice` crate (feature `voice`,
   on Songbird):
   - Join, leave and move voice calls through Noctis's own gateway with a `Voice`
@@ -382,9 +384,13 @@ done. Live per-story status is in
   - `Track` inputs (URL, file, child command) and a bounded per-guild queue with
     enqueue, skip, stop, pause, resume, volume and idle leave.
   - Typed `TrackStart`, `TrackEnd` and `TrackError` events delivered to Modules.
+  - An optimized Opus path with passthrough and encoded frame counters, encoder bitrate
+    that follows the channel bitrate, an allocation test and a voice bench.
 - **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
   test runs without Discord, plus `TestApp` for simulated interactions and message
-  snapshots (re-exported as `noctis::testkit`).
+  snapshots (re-exported as `noctis::testkit`). Conformance suites
+  (`noctis::testkit::conformance`) check your own storage, identify-queue and cache
+  Adapters.
 
 ### 🔭 Beyond v1
 - Official Redis and SQL adapter crates
