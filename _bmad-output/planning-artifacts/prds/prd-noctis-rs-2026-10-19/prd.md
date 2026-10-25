@@ -18,7 +18,7 @@ the epic and story authors who come next, and it builds on these inputs:
   (`tescord-features.md`), Discord Components V2 (`discord-components-v2.md`),
   twilight-rs (`twilight-rs.md`) and takumi (`takumi-image-generation.md`).
 
-Features are grouped, and their FRs are numbered globally (FR-1 … FR-79) so later
+Features are grouped, and their FRs are numbered globally (FR-1 … FR-80) so later
 documents can refer to them. FR-52 onwards were added in revision and sit inside
 the feature they belong to, so ids are unique and gap-free but not in reading
 order. Terms in §3 are used verbatim. Inline `[ASSUMPTION]` tags are collected in
@@ -1241,6 +1241,22 @@ Enforcement Point (compile time, App build or runtime).
   has no matching unit test.
 - The Usage Skill links the catalog for its Limits entries.
 
+#### FR-80: Voice connections and music playback (added 2026-10-25)
+A bot author enables the `voice` feature, joins and leaves voice channels from any
+handler, and plays queued audio tracks, with pre-encoded Opus sent without
+re-encoding (maintainer decision §10).
+**Consequences (testable):**
+- `.voice(VoiceConfig)` on the AppBuilder installs voice support and adds the
+  `GUILD_VOICE_STATES` intent; without the feature nothing voice-related compiles in.
+- Joining sends op 4 through the owning shard under the per-shard send budget; the
+  bot's voice state and voice server updates complete the connection; leaving and
+  App shutdown disconnect every call.
+- A per-guild track queue plays files, HTTP media and child-process streams decoded
+  by symphonia; Ogg Opus and WebM Opus at 48 kHz play by passthrough (no decode, no
+  encode) when one track plays at unity volume.
+- Track start, end and error reach the bot as typed events; voice errors are typed
+  and never panic a handler.
+
 ## 5. Cross-Cutting NFRs
 
 - **NFR-1 Memory.** The framework's own memory per idle guild stays within a
@@ -1303,7 +1319,9 @@ Enforcement Point (compile time, App build or runtime).
 ## 7. Non-Goals (Explicit)
 
 - Noctis does not implement its own gateway or HTTP client. It builds on twilight.
-- There is no voice or music support, and no Lavalink integration.
+- There is no Lavalink integration. Voice and music support is opt-in through
+  Songbird (FR-80, added 2026-10-25; it replaces the original "no voice or music
+  support" non-goal).
 - There is no web dashboard.
 - Runtimes other than tokio are not supported.
 - Code is not hot-reloaded. Boot Flags and runtime Module enable/disable take its

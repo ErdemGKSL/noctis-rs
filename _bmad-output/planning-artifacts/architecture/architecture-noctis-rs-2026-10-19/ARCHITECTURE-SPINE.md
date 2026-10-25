@@ -41,7 +41,7 @@ lanes; a worker set in `noctis-core` drains them into handlers.
 | 2 UI model | `noctis-ui` | none |
 | 3 Edge and services | `noctis-gateway`, `noctis-i18n` | gateway socket |
 | 4 Application | `noctis-core` (incl. `Runtime`, `Plugin`, `Dispatcher`) | Discord HTTP through the App's one client; storage through ports |
-| 5 Extensions | `noctis-image` (`render` feature), `noctis-prefix`, `noctis-testkit` | image asset fetch and render pool; the rest through core |
+| 5 Extensions | `noctis-image` (`render` feature), `noctis-prefix`, `noctis-voice`, `noctis-testkit` | image asset fetch and render pool; voice UDP/websocket and media fetch (AD-30); the rest through core |
 | 6 Facade | `noctis` | none (re-exports, feature wiring) |
 | Compile time | `noctis-macros` (proc-macro) | reads the invoking crate's locale and theme files |
 
@@ -62,6 +62,9 @@ graph TD
   noctis --> image[noctis-image]
   noctis --> i18n[noctis-i18n]
   noctis --> prefix[noctis-prefix]
+  noctis --> voice[noctis-voice]
+  voice --> core
+  voice --> gateway
   noctis -.->|testkit feature, dev-dependencies only| testkit[noctis-testkit]
   prefix --> core
   image -->|render feature| core
@@ -1206,7 +1209,8 @@ list in CI.
     The hidden `noctis_core::__testing` run observer and `AppProbe` only observe (run
     end, command definitions, notice texts, `custom_id` masking); the App reaches the
     fakes only through its override points.
-  - Non-Discord HTTP exists only in `noctis-image`'s `AssetFetcher` (AD-15).
+  - Non-Discord HTTP exists only in `noctis-image`'s `AssetFetcher` (AD-15) and in
+    `noctis-voice`'s media inputs (AD-30).
   - **`Runtime`** is defined in `noctis-core` and re-exported as `noctis::Runtime`.
     It owns the process-scoped resources: the metrics recorder plus a type map of
     type-erased resources (`Arc<dyn Any + Send + Sync>` keyed by `TypeId`) that
@@ -1464,6 +1468,40 @@ list in CI.
   - Error Sinks receive every handler error, panic, hook error and overflow drop.
     The default sink logs at `error`.
 
+### AD-30 — Voice through Songbird's driver, Noctis's gateway (added 2026-10-25)
+- **Binds:** `noctis-voice`, `noctis-gateway`, facade; FR-80; maintainer decision §10.
+- **Prevents:** a second gateway send path outside GW-04, twilight upgrades blocked by
+  a voice dependency, voice code in the default build, unbounded per-guild state and
+  re-encoding audio that is already Opus.
+- **Rule:**
+  - `noctis-voice` (layer 5) depends on `noctis-core` and `noctis-gateway` only among
+    workspace crates and on `songbird` 0.6 with `default-features = false` and the
+    `driver` feature plus one websocket/TLS feature whose graph stays ring-only (AD-21,
+    no `aws-lc-rs`, cargo-deny clean). Songbird's `twilight`, `serenity` and `gateway`
+    features and its `Songbird` manager are not used. Songbird types stay behind
+    Noctis types, except a documented `unstable` module that semver does not cover.
+  - `noctis-gateway` owns op 4 Voice State Update as a gateway command next to
+    presence and Request Guild Members: same owning-shard routing, Shard Range check
+    and GW-04 budget; it is reachable through `GatewayHandle`.
+  - `noctis-voice` keeps one `songbird::Call` per guild with a live or pending
+    connection, created with `Shard::Generic` over that command path and removed on
+    leave, disconnect or guild delete; the map never holds idle guilds (AD-25).
+    `VoicePlugin::install` mounts handlers for the bot user's `VOICE_STATE_UPDATE` and
+    for `VOICE_SERVER_UPDATE` that call `update_state` / `update_server`, and adds the
+    `GUILD_VOICE_STATES` intent.
+  - Codec path: symphonia (Songbird's 0.5 line) demuxes and decodes; libopus through
+    Songbird's `opus2` encodes. Ogg Opus and WebM/Matroska Opus at 48 kHz are sent by
+    passthrough when one track plays at unity volume; the steady-state passthrough
+    frame allocates nothing in `noctis-voice`.
+  - Media HTTP inputs use Songbird's input client with timeouts and a redirect cap;
+    they never carry the bot token, never target Discord's API and never go through
+    the Discord edge.
+  - Shutdown (AD-21): the `shutdown` phase stops every call's tracks and leaves its
+    channel before the shards close; `cancel` drops the calls.
+  - Metrics (AD-29 naming): `noctis_voice_calls` (gauge), `noctis_voice_tracks_total`
+    (result), `noctis_voice_passthrough_frames_total`, `noctis_voice_encoded_frames_total`;
+    no guild or channel ids in labels.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -1519,6 +1557,7 @@ list in CI.
 | yaml-rust2 (locale files, macros) | 0.13 |
 | cssparser (theme file, macros; MPL-2.0, allowed in `deny.toml`) | 0.38 |
 | criterion / dhat (benches) | 0.8 / 0.3 |
+| songbird (`noctis-voice`, `driver` feature only; brings symphonia 0.5, opus2/libopus, davey) | 0.6.1 |
 | png (testkit pixel snapshots) | 0.18 |
 | toml / pulldown-cmark / cargo_metadata (xtask: `rules-pending.toml` and `budgets.toml`, catalog tables, workspace graph) | 1.1 / 0.13 / 0.23 |
 | cargo-hack (CI, `--each-feature`) | 0.6 |
@@ -1549,6 +1588,8 @@ noctis-rs/
     noctis-image/            # tw grammar (takumi-free, default); `render`: takumi renderer, ImagePlugin, AppBuilderImageExt, render pool, fonts, AssetFetcher
       benches/               # reference card render bench
     noctis-prefix/           # opt-in prefix commands (P2): PrefixPlugin
+    noctis-voice/            # opt-in voice (FR-80): VoicePlugin, AppBuilderVoiceExt, per-guild Songbird calls, queue, Opus passthrough
+      benches/               # voice mixer and passthrough bench
     noctis-testkit/          # Discord HTTP/gateway fakes, TestApp on Runtime::for_test, simulated Inbound, conformance suites, snapshot helpers, assert_memory_flat
   examples/
     project-template/        # standalone bot + AGENTS.md + .claude/skills/{noctis,rust-best-practices}

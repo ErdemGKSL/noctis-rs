@@ -390,3 +390,43 @@ impl Warn {
   always a locale key. At run time overrides take `impl Into<Text>` (`&str`/`String` or
   `MessageKey`). Existing key-looking literals in the template (`label =
   "profile.edit_bio"`) become `keys::…` paths when Story 11.1 ships.
+
+## 10. Voice and music bots through Songbird (2026-10-25)
+
+The maintainer asked for Songbird integration with an optimized Opus path so music
+bots can be built on Noctis. This reverses the PRD non-goal "no voice or music
+support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
+
+- **Opt-in crate.** Voice lives in a new layer-5 crate `noctis-voice`, reached through
+  the facade feature `voice` (off by default) and core's `Plugin` seam (AD-24):
+  `VoicePlugin` plus the extension trait `AppBuilderVoiceExt::voice(VoiceConfig)`.
+  Nothing in core, gateway or the facade's default build names Songbird.
+- **Songbird is the voice driver, not the gateway glue.** `songbird` 0.6.1 (DAVE E2EE
+  through `davey`, RTP, UDP, mixer, symphonia inputs) is used with
+  `default-features = false` and only its `driver` feature plus one websocket/TLS
+  feature that keeps AD-21's ring-only rustls graph. Its `twilight`, `serenity` and
+  `gateway` features and its `Songbird` manager are not used: songbird 0.6.1 caps
+  twilight at `<=0.17`, which would pin Noctis's twilight upgrades to Songbird's
+  release cycle, and its manager sends op 4 outside Noctis's per-shard send budget.
+  Instead `noctis-voice` owns one `songbird::Call` per guild in voice (a map bounded by
+  the guilds with a live call), built with `Shard::Generic`, whose `VoiceUpdate` sends
+  op 4 Voice State Update through `noctis-gateway`'s command path (GW-04 budget, owning
+  shard, Shard Range checks). The bot's own `VOICE_STATE_UPDATE` and every
+  `VOICE_SERVER_UPDATE` are fed to the right `Call` with `update_state` /
+  `update_server`.
+- **Codec (maintainer, 2026-10-25): symphonia for demux and decode, libopus for
+  encode.** Inputs are demuxed and decoded by symphonia (the 0.5 line Songbird depends
+  on; no second symphonia version in the graph). Opus encoding uses Songbird's libopus
+  binding (`opus2`, statically built from source, so the `voice` feature needs a C
+  compiler and cmake, documented like the `image` feature's libwebp). Pre-encoded
+  Opus (Ogg Opus, WebM/Matroska Opus at 48 kHz) is played by passthrough: packets go to
+  the wire without decode or re-encode whenever only one track plays at unity volume,
+  which is the common music-bot case. Decode plus mix plus encode is the fallback for
+  other formats, several tracks or volume changes.
+- **Non-Discord HTTP.** Music inputs fetch arbitrary media URLs, an exception to
+  AD-24's "non-Discord HTTP only in `AssetFetcher`": `noctis-voice` may fetch media
+  through Songbird's input HTTP client with a connect timeout and redirect cap; it
+  never sends the bot token or Noctis headers and never reaches Discord's API.
+- **Order.** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
+  with Epic 16; merges serialize through the merge lock. Epic 14's template, skill
+  and docs stories cover the `voice` feature once Epic 17 is merged.

@@ -69,6 +69,13 @@ recorded here.
   drain and per-guild ordering; 16.3 per-event and per-handler overhead) are proven by
   numbers. Epic 16 runs after Epics 12, 13 and 15 and before Epic 14 (Story 14.3 sets
   budgets against the optimized pipeline). The plan now has 104 stories.
+- **Correct course, 2026-10-25 (maintainer request):** the maintainer asked for
+  Songbird integration with an optimized Opus codec so music bots can be built on
+  Noctis. It became Epic 17, "Voice and music bots", with four stories (voice
+  connection wiring, playback and queue, the optimized Opus path with its bench, and
+  the music-bot example with test and documentation coverage), FR-80 and AD-30; the
+  design and codec choice are maintainer decision §10. It runs on its own lane after
+  Story 16.1. The plan now has 108 stories.
 
 ### Validation summary (step 4)
 
@@ -583,7 +590,7 @@ is mapped.
 
 ## Epic List
 
-Sixteen epics, ordered by priority tier (P0 → P1 → P2) and, inside a tier, by the
+Seventeen epics, ordered by priority tier (P0 → P1 → P2) and, inside a tier, by the
 crate layers (rules → codec → ports/ui → gateway → core → macro-heavy features →
 image → i18n → scale). Each epic builds only on earlier epics. The README roadmap
 milestone is given per epic.
@@ -683,6 +690,13 @@ A bot operator gets an event pipeline that scales with cores and shards: measure
 throughput, lock-light lanes, a parallel drain, per-guild ordering without
 head-of-line blocking and fewer allocations per event, with every AD-10 guarantee kept.
 **FRs covered:** FR-5, FR-6 (performance); NFR-3, NFR-5, NFR-9.
+
+### Epic 17: Voice and music bots (P1, added 2026-10-25; own lane after Story 16.1)
+A bot author enables the `voice` feature, joins voice channels through Noctis's own
+gateway, plays a per-guild queue of tracks decoded by symphonia, and gets
+pre-encoded Opus to the wire without re-encoding, shown end to end by a music-bot
+example.
+**FRs covered:** FR-80; NFR-3, NFR-9 (voice path).
 
 ## Epic 1: Project foundation and Discord rules as code
 
@@ -3787,3 +3801,144 @@ So that the same hardware handles more events and the dispatch path meets its NF
 **Given** the gates
 **When** the story is done
 **Then** observable behavior (spans and their fields when a subscriber is enabled, error reports, Middleware order, panic and cancel handling, NFR-4) is unchanged and every existing test passes unchanged; if a public API changes, the Project Template, its `AGENTS.md` and the Usage Skill are updated, `xtask/public-api.txt` is re-blessed and the Skill's `API hash` updated in the same commit
+
+## Epic 17: Voice and music bots
+
+A bot author enables the `voice` feature, joins and leaves voice channels from any
+handler through Noctis's own gateway, plays a per-guild queue of tracks that
+symphonia demuxes and decodes, and gets pre-encoded Opus to the wire without decode
+or re-encode, shown end to end by a music-bot example. Added 2026-10-25 at the
+maintainer's request (maintainer decision §10, FR-80, AD-30).
+
+**Order:** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
+with Stories 16.2 and 16.3; merges serialize through the merge lock. Story 17.1
+touches `noctis-gateway/src/command.rs` and the facade, not the lanes or the drain.
+Epic 14's template, skill and documentation stories later treat `voice` like any
+other feature.
+
+**Starting point (main at 4f398b0):** `noctis-gateway/src/command.rs` sends op 3
+(presence) and op 8 (Request Guild Members) through `GatewayHandle` under the GW-04
+budget; `VoiceStateUpdate` (intent `GUILD_VOICE_STATES`) and `VoiceServerUpdate` are
+already typed events in `noctis-core/src/events.rs`. Songbird 0.6.1 (crates.io,
+2026-10-10) exposes `songbird::Call::from_config(guild, Shard::Generic(..), user,
+config)`, `Call::update_state`, `Call::update_server` and the public traits
+`songbird::shards::VoiceUpdate` / `GenericSharder`; its `driver` feature brings
+symphonia 0.5, `opus2` (libopus built with cmake), `davey` (DAVE E2EE) and a reqwest
+0.12 input client. Verify each of these against the published crate before relying
+on it.
+
+### Story 17.1: Voice connections through Noctis's gateway
+
+As a bot author,
+I want to join and leave voice channels from any handler with one opt-in feature,
+So that my bot can hold voice connections without a second gateway client or a twilight version pin.
+
+**Implements:** FR-80 (connections); AD-2, AD-21, AD-24, AD-25, AD-29, AD-30.
+
+**Acceptance Criteria:**
+
+**Given** the workspace
+**When** the story is done
+**Then** a new crate `crates/noctis-voice` exists (workspace member, shared version and license, `publish` like the other sub-crates) depending on `noctis-core`, `noctis-gateway` and `songbird` 0.6 with `default-features = false` and only `driver` plus the one websocket/TLS feature that keeps the graph ring-only; the facade gains a `voice` feature (off by default, documented in `crates/noctis/Cargo.toml` with its C compiler and cmake requirement); `xtask deps-check` allows exactly the AD-30 edges; `cargo deny check` passes (any new license or duplicate is justified in `deny.toml` with a comment); the default facade build's dependency graph contains no `songbird`
+
+**Given** `noctis-gateway`'s command path
+**When** a voice state update is requested for a guild
+**Then** op 4 (`UpdateVoiceState`: guild, channel or none, self_mute, self_deaf) is sent by the guild's owning shard under the GW-04 budget with the same `GatewayError`s as presence and member requests (`NotRunning`, `GuildNotInRange`, `ShardClosed`, budget exhausted), with unit tests on the fake gateway that the frame is sent on the right shard and counted against the budget
+
+**Given** `App::builder().voice(VoiceConfig::default())` (extension trait `AppBuilderVoiceExt`, plugin `VoicePlugin` through core's `Plugin` seam)
+**When** the App builds
+**Then** the `GUILD_VOICE_STATES` intent is added, handlers for the bot user's own `VOICE_STATE_UPDATE` and for `VOICE_SERVER_UPDATE` are mounted, and a handler context reaches voice with `ctx.voice()` (also from `App` and lifecycle contexts) returning a cheap clonable `Voice` handle
+
+**Given** `voice.join(guild, channel).await`
+**When** Discord answers with the bot's voice state and the voice server update
+**Then** the guild's `songbird::Call` (created with `Shard::Generic` over the op 4 path, one per guild with a live or pending connection) receives `update_state` / `update_server`, the join resolves to a `CallHandle` or a typed `VoiceError` (timeout from `VoiceConfig::join_timeout`, default 10 s; gateway error; driver error), and `voice.leave(guild)` sends op 4 with no channel and removes the call
+
+**Given** a guild delete, the bot being moved or disconnected by a moderator, or the App's `shutdown`
+**When** it happens
+**Then** the call follows it (moved: the call reconnects to the new channel; disconnected or guild delete: the call is removed), and the AD-21 `shutdown` phase leaves every channel before the shards close, while `cancel` drops the calls; the call map never holds a guild without a live or pending connection (test)
+
+**Given** the gates
+**When** the story is done
+**Then** `docs/discord-rules.md` gains a "Voice" section with rule ids (op 4 owning shard and budget, one voice connection per guild per bot) enforced in `noctis-rules` with matching tests, the AD-30 metrics `noctis_voice_calls` exists, the public API is re-blessed, and the Project Template, its `AGENTS.md` and the Usage Skill show enabling `voice` and joining a channel (template builds with `--features voice` in its check)
+
+### Story 17.2: Track playback, inputs and the per-guild queue
+
+As a music bot author,
+I want to queue and control tracks from files, URLs and child processes,
+So that I can build play, skip, pause, stop and volume commands without touching the voice driver.
+
+**Implements:** FR-80 (playback); AD-24 (amended), AD-25, AD-29, AD-30.
+
+**Acceptance Criteria:**
+
+**Given** a `CallHandle`
+**When** the author enqueues an input
+**Then** `Track` inputs can be built from a local file, an HTTP(S) media URL and a child process's stdout (for example `yt-dlp -o - ...`), all demuxed and decoded by symphonia (Songbird's 0.5 line, with the formats enabled through `noctis-voice` features: at least ogg, mkv/webm, mp3, aac/isomp4, flac and wav), and the per-guild queue supports `enqueue`, `skip`, `pause`, `resume`, `stop`, `clear`, `volume` (0.0 to 2.0, checked), `now_playing` and `list` with a bounded length (`VoiceConfig::max_queue`, default 1000; enqueue beyond it is a typed error)
+
+**Given** a track starts, ends, fails or the queue empties
+**When** it happens
+**Then** the bot receives it as a typed event a Module can handle (`TrackStart`, `TrackEnd`, `TrackError`, `QueueEmpty` with guild and track metadata), a track error never panics a handler or stops the queue (the next track starts), and the counter `noctis_voice_tracks_total{result}` is recorded
+
+**Given** an HTTP media input
+**When** it is fetched
+**Then** it uses Songbird's input client with a connect timeout, a redirect cap and no bot token or Noctis header (a test with a local HTTP server checks the request headers), it never targets `discord.com/api`, and AD-24's amendment line for AD-30 is in the architecture spine
+
+**Given** idle calls
+**When** no track has played for `VoiceConfig::idle_leave` (default off; when set, for example 5 min)
+**Then** the call leaves its channel and is removed
+
+**Given** the gates
+**When** the story is done
+**Then** queue order, skip/stop semantics, bounded queue, event delivery and the HTTP header test run without Discord (driver-free tests or Songbird's test driver if its API allows), the public API is re-blessed and the template and Usage Skill document the queue API
+
+### Story 17.3: Optimized Opus path: passthrough, encoder tuning and the voice bench
+
+As a bot operator running many music calls,
+I want pre-encoded Opus sent without re-encoding and the remaining encode path tuned and measured,
+So that each call costs as little CPU and memory as possible.
+
+**Implements:** FR-80 (codec), NFR-3, NFR-9; AD-25, AD-29, AD-30.
+
+**Acceptance Criteria:**
+
+**Given** an Ogg Opus or WebM/Matroska Opus input at 48 kHz (mono or stereo, 20 ms frames)
+**When** it is the only track and plays at volume 1.0
+**Then** its packets go to the wire by Songbird's passthrough path with no decode and no encode, proven by a test that counts encoded versus passthrough frames (`noctis_voice_passthrough_frames_total` and `noctis_voice_encoded_frames_total`); a volume change, a second track or a non-Opus input falls back to decode, mix and encode, and switching back to unity volume resumes passthrough if the driver supports it (otherwise recorded as a `(decision)` line)
+
+**Given** the encode path
+**When** a call encodes
+**Then** the encoder bitrate follows the voice channel's bitrate (capped by `VoiceConfig::max_bitrate`, default the channel's), music uses Songbird's music-optimized settings (stereo `MixMode`, signal type music, soft-clip on only while mixing), and mixer buffers are reused across frames, not allocated per frame
+
+**Given** `crates/noctis-voice/benches/voice.rs` (criterion, workspace pin, `harness = false`)
+**When** it runs with `cargo bench --release -p noctis-voice --bench voice`
+**Then** it reports per-call CPU time per 20 ms frame and the maximum concurrent calls per core for (a) Ogg Opus passthrough, (b) MP3 decode plus encode, (c) two mixed tracks, using Songbird's driver without a network (its test or mock connection if available, otherwise a recorded `(decision)` on the closest measurable path), and `crates/noctis-voice/benches/VOICE.md` records the machine, commit and numbers; no number gates CI yet
+
+**Given** a dhat test `crates/noctis-voice/tests/passthrough_alloc.rs`
+**When** it runs a passthrough track past its first second
+**Then** the steady-state passthrough frame allocates nothing in `noctis-voice` code, and the recorded per-frame counts of the whole driver are asserted (a later change that adds an allocation fails it)
+
+**Given** the docs
+**When** the story is done
+**Then** the Usage Skill and `docs/guides/voice.md` explain how to pre-encode a library for passthrough (`ffmpeg -i in -c:a libopus -b:a 128k -ar 48000 -frame_duration 20 out.opus`) and which `yt-dlp` formats (`bestaudio[acodec=opus]`) stream by passthrough
+
+### Story 17.4: Music-bot example, testkit support and voice documentation
+
+As a bot author learning Noctis,
+I want a complete music bot example and test helpers for voice,
+So that I can copy a working play/queue UI and test my voice commands without Discord.
+
+**Implements:** FR-80, FR-51 (voice), FR-74 (voice guide); AD-17, AD-27, AD-30.
+
+**Acceptance Criteria:**
+
+**Given** `examples/music-bot` (workspace member, `publish = false`, `noctis` with `voice`)
+**When** it is read and run with a token
+**Then** it provides `/play <query or url>`, `/skip`, `/pause`, `/resume`, `/stop`, `/queue`, `/volume` and `/leave`, joins the author's voice channel, and shows a Components V2 now-playing View with Routed buttons (pause/resume, skip, stop) and a paginated queue that follow the UI Doctrine (AD-27), using the passthrough-friendly input from Story 17.3 for URLs
+
+**Given** a bot test with the facade's `testkit` and `voice` features
+**When** it simulates a `/play` invocation on `TestApp`
+**Then** the fake gateway records the op 4 frame, the test can inject the bot's `VOICE_STATE_UPDATE` and `VOICE_SERVER_UPDATE`, and `VoiceConfig::recording()` (a `noctis-voice` driver fake, exposed only with the facade's `testkit` feature; no `noctis-testkit → noctis-voice` edge, as with rendering in AD-24) replaces the Songbird driver so queue operations and track events can be asserted without a UDP connection; the music-bot example has such tests
+
+**Given** the documentation
+**When** the story is done
+**Then** `docs/guides/voice.md` covers enabling `voice`, build requirements (C compiler, cmake), joining, the queue, track events, passthrough and pre-encoding, idle leave, Cluster notes (a guild's call lives in the process that owns its shard) and limits; the Project Template, its `AGENTS.md` and the Usage Skill carry the music-bot patterns; `xtask skill-check` passes; README's feature list mentions voice
