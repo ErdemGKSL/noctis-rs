@@ -310,8 +310,9 @@ impl Bench {
             if let Some(error) = failure {
                 return Err(format!("scenario {label}, P = {producers}: {error}"));
             }
-            // criterion's warm-up is time-bounded from its first call: runs
-            // begun inside it are not reported (unless nothing else ran).
+            // Runs begun within WARM_UP of the scenario's first run are
+            // dropped (unless nothing else ran). This is a fixed cut, not
+            // criterion's exact warm-up phase, which can run about 2 s.
             let cut = runs.first().map(|(begun, _)| *begun + WARM_UP);
             let keep_all = self.smoke || runs.iter().all(|(begun, _)| Some(*begun) < cut);
             let mut summary = Summary::default();

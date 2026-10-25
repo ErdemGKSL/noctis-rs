@@ -2,7 +2,7 @@
 title: 'Story 16.1: Event pipeline throughput bench and baseline'
 type: 'chore'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '4c5220fc62dfb8fd7742a53ab96ad28423c7dc73'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -107,6 +107,42 @@ deferred: []
 
 ## Review Triage Log
 
+
+### 2026-10-25 — Review pass
+- verdicts: 31 findings — high 0, medium 0, low 7, false 23, maybe-false 1
+- findings:
+  - `[low]` `[patch]` (blind) Saturation warm-up cut (`begun + 1 s`) does not match criterion's warm-up — criterion 0.8.2 `warm_up` doubles batches until the summed wall time of its calls exceeds 1 s, so it can run up to ~2 s and some warm-up runs land in the rows; harm is only the wording of PIPELINE.md "Columns" and the `let cut` comment; patch rewords both to describe the fixed 1 s cut.
+  - `[false]` `[reject]` (blind) PIPELINE.md commit `6d589d5` differs from `baseline_revision` `4c5220f` — `git diff 4c5220f 6d589d5` touches only the spec and sprint-status; the pipeline tree is identical, and the format (HEAD + "plus Story 16.1's bench files") is what the spec's PIPELINE.md design note prescribes.
+  - `[false]` `[reject]` (blind) `push ns/item` is summed producer wall time, not push cost — the spec's Design Notes define it as "Σ producer time inside its push loop / items" and PIPELINE.md's Columns section describes exactly that; the spec deliberately settled it.
+  - `[false]` `[reject]` (blind) Each fixed-rate row is one run, so percentiles are single noisy samples — each row holds 50 000 latency samples (p99/p99.9 are well defined); the spec settles one 5 s run per P; max lag is documented as informational, not fatal.
+  - `[false]` `[reject]` (blind) `pipeline_alloc` is an exact-count workspace gate contradicting "no gate change" — AC 4 requires the exact assertion so a later added allocation fails it; the memlog line concerns budgets; noctis-core has no features, and the counts were identical over 3 reruns and under the gate's `--all-features` workspace test.
+  - `[false]` `[reject]` (blind) Only blocks are asserted, bytes are not — the spec fixes `RECORDED: [(&str, u64); 4]` as block counts and the epic AC asserts "each count"; deliberately settled.
+  - `[maybe-false]` `[reject]` (blind) dhat windows count process-wide background allocations that may be baked into RECORDED — counts are identical across 3 reruns and the gate run, which argues against periodic background allocations; settling it needs a control window with no push; if true only `low` (a constant offset still catches regressions).
+  - `[false]` `[reject]` (blind) `TestApp::lane_sender()` returns a stale sender after `stop()` — `TestApp::stop(mut self)` consumes the TestApp, so `lane_sender()` cannot be called after stop; `lane_injection` holds a clone across `stop()` and stop still returns Ok.
+  - `[low]` `[reject]` (blind) `lane_injection` does not test once-per-run, last-tap-wins or no-tap — the seam is one `Option` overwrite and one `if let`; adding tests is more than a direct correction and the gap is unlikely to bite in everyday use.
+  - `[low]` `[reject]` (blind) After a failed run criterion keeps sampling 1 ns timings before exit 2 — real (criterion 0.8.2 warm-up/sampling continue), but the bench still exits 2 naming scenario and P; only on a broken pipeline; fail-fast adds an exit branch around App cleanup.
+  - `[false]` `[reject]` (blind) `#[path]` submodule layout differs from `memory_per_guild` — the spec and epic AC name `benches/pipeline.rs`; no named harm (memlog records the reason).
+  - `[low]` `[patch]` (blind) `lane_injection.rs` imports `Inbound`/`InboundKind`/`InboundSink` from `noctis_gateway` instead of the `noctis_core::__testing` re-exports — the test does not exercise the seam the bench uses; patch switches the `use` to `noctis_core::__testing` (noctis-gateway stays a dev-dep used by `session_resume.rs`).
+  - `[false]` `[reject]` (edge) `run.rs` sentinel reroutes under `ByGuild` when a producer ends on an unhandled item — only scenario (c) uses `ByGuild`, and all its items are handled `Kind::Delete`, so no sentinel is ever substituted there.
+  - `[false]` `[reject]` (edge) `delete_handlers == 0` makes the sentinel start nothing — every caller passes 1 or 4; the case is unreachable.
+  - `[low]` `[reject]` (edge) A criterion filter that skips a benchmark id prints rows with 0 items — real, but the row's notes read "0 runs × N items", so it is self-labelled; fixing needs a new guard; not worth it.
+  - `[low]` `[reject]` (edge) Failed run leaves criterion sampling degenerate 1 ns samples — same defect as the blind finding above; same reason.
+  - `[false]` `[reject]` (edge) `pipeline_alloc` allocations after handler start spill across windows and flake — on the one-worker runtime the handler task's poll (handler return, `record_duration`, `around.after`) completes before the measuring task resumes, plus one `yield_now`; counts identical over 3 reruns and the gate run.
+  - `[false]` `[reject]` (edge) `saturating_sub` can hide `unhandled` when `both < delete` — the `both` window always contains a full delete path and both are minima of deterministic counts (stable across runs); the saturation is unreachable in practice.
+  - `[low]` `[reject]` (vgap) No gate or CI job runs the bench's smoke mode, so its self-checks never execute — real, but the epic AC says "no gate runs the bench itself" and the spec's Never list forbids adding it to gates.sh/ci.yml/main.yml; the intent excludes the fix.
+  - `[false]` `[reject]` (intent) Bench command lacks `--release` — `cargo bench` has no `--release` flag; spec D1 settles it and the bench profile inherits release.
+  - `[false]` `[reject]` (intent) dhat runs on a one-worker multi-thread runtime, not `current_thread` — `TestApp::build` requires a multi-thread runtime; spec D6 deliberately and correctly settles it (one worker = one thread for async work).
+  - `[false]` `[reject]` (intent) dhat window ends at handler start, not handler return — on the one-worker runtime the measuring task only resumes after the handler task's poll, which runs the handler to return, `record_duration` (the metrics key 16.3 targets) and `around.after`; post-start work is inside the window.
+  - `[false]` `[reject]` (intent) min-of-7, blocks-only, derived `unhandled` — all three are fixed by the spec's Alloc test design note and D6; deliberately settled.
+  - `[false]` `[reject]` (intent) Push cost only on saturation rows — the spec's AC 1 and Design Notes restrict push ns/item to saturation runs; deliberately settled (fixed-rate loop time is dominated by the pacing timer).
+  - `[false]` `[reject]` (intent) Scenario (c) with G = 1 has only one active producer — required for the spec's per-guild order check (one producer per guild); documented in PIPELINE.md.
+  - `[false]` `[reject]` (intent) (c) slow guild is an extra guild chosen to collide with guild 1's bucket — prescribed by the spec's Matrix row "(c) slow guild id"; deliberately settled.
+  - `[false]` `[reject]` (intent) (b) only at saturation, (c) only at fixed rate — the epic AC sets rates only for (a) and (d); the spec settles (b)/(c).
+  - `[false]` `[reject]` (intent) PIPELINE.md commit is not a checkout of the measured tree — same as the blind commit finding; the spec prescribes HEAD + "plus Story 16.1's bench files" and the pipeline code at that hash is identical.
+  - `[false]` `[reject]` (intent) New `pub` items vs "no public API changes" — the AC defines it as `api-snapshot` passing without re-bless, which holds; all new items are `#[doc(hidden)]`; spec D2 settles it.
+  - `[false]` `[reject]` (intent) Workspace `criterion` pin changed — still the 0.8 line, only crate using it, default features off to keep plotters/rayon out; the spec's task list prescribes it.
+  - `[false]` `[reject]` (intent) `pipeline_alloc` is a gate depending on machine/allocator/versions — consistent with the epic AC ("a later change that adds an allocation fails it"); counts stable across reruns and `--all-features`.
+
 ## Design Notes
 
 **Decisions** (logged in the memlog):
@@ -138,3 +174,19 @@ deferred: []
 - `cargo run --release -p xtask -- deps-check`, `rules-catalog`, `api-snapshot` (no `--bless`), `skill-check`, `tw-grammar --check` -- ok; `git diff --exit-code xtask/public-api.txt` -- no diff
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck`; `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is run by the gate script only, never by the implementer.
+
+## Auto Run Result
+
+- **Summary:** Added a hidden, test-only lane tap (`noctis_core::__testing::tap_lanes`, `TestApp::lane_sender`) and the criterion bench `crates/noctis-core/benches/pipeline.rs` measuring scenarios (a)-(d) (throughput, latency percentiles, push cost) from pre-parsed `Inbound` to handler start; recorded the baseline in `benches/PIPELINE.md`; added the exact-count dhat allocation test `tests/pipeline_alloc.rs`. No public API change (api-snapshot unchanged, no re-bless).
+- **Files changed:**
+  - `crates/noctis-core/benches/pipeline.rs` + `pipeline/{fixtures,recorder,run,stats}.rs` - bench driver, prebuilt fixtures, latency recorder, run loop, percentile stats.
+  - `crates/noctis-core/benches/PIPELINE.md` - baseline numbers and column definitions.
+  - `crates/noctis-core/tests/pipeline_alloc.rs` - per-path allocation block counts (exact assertion).
+  - `crates/noctis-core/src/{app,handler,lib}.rs` - `#[doc(hidden)]` lane tap seam.
+  - `crates/noctis-testkit/src/app.rs`, `tests/lane_injection.rs` - `TestApp::lane_sender` and its test.
+  - `Cargo.toml`, `Cargo.lock`, `crates/noctis-core/Cargo.toml` - criterion (default features off) and dhat dev-deps.
+  - architecture `.memlog.md` - decisions.
+- **Review findings:** 31 (high 0, medium 0, low 7, false 23, maybe-false 1). Patched 2 low: saturation warm-up cut wording in PIPELINE.md and the `let cut` comment; `lane_injection.rs` now imports via `noctis_core::__testing`. Deferred 0. Rejected 29: 5 low (lane_injection tap-semantics tests, degenerate criterion samples after a failed run x2, 0-item rows under filters, no gate runs bench smoke mode - excluded by the epic AC) and 24 false/maybe-false, each settled by the spec (D1/D2/D6, design notes) or verified (stable alloc counts over reruns); reasons are in the Review Triage Log.
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 2).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green; CI paused by the maintainer.
+- **Residual risks:** `pipeline_alloc` exact counts depend on allocator/dependency versions and may need re-recording on upgrades; possible constant background-allocation offset in dhat windows (maybe-false, still catches regressions); bench smoke mode is not run by any gate.

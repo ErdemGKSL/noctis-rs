@@ -34,7 +34,9 @@ once with smoke counts.
 ## Columns
 
 - **items**: measured items (handled and unhandled). Saturation rows sum every
-  run criterion made after its 1 s warm-up; fixed-rate rows count the 5
+  run criterion made, except runs begun within 1 s of the scenario's first run
+  (a fixed 1 s cut, not criterion's exact warm-up phase, which can last about
+  2 s); fixed-rate rows count the 5
   measured seconds after a 1 s warm-up.
 - **events/s**: items ÷ (first measured push → last measured handler start),
   summed over runs.

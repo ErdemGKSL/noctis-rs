@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use noctis::events::{EventCtx, MessageDelete};
 use noctis::prelude::*;
-use noctis_gateway::{Inbound, InboundKind, InboundSink as _};
+use noctis_core::__testing::{Inbound, InboundKind, InboundSink as _};
 use noctis_testkit::TestApp;
 use twilight_model::gateway::ShardId;
 use twilight_model::gateway::event::Event;
