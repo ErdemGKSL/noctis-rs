@@ -25,9 +25,13 @@ jobs:
       # 4-worker runtime; GitHub's ubuntu-latest runner has 4 vCPUs.
       - run: cargo bench -p noctis-core --bench dispatch_latency
       # Story 12.6: memory per idle guild (NFR-1).
-      - run: cargo bench -p noctis-core --bench memory_per_guild
+      # Runs even when an earlier gated bench failed, so every report shows.
+      - if: ${{ !cancelled() }}
+        run: cargo bench -p noctis-core --bench memory_per_guild
       # Story 10.11: the reference card render latency (NFR-3).
-      - run: cargo bench -p noctis-image --features render --bench reference_card
+      # Runs even when an earlier gated bench failed, so every report shows.
+      - if: ${{ !cancelled() }}
+        run: cargo bench -p noctis-image --features render --bench reference_card
 
   # Story 10.11 (NFR-8, AD-28): builds and tests against the newest takumi
   # and takumi-core. Report-only: it never fails the workflow; each step's

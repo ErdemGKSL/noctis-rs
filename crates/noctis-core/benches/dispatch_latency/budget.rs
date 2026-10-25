@@ -266,6 +266,17 @@ pub(crate) struct Report {
     pub(crate) notes: Vec<String>,
 }
 
+/// The process exit code for `result`: 0 after a report (within budget,
+/// gate off, or smoke), 1 when gating is on and a metric is over budget, 2
+/// when nothing valid was measured.
+pub(crate) fn exit_code<E>(result: &Result<Report, E>) -> u8 {
+    match result {
+        Ok(report) if report.failed() => 1,
+        Ok(_) => 0,
+        Err(_) => 2,
+    }
+}
+
 /// The median over `runs` of the value `pick` takes from each run, over the
 /// runs where it has one.
 fn median_of(runs: &[RunStats], pick: impl Fn(&RunStats) -> Option<u64>) -> Option<u64> {

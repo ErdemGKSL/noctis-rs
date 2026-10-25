@@ -41,7 +41,9 @@ over-budget metric fails the bench.
   click, and one handler-future allocation (a handler holding 16 KiB across
   an `.await` adds no block and 16 KiB of bytes). Push to handler start
   costs 12 heap blocks for an inline click, 16 for a `by_ref` click and 88
-  for a slash command (`noctis-core/tests/interaction_alloc.rs`).
+  for a slash command (`noctis-core/tests/interaction_alloc.rs`), pinned
+  on a one-worker runtime with `DiscordCacheConfig::none()` and no tracing
+  subscriber or metrics recorder installed.
   **Confirmed** (exact pins).
 
 Machine: 4 CPUs (`nproc`), Intel(R) Xeon(R) Processor @ 2.10GHz, rustc

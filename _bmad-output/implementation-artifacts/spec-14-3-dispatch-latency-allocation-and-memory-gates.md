@@ -2,7 +2,7 @@
 title: 'Story 14.3: Dispatch latency, allocation and memory gates'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'a37158c0906622c1ea5105b42d0cca1bd5c0d05f'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,21 @@ context:
   - '{project-root}/crates/noctis-core/benches/PIPELINE.md'
   - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-noctis-rs-2026-10-19/ARCHITECTURE-SPINE.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      dispatch_latency stamps received_at at the actual (possibly late) push, so producer schedule lag is excluded from the gated p99 (possible coordinated omission).
+    evidence: |-
+      Reused benches/pipeline/run.rs sets received_at when the producer pushes; worst schedule lag is reported (8779.2 µs in the verification run) but never bounds run validity. Unverified whether this materially moves the p99: settle by rerunning with received_at = scheduled deadline (or rejecting runs whose lag exceeds a bound) and comparing the median p99 with the push-stamped one.
+    location: >-
+      crates/noctis-core/benches/dispatch_latency/budget.rs check_run; crates/noctis-core/benches/pipeline/run.rs
+    severity: medium (unverified)
+  - summary: >-
+      Guarded component Routes box two handler futures (guarded wraps the boxed typed future in a second Box::pin), so AD-25's general "one boxed handler future" holds only for unguarded Routes.
+    evidence: |-
+      crates/noctis-core/src/component.rs guarded (about l.582-604) Box::pins an async block awaiting typed(..), which returns another boxed HandlerFuture; pre-existing, and interaction_alloc measures unguarded Routes only, while the AD-25 amendment and CHANGELOG state the rule generally.
+    location: >-
+      crates/noctis-core/src/component.rs:582
+    severity: low
 ---
 
 <intent-contract>
@@ -138,6 +152,36 @@ Evaluation and run validity (`evaluate`, `median`, `check_run`; unit-tested):
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 26 findings — high 0, medium 0, low 14, false 9, maybe-false 3
+- findings:
+  - `[maybe-false]` `defer` Coordinated omission: received_at stamped at late push hides schedule lag from the gated p99 (blind) — grouped with edge #1; the method (push = arrival, lag reported) is the established 16.1 pipeline definition the spec reuses unchanged and worst lag is a single-sample figure; settle by re-measuring with deadline-stamped arrival; deferred as medium (unverified).
+  - `[low]` `reject` Worker count never checked against host CPUs (blind) — public-repo ubuntu-latest has 4 vCPUs, workflows are disabled and the CHANGELOG/PIPELINE.md record the machine; guarding needs a new invalid-run condition, not a direct correction.
+  - `[low]` `patch` A failing dispatch_latency step hides the memory_per_guild and reference_card reports in main.yml (blind) — real (Actions skips later steps); patch: `if: ${{ !cancelled() }}` on the later steps.
+  - `[low]` `reject` RefStore calls after handler start are never counted (blind) — the only framework RefStore calls on the path are the lookup take/get (pipeline/component.rs:437-439), which happen before handler start; the spec defines the window as push to handler start; adding post-ack asserts guards a state not shown to occur.
+  - `[false]` `reject` Printed ref_store ops is the expectation, not a measurement (blind) — window() asserts measured ops == expected_ops() in every window (warm-ups included) before main prints, so the printed value always equals the measured one.
+  - `[low]` `reject` Per-interaction pins cover no autocomplete/modal/context-menu case (blind) — a regression would only enlarge a transient heap block (no functional effect); the spec's case set A1-A7 is deliberate; adding new interaction kinds is more than a direct correction.
+  - `[low]` `reject` dispatch_latency_budget lacks E8, NoRuns and even-count median tests (blind) — the spec matrix has no E8 (header range is cosmetic); NoRuns and even counts are unreachable from the bench (RUNS = 3); new tests are not a direct correction.
+  - `[low]` `reject` micros() truncation renders 1 000 001 ns as 1000.0 next to "over" (blind) — only a value within 100 ns of the budget shows it, and the Status column still says over.
+  - `[low]` `reject` Step summary gets nothing on exit 2 (blind) — the reason goes to stderr in the job log; writing failure sections adds new code paths for a rare case.
+  - `[low]` `patch` budgets.toml notes hard-code "measured 164.4/284.7 µs", printed next to every fresh measurement (blind) — PIPELINE.md explains both runs, but the bench output is misleading; patch: delete the measured parentheticals from the two notes.
+  - `[low]` `patch` CHANGELOG states the NFR-9 block costs without the configuration they hold for (blind) — PIPELINE.md names it, CHANGELOG does not; patch: add one-worker runtime, DiscordCacheConfig::none(), no tracing/metrics recorder.
+  - `[low]` `reject` Smoke under cargo test has no timeout (blind) — no wedge path was shown; the smoke completes in about 0.2 s plus setup; adding timeouts is a guard, not a correction.
+  - `[maybe-false]` `reject` The yield_now busy-wait runs inside the measured dhat window (blind) — same pattern as the reviewed pipeline_alloc (16.3) and the pins are exact and stable across windows; would need dhat stacks of a window to settle; if true only low (stable inflated pin).
+  - `[maybe-false]` `defer` Coordinated omission under producer stall (edge) — same root cause as the blind coordinated-omission finding; shares its deferred entry.
+  - `[false]` `reject` interaction_alloc prints expected, not measured, ops (edge) — same refutation as the blind row: per-window assert makes them equal.
+  - `[low]` `reject` Handler-future boxing changed (component/command/autocomplete) despite the "do not change runtime code" Never (edge) — the change is behaviour-preserving (FutureExt::map vs async block), halves the boxed future, and is logged in the memlog, CHANGELOG and the AD-25 amendment; every fix (revert, which breaks A4/A5, or blessing it) is an edit of this build's spec.
+  - `[low]` `reject` Autocomplete map-boxing change has no allocation/size twin check (vgap) — pre-verified; the regression it guards only doubles a transient autocomplete future's heap size with no functional effect; adding an autocomplete case plus big twin is more than a direct correction.
+  - `[low]` `patch` dispatch_latency's Report → ExitCode mapping (the gate itself) is never exercised (vgap) — pre-verified; patch: move the mapping into a budget::exit_code helper used by main and test 0/1/2 in dispatch_latency_budget.rs.
+  - `[low]` `defer` Guarded Routes box two handler futures, so AD-25's "one boxed handler future" is confirmed only for unguarded Routes (vgap other) — pre-existing component.rs guarded wrapper, not caused by this story; deferred.
+  - `[false]` `reject` D1 "event arrival" starts at InboundSink::push, not gateway receive (intent) — the spec's intent and the reused 16.1 method deliberately define arrival as the push of a parsed Inbound.
+  - `[false]` `reject` D2 per-interaction budget read structurally, not as the total allocation budget (intent) — the intent contract settles it: ≤ 1 port call and one boxed future as hard asserts, block counts as exact pins (D4).
+  - `[false]` `reject` D3 no in-pipeline zero-alloc assertion for lookup/decode (intent) — the intent contract states those are already guarded by alloc_dispatch.rs and alloc_decode.rs.
+  - `[false]` `reject` D4 nothing actually gates on main (intent) — CI is paused by maintainer policy (AGENTS.md); the spec gates via budgets.toml and the disabled workflows.
+  - `[false]` `reject` D5 allocation tests land in ci.yml, not main.yml (intent) — the spec's Never and Tasks settle it (dhat tests are tests and run in ci.yml; benches run on main).
+  - `[false]` `reject` D6 two p99s instead of one (intent) — spec D2 deliberately gates event and interaction p99 separately; both are within 1 ms.
+  - `[false]` `reject` D7 "4 cores" is a 4-worker unpinned runtime (intent) — spec D1 deliberately models 4 cores with worker_threads(4) and P = 4.
+
 ## Design Notes
 
 Decisions (log as `(decision)` lines in the memlog during implementation):
@@ -170,3 +214,15 @@ note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores (AD-25 
 - `cargo test --release -p noctis-image --features render --bench reference_card` -- expected: pass.
 - `cargo bench -p noctis-core --bench dispatch_latency`, `cargo bench -p noctis-core --bench memory_per_guild`, `cargo bench -p noctis-image --features render --bench reference_card` -- run each **before** setting budgets (gate off or current values), record the numbers (`nproc`, CPU model), apply the Q3 rule, set `gate = true`, then rerun all three: expected exit 0.
 - `tools/story-loop/bg.sh tools/story-loop/gates.sh` -- expected: `ALL-OK` (includes workspace tests, api-snapshot without bless, skill-check, deps-check, deny, msrv).
+
+## Auto Run Result
+
+- **Summary:** Adds SM-4 performance gates. A new criterion-free `dispatch_latency` bench gates NFR-3, using the median of 3 runs' p99 (events and interactions separately, 4 workers, 4 producers, 10k events/s), with exit codes 0, 1 (over budget) and 2 (invalid run). New `interaction_alloc` dhat tests pin NFR-9: at most 1 port call, exactly one boxed handler future (BIG-twin check) and exact block pins. The reference card and memory-per-guild budgets now gate too. Handler-future boxing in component, command and autocomplete now uses `FutureExt::map`, which keeps behaviour the same and halves the boxed future. AD-25 is amended and a root CHANGELOG.md is created.
+- **Files changed:** `crates/noctis-core/benches/dispatch_latency/{main,budget}.rs` (new gate bench); `benches/budgets.toml` (dispatch_latency tables, notes); `benches/PIPELINE.md` (measurements); `tests/dispatch_latency_budget.rs`, `tests/interaction_alloc.rs` (new); `tests/memory_bench_budget.rs`, `benches/memory_per_guild/budget.rs` (budget tweaks); `src/{component,command,autocomplete}.rs` (single boxed handler future); `crates/noctis-image/benches/reference_card.rs` (gate with note); `crates/noctis-core/Cargo.toml` (bench/test targets); `.github/workflows-disabled/{ci,main}.yml` (gate steps); `CHANGELOG.md` (new); ARCHITECTURE-SPINE.md and .memlog.md (AD-25 amendment, decisions).
+- **Review findings:** 26 in total (high 0, medium 0, low 14, false 9, maybe-false 3).
+  - Patched (4 low): `if: !cancelled()` on the later main.yml steps; removed the hard-coded measured values from the budgets.toml notes; CHANGELOG now names the configuration the NFR-9 costs hold for; `budget::exit_code` helper with 0/1/2 tests.
+  - Deferred (2): coordinated omission when arrival is stamped at the late push (blind and edge reviewers, grouped; the 16.1 method is reused unchanged, re-measure with deadline-stamped arrival); guarded Routes box two handler futures (pre-existing).
+  - Rejected (20), each with its recorded reason in the triage log: no worker-count check against host CPUs; post-handler RefStore ops; printed ops being the expectation (twice; the per-window assert makes them equal); no autocomplete/modal case; missing E8/NoRuns tests; micros truncation; no step summary on exit 2; smoke timeout; yield_now inside the dhat window; the "do not change runtime code" deviation (logged and behaviour-preserving); no autocomplete twin; intent items D1-D7.
+- **Follow-up review recommended:** false. No high or medium finding was patched (patched counts by verdict: high 0, medium 0, low 4).
+- **Verification:** all local gates in `tools/story-loop/gates.sh` passed (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). The `dispatch_latency`, `memory_per_guild` and `reference_card` benches each exit 0 with the gate on. CI is paused by the maintainer.
+- **Residual risks:** the latency gate's p99 can understate scheduling lag under producer stall (coordinated omission, deferred). Budgets were measured on a shared cloud host, so CI runner variance may need re-tuning when the workflows are re-enabled in Epic 14.

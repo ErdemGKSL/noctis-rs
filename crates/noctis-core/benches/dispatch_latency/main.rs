@@ -63,14 +63,11 @@ const BUDGETS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/budgets.toml
 
 fn main() -> ExitCode {
     let full = budget::full_mode(std::env::args().skip(1));
-    match bench(!full) {
-        Ok(report) if report.failed() => ExitCode::FAILURE,
-        Ok(_) => ExitCode::SUCCESS,
-        Err(message) => {
-            eprintln!("dispatch_latency: {message}");
-            ExitCode::from(2)
-        }
+    let result = bench(!full);
+    if let Err(message) = &result {
+        eprintln!("dispatch_latency: {message}");
     }
+    ExitCode::from(budget::exit_code(&result))
 }
 
 /// Measures, prints and returns the report; an error is the message of why

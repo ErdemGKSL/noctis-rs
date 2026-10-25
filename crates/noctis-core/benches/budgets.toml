@@ -43,8 +43,8 @@ gate = true
 
 [dispatch_latency.event_p99_us]
 max = 1000
-note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (event arrival to handler start); confirmed by Story 14.3 (measured 164.4 µs)"
+note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (event arrival to handler start); confirmed by Story 14.3"
 
 [dispatch_latency.interaction_p99_us]
 max = 1000
-note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (interaction arrival to handler start); confirmed by Story 14.3 (measured 284.7 µs)"
+note = "NFR-3: framework overhead p99 <= 1 ms at 10k events/s on 4 cores, AD-25 mix (interaction arrival to handler start); confirmed by Story 14.3"

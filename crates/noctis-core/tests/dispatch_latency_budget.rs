@@ -444,3 +444,42 @@ Notes:
 ";
     assert_eq!(report.markdown(), expected);
 }
+
+// --- Exit code (the NFR-3 gate's process verdict) -------------------------------
+
+fn exit_for(gate: bool, event_ns: u64, smoke: bool) -> u8 {
+    let report = budget::evaluate(
+        &budgets(gate, Some(1000), Some(1000)),
+        &measured(&[run(event_ns, 1)]),
+        smoke,
+    );
+    budget::exit_code(&report)
+}
+
+#[test]
+fn exit_code_is_0_within_budget() {
+    assert_eq!(exit_for(true, 1_000_000, false), 0);
+}
+
+#[test]
+fn exit_code_is_1_for_a_gated_full_report_over_budget() {
+    assert_eq!(exit_for(true, 1_000_001, false), 1);
+}
+
+#[test]
+fn exit_code_is_0_over_budget_with_the_gate_off_or_in_smoke() {
+    assert_eq!(exit_for(false, 1_000_001, false), 0);
+    assert_eq!(exit_for(true, 1_000_001, true), 0);
+}
+
+#[test]
+fn exit_code_is_2_for_an_error() {
+    let error: Result<budget::Report, String> = Err("nothing measured".to_owned());
+    assert_eq!(budget::exit_code(&error), 2);
+    let no_runs = budget::evaluate(
+        &budgets(true, Some(1000), Some(1000)),
+        &measured(&[]),
+        false,
+    );
+    assert_eq!(budget::exit_code(&no_runs), 2);
+}
