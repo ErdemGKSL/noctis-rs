@@ -123,7 +123,7 @@ development_status:
   9-5-views-over-webhooks: done
   epic-9-retrospective: optional
 
-  epic-10: in-progress
+  epic-10: done
   10-1-strict-tailwind-v4-grammar-and-takumi-cross-check: done
   10-2-templates-with-compile-time-class-validation-and-a-theme: done
   10-3-renderer-and-bounded-render-pool: done
