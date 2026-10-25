@@ -2,8 +2,8 @@
 title: 'Story 15.1: Renderer seam'
 type: 'feature'
 created: '2026-10-25'
-status: 'ready-for-dev'
-baseline_revision: 'c68f394fc3b76de225c429503b0a18e62f12466d'
+status: 'in-progress'
+baseline_revision: '8cf70210a142d6c44b1a653bc40a7451b749bc21'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
