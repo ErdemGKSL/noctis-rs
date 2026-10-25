@@ -65,6 +65,8 @@ jobs:
       - run: cargo test --release -p noctis --features i18n,testkit --test i18n_app --test i18n_modules --test i18n_locales --test i18n_commands --test i18n_overlays
       # Needs both `image` and `testkit` (Story 10.3: `ctx.render` end to end).
       - run: cargo test --release -p noctis --features image,testkit --test render_e2e
+      # Needs both `image` and `testkit` (Story 15.1: the Renderer seam).
+      - run: cargo test --release -p noctis --features image,testkit --test renderer_seam
       # The reference card bench in smoke mode (Story 10.11): percentile and budget
       # parser self-checks, budgets.toml, three distinct renders.
       - run: cargo test --release -p noctis-image --features render --bench reference_card

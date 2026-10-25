@@ -128,13 +128,13 @@ fn font() -> Font {
 
 /// The file uploaded by the run's one callback.
 fn uploaded(response: &Response) -> (String, Vec<u8>) {
-    let file = response
+    let files: Vec<_> = response
         .http_calls()
         .iter()
         .flat_map(|call| call.files().iter())
-        .next()
-        .expect("one uploaded file")
-        .clone();
+        .collect();
+    assert_eq!(files.len(), 1, "one uploaded file");
+    let file = files[0].clone();
     (file.filename, file.bytes.to_vec())
 }
 
@@ -208,6 +208,25 @@ async fn fr_37_a_custom_renderer_and_the_image_plugin_are_duplicate_renderers() 
     assert!(second.ends_with("TakumiRenderer"), "{second}");
     // The first Renderer is kept: it got the Templates.
     assert_eq!(*fixed.registered.lock().unwrap(), [("card", 1)]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_37_the_explicit_renderer_is_first_even_after_the_image_plugin() {
+    let fixed = Fixed::new(b"x");
+    let err = App::builder()
+        .runtime(&Runtime::for_test())
+        .theme(theme!())
+        .image(ImageConfig::new().font(font()))
+        .renderer(Arc::clone(&fixed))
+        .module(cards())
+        .build()
+        .unwrap_err();
+    let [BuildViolation::DuplicateRenderer { first, second }] = err.violations() else {
+        panic!("expected one DuplicateRenderer, got {err}");
+    };
+    // The image plugin installs in `build`, so it is always `second`.
+    assert_eq!(*first, std::any::type_name::<Arc<Fixed>>());
+    assert!(second.ends_with("TakumiRenderer"), "{second}");
 }
 
 #[test]

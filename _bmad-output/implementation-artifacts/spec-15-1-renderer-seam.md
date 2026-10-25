@@ -2,16 +2,23 @@
 title: 'Story 15.1: Renderer seam'
 type: 'feature'
 created: '2026-10-25'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '8cf70210a142d6c44b1a653bc40a7451b749bc21'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-15-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The project template's tests/adapters.rs (FixedRenderer render and the profile Module building on FixedRenderer alone) run in no gate or CI step.
+    evidence: |-
+      examples/project-template is excluded from the workspace; tools/story-loop/gates.sh never enters it; ci.yml only runs cargo metadata and a continue-on-error build of the template (tracking mode until Story 14.2). FixedRenderer itself is covered through crates/noctis/tests/renderer_seam.rs.
+    location: >-
+      examples/project-template/tests/adapters.rs
+    severity: low
 ---
 
 <intent-contract>
@@ -176,6 +183,39 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 29 findings — high 0, medium 3, low 17, false 9, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) the Renderer trait has no facade name without `image` — real, but AD-2 and AC 3 bind the renderer types to `noctis::image::unstable` only and the spec forbids a new feature; Templates are derived only with `image`, so a no-`image` seam is not an everyday configuration and the fix would add a path or feature the contract forbids.
+  - `[low]` `[reject]` (blind) stable `Template::view()` names `unstable::ErasedView` — real but deliberate (Design Notes: the derive is the stable path, a hand-written `impl Template` imports from `unstable`); hiding `view()` changes public surface for a rarely hand-written impl.
+  - `[low]` `[reject]` (blind) `.renderer(..)` double-wraps an `Arc` — real (`Arc<Arc<..>>`, one extra indirection, `App::renderer()` no longer ptr-equal), but the by-value `R: Renderer` setter plus the `Arc<R>` impl is spec-mandated and the cost is negligible; an `IntoPort`-style trait adds public surface.
+  - `[low]` `[patch]` (blind) "the first is kept" and the "`A`, then `B`" wording ignore call order with the image plugin — verified: `ImagePlugin` installs in `build`, so `.theme(..).renderer(Fixed)` reports `first = Fixed`, `second = TakumiRenderer`; patch: document that an explicit `.renderer(..)` is always `first`/kept and the plugin's Renderer is always `second`, and test the reverse call order.
+  - `[low]` `[reject]` (blind) `type_name` gives `Arc<dyn Renderer>` or the `pub(crate)` `noctis_image::renderer::TakumiRenderer` — real, but `type_name` is spec-mandated and the message's remedy text is actionable on its own; a naming hook would add trait surface.
+  - `[false]` `[reject]` (blind) `RenderJob::key` hashes `upload_budget` and splits caches by tier — a Renderer may degrade its output to the budget, so the budget is an output input and must be in a key that "covers every job field"; the spec pins this deliberately.
+  - `[false]` `[reject]` (blind) the key's version is the `noctis-ports` version and breaks caches per release — all crates share `version.workspace = true` (AD-2, root `Cargo.toml` 0.1.0), so it is the Noctis version; FR-36 key semantics include it by design and the golden test states it is re-pinned on a bump.
+  - `[low]` `[reject]` (blind) core does not check output format/settings against the job — real, but the reported format names the bytes actually returned (takumi's still fallback legitimately differs from the declared format), so naming stays coherent; a consistency guard adds branches for a Renderer bug not shown.
+  - `[false]` `[reject]` (blind) rejected outputs are invisible in metrics — every empty or over-budget output is reported to the `Render` error sink (tested), and the spec deliberately records no rejected reason and no duration for them.
+  - `[low]` `[reject]` (blind) `FixedRenderer`'s key ignores its bytes and format — real, but an App holds one Renderer, so two differently-built FixedRenderers never share an App's attachments; the test double follows the spec's `job.key(Self::ID)` and the fix would only matter across processes.
+  - `[medium]` `[patch]` (blind) the interaction-budget path is untested; `noctis-rules` untouched — grouped with the vgap budget finding; the `noctis-rules` half is false (rule id and limit unchanged, as the spec states); patch: the pipeline test below.
+  - `[low]` `[reject]` (blind) weakened snapshot assertion and cross-crate `#[path]` include — the snapshot that follows renders through `app.renderer()` with the fake's shade, so the identity is still shown; the `#[path]` file is absent only from a packaged test target, which `cargo publish` does not build.
+  - `[false]` `[reject]` (blind) `renderer_type: ""` sentinel and `len as u64` vs `try_from` — both fields are written together at the single setter branch, so they cannot disagree; `usize` fits `u64` on every supported target; no named harm.
+  - `[low]` `[patch]` (edge) violation reverses the author's call order with `.theme(..)` before `.renderer(X)` — same root cause as the blind call-order row; patched with it.
+  - `[low]` `[reject]` (edge) `ImagePlugin::install` starts the render pool and font registry for a build that then fails — real, but only on a misconfigured App whose build fails anyway; the guard adds a branch in the plugin.
+  - `[low]` `[reject]` (edge) erased `Arc<dyn Renderer>` reports `alloc::sync::Arc<dyn ..>` — same root cause as the blind type-name row; rejected with it.
+  - `[low]` `[reject]` (edge) custom Renderer format/size inconsistent with the job — same root cause as the blind format-check row; rejected with it.
+  - `[low]` `[patch]` (edge) `uploaded()` in `renderer_seam.rs` takes the first file and never asserts exactly one — verified (`.next().expect("one uploaded file")`); patch: collect the files and assert there is exactly one.
+  - `[medium]` `[patch]` (vgap) `renderer_seam` is missing from the CI `test` job — pre-verified; AGENTS.md requires the disabled CI definitions to stay in sync; patch: add the step next to `render_e2e`.
+  - `[medium]` `[patch]` (vgap) the `render_job` budget check is tested only with a budget equal to `Limits::attachment_bytes` — pre-verified; patch: pipeline tests with an interaction `attachment_size_limit` of 10 MiB and a 10 MiB + 1 output (`OverBudget`), and a larger limit accepting an output over 20 MiB.
+  - `[low]` `[defer]` (vgap) the template's `tests/adapters.rs` runs in no verification path — pre-verified, pre-existing tracking-mode gap until Story 14.2; recorded under `deferred`.
+  - `[false]` `[reject]` (vgap other) the `strong_count` assertion no longer proves `app.renderer()` reaches the fake — the snapshot assertion right after renders through it and matches the fake's shade, which only that Renderer produces.
+  - `[false]` `[reject]` (intent 1) the cache key is opt-in, not core-enforced — the spec settled the R2b reading deliberately (AD-15: caching is the Renderer's; core-side cache is in Never).
+  - `[false]` `[reject]` (intent 2) a second Upload Budget check against AD-22 — `RenderJob::upload_budget` and `RenderError::OverBudget` were already the Renderer-side budget contract; core now enforces it uniformly while the Responder stays the single message-level ATT-01 check; settled in the Design Notes.
+  - `[low]` `[reject]` (intent 3) setter signature change, duplicate violation, double `Arc` — signature and violation are spec-mandated with a stated rationale; the double `Arc` is the blind `IntoPort` row, rejected with it.
+  - `[low]` `[reject]` (intent 4) stable signatures (`App::renderer`, `AppBuilder::renderer`, `Template::view`) name unstable types — inherent to a seam whose trait AD-2 places in `unstable`; same root cause as the blind `Template::view` row.
+  - `[low]` `[reject]` (intent 5) no-`image` build cannot name the trait — same root cause as the blind feature row; rejected with it.
+  - `[false]` `[reject]` (intent 6) breaking removal of stable paths — AC 3 ("renderer types only via `noctis::image::unstable`") and AD-2 require it; the debug snippet moving to `unstable` is the intended consequence.
+  - `[false]` `[reject]` (intent 7) the handler-level proof lives in the monorepo test, not the template — the spec's Tasks 6 and 7 place it there deliberately; the template's own run gap is the deferred vgap row.
+
 ## Design Notes
 
 - **Reading of "cache key still applies"** (decision): AD-15 makes caching the Renderer's responsibility, and 10.10 ruled out a core cache. Core therefore applies the rest:
@@ -213,3 +253,32 @@ deferred: []
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- pass
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- ok
 - `cargo hack` is not run here (the gate script runs it in the epic's last story).
+
+## Auto Run Result
+
+- **Summary:** Story 15.1 opens a Renderer seam. `AppBuilder::renderer(R: Renderer)` takes any custom Renderer, and the renderer-facing types (`Renderer`, `RendererPorts`, `RenderJob`, `RenderOutput`, `TemplateDescriptor`, `ErasedView`, `decode_template`) move to `noctis::image::unstable`. A new `RenderJob::key` gives a custom Renderer FR-36 cache-key semantics. Core now checks the Upload Budget at the render boundary (empty or over-budget output is reported to the `Render` error sink). Setting a Renderer twice, for example an explicit `.renderer(..)` plus the image plugin's TakumiRenderer, is a build violation: the explicit one is reported as `first`, the plugin's as `second`.
+- **Files changed:**
+  - `crates/noctis-ports/src/render.rs`: Renderer trait, `RenderJob::key`, output types.
+  - `crates/noctis-core/src/{app.rs,error.rs,render.rs,pipeline/tests.rs,app/tests.rs,render/tests.rs}`: setter, duplicate-renderer violation, budget check, tests.
+  - `crates/noctis-image/src/plugin.rs`: the plugin installs TakumiRenderer through the seam.
+  - `crates/noctis/src/lib.rs`: `unstable` re-exports, stable paths removed.
+  - `crates/noctis/tests/renderer_seam.rs` (new) and the other facade tests: end-to-end proof that a handler renders through a custom Renderer.
+  - `examples/project-template/`: `FixedRenderer` adapter, adapters test, Usage Skill references (adapters, images, testing, app-and-sharding), `AGENTS.md`, API hash.
+  - `xtask/public-api.txt`: re-blessed. `docs/discord-rules.md`: wording only. `.github/workflows-disabled/ci.yml`: adds the `renderer_seam` test step.
+- **Review findings:** 29 in total: 0 high, 3 medium, 17 low, 9 false.
+  - Patched (6 entries in 4 patches; 3 medium, 3 low):
+    - call-order wording for `first`/`second` (blind and edge rows), with a test for the reverse call order;
+    - `uploaded()` now asserts exactly one file;
+    - CI `renderer_seam` step;
+    - pipeline tests for the interaction-budget path (10 MiB limit with a 10 MiB + 1 output gives `OverBudget`; a larger limit accepts an output over 20 MiB).
+  - Deferred (1): the template's `tests/adapters.rs` runs in no verification path (pre-existing, tracked until Story 14.2).
+  - Rejected (22): the trait has no name without `image` (AD-2/AC 3); `Template::view` names an unstable type (deliberate); double `Arc` (spec-mandated setter); `type_name` output (spec-mandated); no format consistency check; `FixedRenderer` key; snapshot assertion and `#[path]` include; erased-type naming duplicate; the `ImagePlugin` installing on a build that then fails. The 9 false rows (budget in the key, version in the key, metrics, sentinel, `strong_count`, opt-in cache, the second budget check, path removal, where the template proof lives) are settled by the spec and its Design Notes. Each reason is in the triage log.
+- **Follow-up review recommended:** true. Patched by verdict: high 0, medium 3, low 3. Named risk: the new core budget check in the interaction pipeline (an interaction `attachment_size_limit` that differs from `Limits::attachment_bytes`) and the duplicate-renderer call-order reporting were changed in review and have not had an independent second review.
+- **Verification:**
+  - Local gates via `tools/story-loop/gates.sh`: all green. They cover fmt, clippy `-D warnings`, workspace tests, the `renderer_seam`/`render_e2e`/`render` tests, the template tests, `api-snapshot`, `skill-check`, `deps-check`, `rules-catalog`, `tw-grammar --check`, `tw_crosscheck`, `cargo deny check` and the MSRV 1.91 check.
+  - CI is paused by the maintainer; `cargo hack` is left to the epic gate.
+- **Residual risks:**
+  - The renderer types are reachable only with the `image` feature.
+  - A stable signature (`Template::view`) names an `unstable` type.
+  - The template's `tests/adapters.rs` is not run by any gate (deferred).
+  - The `RenderJob::key` golden value must be re-pinned on each version bump.

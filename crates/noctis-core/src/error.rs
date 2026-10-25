@@ -734,7 +734,9 @@ pub enum BuildViolation {
     },
     /// A second Renderer was set on one App (`.renderer(..)` twice, or
     /// `.renderer(..)` together with the image plugin's `.theme(..)` /
-    /// `.image(..)`); the first is kept.
+    /// `.image(..)`). An explicit `.renderer(..)` is always `first` and
+    /// kept; the image plugin installs its Renderer in `build`, so it is
+    /// always reported as `second`, whatever the call order.
     ///
     /// ```
     /// use noctis_core::BuildViolation;
@@ -755,9 +757,10 @@ pub enum BuildViolation {
          `.renderer(..)` or the image plugin (`.theme(..)`/`.image(..)`), not both"
     )]
     DuplicateRenderer {
-        /// The kept Renderer's type name.
+        /// The kept Renderer's type name: the first `.renderer(..)`.
         first: &'static str,
-        /// The rejected Renderer's type name.
+        /// The rejected Renderer's type name: a later `.renderer(..)`, or
+        /// the image plugin's Renderer (installed in `build`).
         second: &'static str,
     },
     /// A mounted Module declares with `Module::uses::<R>()` a Route that no

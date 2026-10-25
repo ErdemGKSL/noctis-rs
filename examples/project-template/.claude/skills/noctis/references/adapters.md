@@ -412,8 +412,9 @@ ship a custom Renderer. A replacement Renderer needs only them plus the stable
 also `Arc<R>` or `Arc<dyn Renderer>` (`Renderer` is implemented for `Arc<R>`, forwarding
 every method). An App has **one** Renderer: a second `.renderer(..)`, or `.renderer(..)`
 together with the image plugin (`.theme(..)`/`.image(..)`), fails `build()` with
-`BuildViolation::DuplicateRenderer { first, second }` (both type names; the first is
-kept): "a Renderer is set twice: `{first}`, then `{second}`: an App has one Renderer;
+`BuildViolation::DuplicateRenderer { first, second }` (both type names; an explicit
+`.renderer(..)` is always `first` and kept, and the image plugin's Renderer is always
+reported as `second` because plugins install in `build`, whatever the call order): "a Renderer is set twice: `{first}`, then `{second}`: an App has one Renderer;
 keep `.renderer(..)` or the image plugin (`.theme(..)`/`.image(..)`), not both". Modules,
 Templates, views and handlers do not change: `ctx.render(card)` renders through whichever
 Renderer the App has. `register` gets every registered Template at `build()` (an error is

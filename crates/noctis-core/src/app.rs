@@ -2813,7 +2813,10 @@ impl AppBuilder {
     /// Any `R: Renderer` goes in, including `Arc<R>` and
     /// `Arc<dyn Renderer>`. An App has one Renderer: a second one (another
     /// `.renderer(..)`, or the image plugin) is a
-    /// [`BuildViolation::DuplicateRenderer`], and the first is kept.
+    /// [`BuildViolation::DuplicateRenderer`]. An explicit `.renderer(..)`
+    /// is always `first` and kept; the image plugin installs its Renderer
+    /// in `build`, so it is always reported as `second`, even when
+    /// `.theme(..)` comes before `.renderer(..)`.
     ///
     /// ```
     /// use noctis_ports::{BoxFuture, RenderError, RenderJob, RenderOutput, Renderer, TemplateDescriptor};

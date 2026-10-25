@@ -3153,6 +3153,97 @@ async fn render_gets_the_interaction_upload_budget() {
     assert!(p.reports().is_empty());
 }
 
+#[tokio::test]
+async fn render_output_is_checked_against_the_interaction_upload_budget() {
+    use noctis_ports::{
+        AnimationSpec, BoxFuture, EncodeSettings, ErasedView, Format, OutputFormat, RenderError,
+        RenderJob, RenderOutput, Renderer, Size, Template, TemplateDescriptor,
+    };
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Dot;
+
+    impl Template for Dot {
+        const ID: &'static str = "dot";
+        const VERSION: u32 = 1;
+        const SIZE: Size = Size::new(1, 1);
+        const FORMAT: Format = Format::Png;
+        const ANIMATION: Option<AnimationSpec> = None;
+
+        fn view() -> ErasedView {
+            ErasedView::new(())
+        }
+    }
+
+    /// Answers every job with `len` bytes, whatever its budget.
+    struct Sized(usize);
+
+    impl Renderer for Sized {
+        fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+            let output = RenderOutput {
+                bytes: bytes::Bytes::from(vec![0x42; self.0]),
+                digest: [0xAB; 32],
+                format: OutputFormat::Png,
+                settings_used: EncodeSettings {
+                    size: job.size,
+                    quality: None,
+                    fps: None,
+                    frames: 1,
+                },
+            };
+            Box::pin(async move { Ok(output) })
+        }
+
+        fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+            Ok(())
+        }
+    }
+
+    type Outcome = Result<usize, Option<(u64, u64)>>;
+
+    async fn render_once(len: usize, limit: u64) -> Outcome {
+        let outcome: Arc<Mutex<Option<Outcome>>> = Arc::default();
+        let seen = Arc::clone(&outcome);
+        let handler = CommandHandler::__new_plain(
+            "m::dot",
+            &["dot"],
+            "d",
+            move |ctx: CommandCtx, _: CommandResponder| {
+                let seen = Arc::clone(&seen);
+                async move {
+                    let result =
+                        ctx.render(Dot).await.map(|a| a.bytes().len()).map_err(|e| {
+                            match e.as_error().downcast_ref::<RenderError>() {
+                                Some(RenderError::OverBudget { budget, smallest }) => {
+                                    Some((*budget, *smallest))
+                                }
+                                _ => None,
+                            }
+                        });
+                    *seen.lock().unwrap() = Some(result);
+                    Ok(v2("ok"))
+                }
+            },
+        );
+        let p = Pipeline::start_with(Module::new("m").__add(handler), move |b| {
+            b.renderer(Arc::new(Sized(len)));
+        })
+        .await;
+        p.run(inbound(&interaction(
+            slash("dot", json!([])),
+            json!({ "attachment_size_limit": limit }),
+        )))
+        .await;
+        outcome.lock().unwrap().take().expect("the handler ran")
+    }
+
+    assert_eq!(
+        render_once(10_485_761, 10_485_760).await,
+        Err(Some((10_485_760, 10_485_761)))
+    );
+    assert_eq!(render_once(20_971_521, 52_428_800).await, Ok(20_971_521));
+}
+
 /// Story 9.1 Matrix 22 through the pipeline: the raw interaction's
 /// `attachment_size_limit` becomes the Upload Budget, and a file over it
 /// fails ATT-01 with that bound before any request carries it.
