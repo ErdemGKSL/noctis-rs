@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 81 of 100" src="https://img.shields.io/badge/stories-81%20%2F%20100-3B2F8F">
+  <img alt="Stories done: 87 of 103" src="https://img.shields.io/badge/stories-87%20%2F%20103-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -84,6 +84,7 @@ Noctis provides all of that as one layer with sensible defaults:
 
 ```rust
 use noctis::prelude::*;
+use noctis::twilight::model::id::{Id, marker::GuildMarker};
 
 #[derive(PayloadEnum, Clone, Copy, PartialEq, Eq)]
 enum Tab { Overview, Members }
@@ -245,10 +246,10 @@ done. Live per-story status is in
 | 7 | Routed components, Refs and modals | P0 | ✅ Done |
 | 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ✅ Done |
 | 9 | Attachments, webhooks and advanced component surfaces | P1 | ✅ Done |
-| 10 | Generated images and GIFs | P1 | 🔨 In progress (8 / 11) |
+| 10 | Generated images and GIFs | P1 | 🔨 In progress (10 / 11) |
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
-| 13 | Module operations | P1 | 🔨 In progress (1 / 5) |
+| 13 | Module operations | P1 | 🔨 In progress (4 / 5) |
 | 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ Next |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | 🔨 In progress (2 / 4) |
 
@@ -324,6 +325,8 @@ done. Live per-story status is in
     per-job caps and weighted admission control.
   - Ordered fonts with an optional bundled default, static images, and remote images
     fetched through an allow-listed, capped AssetFetcher.
+  - Discord custom emoji drawn inline, with a bundled Twemoji fallback font (feature `emoji`).
+  - A render cache behind the `RenderCache` port with single-flight de-duplication.
 - **Localization.**
   - `i18n!` compiles YAML locale files into typed `Strings` accessors, with
     compile-time checks; App and Module catalogs merge at `App::build`.
@@ -342,6 +345,13 @@ done. Live per-story status is in
     cache and Renderer cache memory against `budgets.toml`.
 - **Module trees.** Module ids are tree paths (`profile/badges`), validated for grammar
   and uniqueness at `App::build`.
+- **Module operations (in progress).**
+  - Boot-time feature flags (`flags = [..]`, `--features`, `NOCTIS_FEATURES`) that prune
+    registrations before build.
+  - Runtime Module enable and disable per guild or globally with `ctx.modules()`, over the
+    `ModuleStateStore` port and propagated across processes.
+  - Declarative `rate_limit(..)` on commands, components and modals over the
+    `RateLimitStore` port, with `#[on_rate_limited]` and `ctx.rate_limits()`.
 - **Opt-in extras (in progress).**
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
