@@ -24,15 +24,20 @@ if ! grep -qxF noctis-core <<< "$default_names"; then
     exit 1
 fi
 
+# hit <crate> <names>: prints the names in <names> that match the forbidden entry <crate>.
+hit() {
+    if [[ $1 == takumi ]]; then
+        grep -E '^takumi' <<< "$2" || true
+    else
+        grep -xF "$1" <<< "$2" || true
+    fi
+}
+
 # hits <names>: prints each forbidden crate (or takumi* crate) found in <names>.
 hits() {
     local crate
     for crate in "${forbidden[@]}"; do
-        if [[ $crate == takumi ]]; then
-            grep -E '^takumi' <<< "$1" || true
-        else
-            grep -xF "$crate" <<< "$1" || true
-        fi
+        hit "$crate" "$1"
     done
 }
 
@@ -47,12 +52,7 @@ done <<< "$(hits "$default_names")"
 # forbidden entry.
 all_names=$(cargo tree -p noctis -e normal --prefix none --locked --features image,voice,prefix,testkit | names)
 for crate in "${forbidden[@]}"; do
-    if [[ $crate == takumi ]]; then
-        found=$(grep -E '^takumi' <<< "$all_names" || true)
-    else
-        found=$(grep -xF "$crate" <<< "$all_names" || true)
-    fi
-    if [[ -z "$found" ]]; then
+    if [[ -z "$(hit "$crate" "$all_names")" ]]; then
         echo "$name: --features image,voice,prefix,testkit does not pull $crate; the forbidden list is stale" >&2
         status=1
     fi
