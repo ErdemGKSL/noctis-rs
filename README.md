@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 103 of 107" src="https://img.shields.io/badge/stories-103%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 105 of 107" src="https://img.shields.io/badge/stories-105%20%2F%20107-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -31,7 +31,9 @@
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
 > module operations, opt-in extras, event pipeline throughput, voice and music bots).
-> Epic 14 (launch readiness) is in progress (5 of 9 stories done).
+> Epic 14 (launch readiness) is in progress (7 of 9 stories done): the release pipeline is
+> ready and CI runs again; the last two stories (repository settings and release secrets,
+> then publishing 0.1.0) wait on the maintainer ([release runbook](docs/guides/release.md)).
 > Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
@@ -266,7 +268,7 @@ done. Live per-story status is in
 | 11 | Localization | P1 | ✅ Done |
 | 12 | Clusters and scale | P1 | ✅ Done |
 | 13 | Module operations | P1 | ✅ Done |
-| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (5 / 9) |
+| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | 🔨 In progress (7 / 9) |
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 | 16 | Event pipeline throughput | P1 | ✅ Done |
 | 17 | Voice and music bots | P1 | ✅ Done |
@@ -414,6 +416,18 @@ done. Live per-story status is in
   completeness: required references, a troubleshooting index covering every rule id,
   limits-cheatsheet coverage and no planned-feature markers. An agent trial on isolated
   template copies built a bot in 4 of 5 runs.
+- **Launch readiness.**
+  - The Project Template builds, passes clippy and runs its tests under `--locked` as a
+    gate, with default and all features.
+  - Performance gates: a `dispatch_latency` bench gating p99 latency, exact allocation
+    tests per interaction, and the reference-card and memory-per-guild budgets.
+  - A v1 rules audit in [`docs/discord-rules.md`](docs/discord-rules.md) listing every
+    rule enforced by construction or checked at runtime, kept in sync by a test.
+  - Launch docs: facade crate docs with a feature list, the cluster and concept-map
+    guides, a `CHANGELOG.md` with migration notes, and an offline `xtask docs-check` link gate.
+  - A release pipeline for 0.1.0: release-plz config, release and CI workflows with
+    semver and default-graph checks, an `xtask release-check` gate and the
+    [release runbook](docs/guides/release.md).
 
 ### 🔭 Beyond v1
 - Official Redis and SQL adapter crates
@@ -458,8 +472,8 @@ cargo clippy --release --workspace --all-targets --all-features -- -D warnings
 ```
 
 The full list of local gates (deps-check, rules-catalog, api-snapshot, skill-check,
-cargo-deny, MSRV) is in [`AGENTS.md`](AGENTS.md). CI is paused during development; the
-workflows will be re-enabled before the v0.1.0 release.
+cargo-deny, MSRV) is in [`AGENTS.md`](AGENTS.md). CI (`.github/workflows/ci.yml`) runs the
+same gates on every push to `main`.
 
 ## Contributing
 
