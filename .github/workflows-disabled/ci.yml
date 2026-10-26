@@ -106,8 +106,11 @@ jobs:
           tool: cargo-hack@0.6
       - run: cargo hack test --release --workspace --each-feature
 
+  # The final feature matrix (Story 14.7): `each-feature` above, plus every
+  # feature at once here (what docs.rs builds). libwebp and libopus need a C
+  # compiler and cmake.
   all-features:
-    name: Build all features
+    name: Build and test all features
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -115,6 +118,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --workspace --all-features
+      - run: cargo test --release --workspace --all-features
 
   deny:
     name: cargo-deny
@@ -149,13 +153,51 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- deps-check
-      # AD-30: the default facade graph never contains Songbird.
-      - name: No songbird in the default graph
-        run: |
-          if cargo tree -p noctis -e normal --prefix none | grep -q '^songbird '; then
-            echo "songbird is in noctis's default dependency graph" >&2
-            exit 1
-          fi
+      # AD-15, AD-30: default `noctis` pulls no takumi, Songbird, image, voice,
+      # prefix or testkit crate.
+      - run: bash .github/scripts/check-default-graph.sh
+
+  # FR-48, NFR-7 (Story 14.7): every noctis crate packages and builds from its
+  # .crate file in dependency order. A dry run needs no crates.io token: this
+  # job never sees CARGO_REGISTRY_TOKEN (only release.yml's `release` job does).
+  publish-dry-run:
+    name: Publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --workspace --dry-run --locked
+
+  # NFR-8, AD-28: the facade's API against the latest `noctis` on crates.io,
+  # every feature on; skipped until the first release is published.
+  semver:
+    name: Semver checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks@0.51
+      - run: bash .github/scripts/semver-check.sh
+
+  # The release invariants offline (Story 14.7): published crates, their
+  # dependency edges, release-plz.toml and the CHANGELOG.md header; plus the
+  # crates.io rate-limit retry of release.yml.
+  release-check:
+    name: Release check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p xtask -- release-check
+      - run: bash .github/scripts/release-retry-test.sh
 
   # Required on every push, takumi bumps included (NFR-8, AD-28): the grammar
   # fingerprint, the takumi oracle and the reference card pixel snapshot.

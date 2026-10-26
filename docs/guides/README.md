@@ -14,3 +14,6 @@ these guides link to its references for the details.
   tracks, the queue and its events, Opus passthrough and pre-encoding, idle leave,
   Cluster notes, limits, testing with the recording driver, and the `examples/music-bot`
   walkthrough.
+- [Releasing Noctis](release.md): the maintainer's runbook for releases: how the
+  release PR and the `release` job work, the one-time setup, publishing 0.1.0, later
+  releases and troubleshooting.

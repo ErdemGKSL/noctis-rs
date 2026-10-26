@@ -1,6 +1,52 @@
-# Release configuration for release-plz. Story 14.7 completes it.
+# Release configuration for release-plz 0.4.1 (FR-48, NFR-7, NFR-8, AD-28;
+# Story 14.7). `cargo run --release -p xtask -- release-check` guards every key
+# below; the runbook is docs/guides/release.md.
+#
+# How it works: every push to `main` runs `release-plz release-pr`, which opens
+# (or updates) a `chore: release` PR when the committed CHANGELOG.md has no
+# heading for the current version; that PR only stamps the version heading
+# under `## [Unreleased]`. Merging it makes `release-plz release` (in the
+# protected `release` environment) publish all 13 crates in dependency order.
+
 [workspace]
+# Publish only when a release PR is merged, never on an ordinary push.
+release_always = false
+# One hand-curated root CHANGELOG.md, written only through `noctis` below.
+changelog_update = false
+# cargo-semver-checks runs on the facade only (the sub-crates are internal).
+semver_check = false
+# Only `noctis` gets a git tag and a GitHub release.
+git_tag_enable = false
+git_release_enable = false
+
+[changelog]
+trim = false
+# No commit list (the repository's commits are not conventional): the body is
+# just the version heading, inserted under `## [Unreleased]`.
+body = """
+## [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+"""
 
 [[package]]
+name = "noctis"
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+# Every other published crate: a change in any of them releases the facade too.
+changelog_include = ["noctis-codec", "noctis-core", "noctis-gateway", "noctis-i18n", "noctis-image", "noctis-macros", "noctis-ports", "noctis-prefix", "noctis-rules", "noctis-testkit", "noctis-ui", "noctis-voice"]
+semver_check = true
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+
+# Never released (all `publish = false`).
+[[package]]
 name = "xtask"
+release = false
+
+[[package]]
+name = "music-bot"
+release = false
+
+[[package]]
+name = "ui-recipes"
 release = false

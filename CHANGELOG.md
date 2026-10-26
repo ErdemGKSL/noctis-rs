@@ -9,6 +9,54 @@ everything else bumps the patch version.
 
 ## [Unreleased]
 
+The first release, published as 0.1.0: the `noctis` facade and its 12 `noctis-*`
+sub-crates, all at the same version. This section is the 0.1.0 entry; the release PR
+adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
+
+### Added
+
+- **Facade.** One crate, `noctis`, re-exports everything a bot uses. Its eight
+  features add the optional parts: `image` (image Templates and the takumi Renderer),
+  `image-gif` (GIF and APNG output), `image-emoji` (bundled colour emoji),
+  `default-font` (bundled Inter), `i18n` (typed locale files), `prefix` (prefix
+  commands), `voice` (voice channels through Songbird) and `testkit` (the test kit,
+  for `[dev-dependencies]`). With default features, none of image, voice, prefix or
+  testkit is built.
+- **Gateway and sharding.** The recommended shard count and identify concurrency, one
+  tokio task per shard, session resume across restarts, graceful shutdown, and
+  Clusters: several processes that each run one Shard Range of a fixed shard total.
+- **Interactions and handlers.** Slash commands from patterns (`"settings logs
+  channel"`, `"config (set|get) (prefix|welcome)"`) with typed option structs,
+  autocomplete, context menus and localized names; one struct with a derive and a
+  `#[handler]` method per command, component, modal, event and lifecycle hook,
+  grouped in Modules; O(1) dispatch by Route, typed Payloads in the `custom_id` with a
+  compile-time length proof, Refs for large state, middleware, rate limits and an
+  automatic defer before the 3 s deadline; Publish only when the commands changed.
+- **Components V2 UI kit.** Typed builders for every V2 and modal component, placement
+  checked by the type system, compile-time and runtime limit validation, cost and
+  budget helpers, and the Responder (`ctx.respond`, `ctx.update`, `ctx.reply_text`).
+- **Image Templates.** `#[derive(Template)]`, `view!` and `tw!` with Tailwind classes
+  checked at compile time, the Theme, PNG, WebP and animated output rendered by takumi
+  in a bounded render pool with a render cache, and a font and asset registry.
+- **i18n.** Locale files compiled into typed accessors, translated command names, and
+  the User and Guild Locale on every context.
+- **Ports and Adapters.** Every storage-like concern is a port (RefStore,
+  SessionStore, RateLimitStore, RenderCache, AssetStore, LocaleSource, CacheStore,
+  ModuleStateStore, IdentifyQueue, Kv) with a bounded in-memory default; your own
+  Adapters plug in.
+- **Test kit and conformance suites.** The bot's App on local Discord fakes with
+  simulated interactions, message and Template pixel snapshots and a memory check, and
+  conformance suites that check your own Adapters.
+- **Prefix commands.** Opted-in slash Commands also run from messages such as
+  `!warn <@5> 3`.
+- **Voice.** Joining and leaving through Noctis's gateway, a bounded per-guild queue,
+  typed track events, Opus passthrough and a recording driver for tests;
+  `examples/music-bot` shows a whole music bot.
+- **Rules catalog.** Every v1 Discord limit of [`docs/discord-rules.md`](docs/discord-rules.md)
+  is enforced by construction or checked at runtime, with a test per rule.
+- **Project template and Usage Skill.** `examples/project-template` is a ready bot
+  whose Usage Skill teaches coding agents the whole API.
+
 ### Usage Skill (v1)
 
 - `xtask skill-check` gains a completeness check: the required references
@@ -124,6 +172,27 @@ cargo test --release -p noctis-codec --test alloc_decode
   `map` combinator instead of an `async move` wrapper, which stored the
   handler's future twice inside its one allocation (about 1.4 KiB less heap
   per component interaction).
+
+### Release
+
+- The release pipeline: [`release-plz.toml`](release-plz.toml) (release-plz 0.4.1) and
+  `.github/workflows-disabled/release.yml`. Every push to `main` opens or updates a
+  `chore: release` PR that only stamps the version heading in this file; merging it
+  publishes the 13 crates in dependency order from the protected `release`
+  environment, with automatic retries while crates.io rate-limits new crates. Only
+  `noctis` gets a tag (`v0.1.0`) and a GitHub release. The runbook is [Releasing
+  Noctis](docs/guides/release.md).
+- New CI jobs: `publish-dry-run` (`cargo publish --workspace --dry-run --locked`,
+  without a token), `semver` (cargo-semver-checks on `noctis` with every feature,
+  skipped until the first release), `release-check` and an all-features test run;
+  `deps-check` runs `.github/scripts/check-default-graph.sh` (no image, voice,
+  prefix, testkit, Songbird or takumi crate in the default graph).
+- New `xtask release-check`: the published crates, their versions, metadata and
+  dependency edges, `release-plz.toml` and this file's header, checked offline; it
+  prints the publish order.
+- The `noctis` dev-dependencies of `noctis-core`, `noctis-testkit` and `noctis-voice`
+  are path-only, so `cargo publish` strips them (`noctis` depends on those crates).
+  `noctis` gains crates.io keywords and categories.
 
 ### Migration notes
 

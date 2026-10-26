@@ -42,7 +42,8 @@ twilight-model.workspace = true
 [dev-dependencies]
 criterion = { workspace = true, features = ["cargo_bench_support"] }
 metrics-util = { workspace = true, features = ["debugging"] }
-noctis = { workspace = true, features = ["testkit"] }
+# Path-only: cargo publish strips it (noctis depends on this crate).
+noctis = { path = "../noctis", features = ["testkit"] }
 rcgen = { workspace = true, features = ["crypto", "ring"] }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "test-util"] }
 toml.workspace = true

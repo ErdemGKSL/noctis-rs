@@ -34,7 +34,8 @@ bytes.workspace = true
 insta = { workspace = true, features = ["json"] }
 metrics.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
-noctis.workspace = true
+# Path-only: cargo publish strips it (noctis depends on this crate).
+noctis = { path = "../noctis" }
 noctis-gateway.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }

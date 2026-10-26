@@ -229,6 +229,7 @@ Read the full design:
 | [Coming from tescord, dbi, serenity or poise](docs/guides/concept-map.md) | What each concept you know is called in Noctis, and what Noctis does not do |
 | [Cluster deployment](docs/guides/cluster.md) | Running one bot as several processes: Shard Ranges, the shared `IdentifyQueue`, the HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, one publisher |
 | [Voice and music bots](docs/guides/voice.md) | The `voice` feature: joining, tracks and the queue, Opus passthrough, Cluster notes, testing |
+| [Releasing Noctis](docs/guides/release.md) | The maintainer's release runbook: release-plz, the release PR, the protected `release` environment, publishing 0.1.0, troubleshooting |
 
 The API reference is on [docs.rs](https://docs.rs/noctis), and the [changelog](CHANGELOG.md)
 has the migration notes.

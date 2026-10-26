@@ -37,8 +37,12 @@ git rev-parse --abbrev-ref HEAD | grep -q '^story-loop/' && git log --format=%s 
 [ -z "$merged" ] && run msrv cargo +1.91 check --release --workspace
 run deny cargo deny check
 run cfg bash .github/scripts/check-build-config.sh
+run default-graph bash .github/scripts/check-default-graph.sh
+run release-retry bash .github/scripts/release-retry-test.sh
+# No token: a dry run packages and verifies every noctis crate in dependency order (Story 14.7). semver is CI-only.
+run publish-dry-run cargo publish --workspace --dry-run --locked --allow-dirty
 run docs env RUSTDOCFLAGS="-D warnings" cargo doc --release -p noctis --no-deps
 run docs-all env RUSTDOCFLAGS="-D warnings" cargo doc --release -p noctis --all-features --no-deps
-for t in deps-check rules-catalog api-snapshot skill-check docs-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
+for t in deps-check rules-catalog api-snapshot skill-check docs-check release-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
 run tw-grammar cargo run --release -q -p xtask -- tw-grammar --check
 echo ALL-OK

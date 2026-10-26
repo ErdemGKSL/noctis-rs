@@ -38,7 +38,8 @@ wav = ["symphonia/wav", "symphonia/pcm"]
 criterion = { workspace = true, features = ["cargo_bench_support"] }
 dhat.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
-noctis = { workspace = true, features = ["testkit", "voice"] }
+# Path-only: cargo publish strips it (noctis depends on this crate).
+noctis = { path = "../noctis", features = ["testkit", "voice"] }
 noctis-testkit.workspace = true
 serde_json.workspace = true
 # `internals` (Songbird's mock mixer and scheduler) for the frame-counting

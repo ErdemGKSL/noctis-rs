@@ -7,6 +7,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["discord", "bot", "twilight", "framework", "components-v2"]
+categories = ["api-bindings", "asynchronous"]
 # The test theme of the facade's own tests and doctests.
 exclude = ["noctis-theme.css"]
 
