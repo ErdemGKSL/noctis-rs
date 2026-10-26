@@ -2,7 +2,8 @@
 title: 'Story 14.7: Release pipeline ready for 0.1.0'
 type: 'chore'
 created: '2026-10-26'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'da152d80f3fec24fad4ac9fb82c9fa93911b45f7'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
