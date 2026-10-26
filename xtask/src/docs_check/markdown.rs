@@ -125,7 +125,7 @@ struct Attr<'a> {
 
 /// The `src`, `href`, `id` and `name` attributes of raw HTML whose value is
 /// double or single quoted (L12, A9); names match in any ASCII case and must
-/// follow whitespace, so `data-src` is not `src`.
+/// start the text or follow whitespace, so `data-src` is not `src`.
 fn html_attrs(html: &str) -> Vec<Attr<'_>> {
     const NAMES: [(&str, AttrName); 4] = [
         ("src", AttrName::Src),
@@ -135,8 +135,12 @@ fn html_attrs(html: &str) -> Vec<Attr<'_>> {
     ];
     let bytes = html.as_bytes();
     let mut out = Vec::new();
-    for (start, _) in html.match_indices(|c: char| c.is_ascii_whitespace()) {
-        let at = start + 1;
+    // Offset 0 counts too: each line of an HTML block is its own event, so a
+    // continuation line can start with an attribute.
+    let starts = html
+        .match_indices(|c: char| c.is_ascii_whitespace())
+        .map(|(i, _)| i + 1);
+    for at in std::iter::once(0).chain(starts) {
         let Some((word, name)) = NAMES.iter().find(|(word, _)| {
             bytes
                 .get(at..at + word.len())
@@ -251,6 +255,18 @@ Title
         let attrs = html_attrs("<img data-src=\"a\" src = 'b' id=c NAME=\"d\">");
         let got: Vec<(AttrName, &str)> = attrs.iter().map(|a| (a.name, a.value)).collect();
         assert_eq!(got, [(AttrName::Src, "b"), (AttrName::Name, "d")]);
+    }
+
+    /// L12, A9: an attribute at the start of an HTML-block continuation line.
+    #[test]
+    fn html_attrs_on_continuation_lines() {
+        let doc = parse("<img\n  src=\"a.png\">\n<a\nid=\"Here\"></a>\n");
+        assert_eq!(dests(&doc), [(2, "a.png")]);
+        assert!(doc.anchors.contains("here"));
+        let attrs = html_attrs("src=\"b\">");
+        let got: Vec<(AttrName, usize, &str)> =
+            attrs.iter().map(|a| (a.name, a.offset, a.value)).collect();
+        assert_eq!(got, [(AttrName::Src, 0, "b")]);
     }
 
     #[test]

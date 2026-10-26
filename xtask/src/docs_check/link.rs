@@ -118,6 +118,7 @@ pub(super) fn percent_decode(s: &str) -> String {
         let decoded = (bytes[i] == b'%')
             .then(|| bytes.get(i + 1..i + 3))
             .flatten()
+            .filter(|hex| hex.iter().all(u8::is_ascii_hexdigit))
             .and_then(|hex| std::str::from_utf8(hex).ok())
             .and_then(|hex| u8::from_str_radix(hex, 16).ok());
         if let Some(byte) = decoded {
@@ -169,7 +170,7 @@ mod tests {
             ("", Target::Empty),
             ("/docs/a.md", Target::RootRelative),
             ("my%20file.md", path(false, "my file.md", None)),
-            ("a%G1b%", path(false, "a%G1b%", None)),
+            ("a%G1b%+1%", path(false, "a%G1b%+1%", None)),
             ("a.md?plain=1", path(false, "a.md", None)),
             ("a.md?plain=1#Top", path(false, "a.md", Some("Top"))),
             ("a.md#", path(false, "a.md", Some(""))),

@@ -213,17 +213,15 @@ impl Checker<'_> {
     /// repo-relative path it resolves to.
     fn check_link(&mut self, subject: &str, file: &str, base: &str, dest: &str) -> Option<String> {
         let target = link::classify(dest, self.same_repo.as_ref());
-        if target == Target::External {
-            return None;
-        }
-        self.links += 1;
         match target {
             Target::External => None,
             Target::Empty => {
+                self.links += 1;
                 self.problems.add(subject, "empty link target");
                 None
             }
             Target::RootRelative => {
+                self.links += 1;
                 self.problems.add(
                     subject,
                     format!("root-relative link {dest}: use a path relative to this file"),
@@ -231,6 +229,7 @@ impl Checker<'_> {
                 None
             }
             Target::SameFile { fragment } => {
+                self.links += 1;
                 self.check_anchor(subject, file, dest, &fragment);
                 None
             }
@@ -239,6 +238,7 @@ impl Checker<'_> {
                 path,
                 fragment,
             } => {
+                self.links += 1;
                 let base = if from_root { "" } else { base };
                 let Some(resolved) = link::resolve(base, &path) else {
                     self.problems

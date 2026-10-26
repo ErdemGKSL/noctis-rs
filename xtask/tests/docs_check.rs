@@ -212,6 +212,18 @@ fn l2_missing_file() {
     );
 }
 
+/// The top-level `CHANGELOG.md` is part of the checked Markdown set.
+#[test]
+fn changelog_is_checked() {
+    let out = root("changelog")
+        .with("CHANGELOG.md", "[x](docs/nope.md)\n")
+        .run();
+    assert_problems(
+        &out,
+        &["docs-check: CHANGELOG.md:1: broken link docs/nope.md: no such file or directory"],
+    );
+}
+
 #[test]
 fn l5_leaves_repository() {
     let out = root("l5").readme("[x](../../outside.md)\n").run();
