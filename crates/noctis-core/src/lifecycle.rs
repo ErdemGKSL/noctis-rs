@@ -610,6 +610,11 @@ impl HookCtx {
         crate::Webhooks::of(Some(&self.0.app))
     }
 
+    /// The App's channel message client: Components V2 bot messages.
+    pub fn messages(&self) -> crate::Messages {
+        crate::Messages::of(Some(&self.0.app))
+    }
+
     /// The App's [`Emitter`] of [`ExtensionEvent`]s.
     pub fn emitter(&self) -> Emitter {
         Emitter::of(&self.0.app)

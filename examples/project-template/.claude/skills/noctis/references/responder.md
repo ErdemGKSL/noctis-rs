@@ -3,7 +3,7 @@
 Covers: what a handler may return, `IntoResponse`, the context methods
 `ctx.respond` / `ctx.update` / `ctx.reply_text`, auto-defer, ephemerality, the
 typestate `Responder`, follow-ups, modals, errors shown to users, token expiry,
-`LegacyMessage`, webhooks. Rules: INT-01..13, WH-01..05, MSG-05, MSG-07, CV2-01/02.
+`LegacyMessage`, bot messages in any channel, webhooks. Rules: INT-01..13, WH-01..05, MSG-05, MSG-07, CV2-01/02.
 
 **Default: build the message with your render function and send it with
 `ctx.respond(msg)` (a new message) or `ctx.update(msg)` (update the clicked message),
@@ -756,6 +756,61 @@ dashboards. Editing a legacy message into a View is supported (content/embeds/po
 are cleared in the same request);
 V2 → legacy is a typed error (CV2-01).
 
+## 6b. Bot messages in any channel (`ctx.messages()`)
+
+A normal bot message (Create Message with the bot token) carries a Components V2 View
+exactly like an interaction reply: Discord accepts `IS_COMPONENTS_V2` on Create Message
+and Edit Message. Use it for anything posted outside an interaction (log lines,
+announcements, scheduled posts, a panel posted from an event handler or a lifecycle
+hook). No webhook is needed; reach for a webhook only for a different name or avatar
+(§7).
+
+```rust
+use noctis::message::MessageError;
+
+// Every context has `ctx.messages()`; outside a handler use `app.messages()`.
+let posted = ctx
+    .messages()
+    .send(log_channel, render_log(&entry, &s))     // V2Message or Components
+    .flags(CreateFlags::SUPPRESS_NOTIFICATIONS)    // optional (MSG-07)
+    .reply_to(source_message)                      // optional message_reference
+    .await?;                                       // ChannelMessage
+posted.edit(render_log(&closed, &s)).await?;       // keeps its attachments
+posted.delete().await?;
+
+// By id, for a message you stored (`posted.channel_id()`, `posted.id()`):
+ctx.messages().edit(channel, message, render_panel(&state, &s)).await?;
+ctx.messages().delete(channel, message).await?;
+```
+
+- **Types** (`noctis::message`): `Messages` (the client), `SendMessage` (from `send`:
+  `.flags(..)`, `.reply_to(..)`), `EditMessage` (from `edit`: `.flags(..)`),
+  `DeleteMessage` (from `delete`); each does nothing until `.await`ed. `send` resolves
+  to a `ChannelMessage`: `.id()`, `.channel_id()`, `.edit(msg)`, `.delete()`.
+- **Same preparation as a reply.** Route buttons, selects (nonces), Refs, locale keys
+  (App default locale: there is no user), the Limits, the Upload Budget and
+  attachments are handled exactly as in `ctx.respond(..)`, so the posted View's
+  components reach their handlers. Refs use the App's `ref_ttl`: on a long-lived panel
+  prefer inline (non-`by_ref`) Routes.
+- **Flags** (MSG-07): `.flags(CreateFlags)` on `send`, `.flags(EditFlags)` on `edit`;
+  `IS_COMPONENTS_V2` is always added. There is no ephemeral channel message.
+- **Edits.** `ChannelMessage::edit` knows the message is V2 and keeps the files Discord
+  already holds. `Messages::edit(channel, id, msg)` does not know the target's format,
+  so it clears `content`, `embeds`, `poll` and `sticker_ids`: a legacy bot message
+  becomes V2 (CV2-02); re-upload any attachment `msg` uses.
+- **Permissions.** The bot needs `VIEW_CHANNEL` and `SEND_MESSAGES`
+  (`SEND_MESSAGES_IN_THREADS` in a thread); editing works only on the bot's own
+  messages, deleting another's needs `MANAGE_MESSAGES`.
+- **Errors** (`noctis::message::MessageError`, `#[non_exhaustive]`, `?` converts it into
+  a handler error): `Invalid(UiError)` before any request, `Encode`, `RefStore`,
+  `RefCollision`, `RateLimited` (never retried, wait `retry_after`), `Rejected { status,
+  code }` (403 code 50001/50013 without access or permission, 404 code 10003/10008 for an
+  unknown channel or message), `Transport`, `Detached` (a detached test context). A
+  failed side-effect post (an audit log) should be a `tracing::warn!`, not a failed
+  interaction (the template's `setup/handlers.rs` Finish does this).
+- **Testing.** Script `POST /channels/{id}/messages` with `app.http_fake()` (§7's recipe,
+  other path) and assert `json()["flags"] == 32768`.
+
 ## 7. Webhooks (FR-65)
 
 Every context (`ctx.webhooks()` on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx`, `EventCtx`)
@@ -781,7 +836,7 @@ store(hook.id(), hook.token(), log_channel);
 
 // Later: reuse the stored webhook only while it is the configured channel's (else
 // create and overwrite); a 404 means it was deleted in Discord: forget it, create a new
-// one and send once more (the template's `setup/handlers.rs` `post_log` does this).
+// one and send once more.
 let hook = ctx.webhooks().owned(id, token)?.in_channel(ChannelType::GuildText);
 let sent = hook
     .send(render_log(&entry, &s))                  // V2Message from your render fn

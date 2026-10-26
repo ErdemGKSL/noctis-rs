@@ -8,7 +8,7 @@
 mod handlers;
 pub mod view;
 
-use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker, WebhookMarker};
+use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -164,29 +164,6 @@ pub fn config_key(guild: Id<GuildMarker>) -> String {
     format!("guildcfg:{guild}")
 }
 
-/// The log channel's webhook, created by Finish (FR-65): an owned webhook, so a later
-/// log may carry buttons. The token is a secret: store it like a password and never log
-/// or show it. `channel` is the channel it posts in: a new log channel needs a new
-/// webhook. Ids are `u64`s, as in [`GuildConfig`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StoredWebhook {
-    pub id: u64,
-    pub token: String,
-    pub channel: u64,
-}
-
-impl StoredWebhook {
-    /// The webhook and its channel; `None` when either stored id is `0` (no valid
-    /// webhook stored), so the caller creates a new one.
-    pub fn ids(&self) -> Option<(Id<WebhookMarker>, Id<ChannelMarker>)> {
-        Some((Id::new_checked(self.id)?, Id::new_checked(self.channel)?))
-    }
-}
-
-pub fn log_webhook_key(guild: Id<GuildMarker>) -> String {
-    format!("logwebhook:{guild}")
-}
-
 #[cfg(test)]
 mod tests {
     use noctis::ports::{decode_value, encode_value};
@@ -207,36 +184,6 @@ mod tests {
             mod_role: 400,
         };
         assert_eq!(round_trip(&config), Some(config));
-        for token in [String::from("t"), String::new(), "ş".repeat(200)] {
-            let hook = StoredWebhook {
-                id: 900,
-                token,
-                channel: 300,
-            };
-            assert_eq!(round_trip(&hook), Some(hook.clone()));
-        }
-    }
-
-    #[test]
-    fn stored_webhook_with_a_zero_id_is_no_webhook() {
-        let hook = StoredWebhook {
-            id: 0,
-            token: "t".into(),
-            channel: 300,
-        };
-        assert_eq!(hook.ids(), None);
-        let hook = StoredWebhook {
-            id: 900,
-            token: "t".into(),
-            channel: 0,
-        };
-        assert_eq!(hook.ids(), None);
-        let hook = StoredWebhook {
-            id: 900,
-            token: "t".into(),
-            channel: 300,
-        };
-        assert_eq!(hook.ids(), Some((Id::new(900), Id::new(300))));
     }
 
     #[test]

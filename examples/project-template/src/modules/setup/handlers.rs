@@ -3,15 +3,12 @@
 //! which updates the clicked panel in place; a failed check answers with
 //! `ctx.reply_text(key)`, a one-line ephemeral notice.
 
-use noctis::id::marker::{ChannelMarker, GuildMarker};
 use noctis::prelude::*;
-use noctis::twilight::model::channel::ChannelType;
-use noctis::webhook::{OwnedWebhook, WebhookChannel, WebhookError};
 
 use super::view::{render_setup, render_setup_cancelled, render_setup_done, render_setup_log};
 use super::{
     CancelSetup, FinishSetup, GuildConfig, PickLogChannel, PickModRole, SetupState, SetupStep,
-    StoredWebhook, config_key, log_webhook_key,
+    config_key,
 };
 use crate::strings::{Strings, keys};
 
@@ -142,66 +139,13 @@ impl FinishSetup {
         let config = GuildConfig::new(self.log_channel, self.mod_role);
         ctx.kv().put(&config_key(guild), &config, None).await?;
         let responded = ctx.update(render_setup_done(config, &s)).await?;
-        // A side effect: a failed log never fails the setup the admin just saved. The
-        // error never contains the webhook token.
-        if let Err(error) = post_log(&ctx, guild, self.log_channel, config, &s).await {
+        // A side effect: a failed log (no SEND_MESSAGES in the log channel, say) never
+        // fails the setup the admin just saved. A normal bot message carries a V2 View;
+        // no webhook is needed.
+        let line = render_setup_log(config, ctx.user_id(), &s);
+        if let Err(error) = ctx.messages().send(self.log_channel, line).await {
             tracing::warn!(%guild, %error, "setup log was not posted");
         }
         Ok(responded)
     }
-}
-
-/// Posts the setup line to the log channel through the bot's own webhook there: the
-/// stored one while it is still the configured channel's, or a new one (the bot needs
-/// `MANAGE_WEBHOOKS`) whose id, token and channel are stored for the next time. A stored
-/// webhook deleted in Discord (404) is forgotten and replaced once.
-async fn post_log(
-    ctx: &ComponentCtx,
-    guild: Id<GuildMarker>,
-    log_channel: Id<ChannelMarker>,
-    config: GuildConfig,
-    s: &Strings,
-) -> HandlerResult<()> {
-    let key = log_webhook_key(guild);
-    let line = || render_setup_log(config, ctx.user_id(), s);
-    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await?
-        && let Some((id, channel)) = stored.ids()
-        && channel == log_channel
-    {
-        let hook = ctx
-            .webhooks()
-            .owned(id, stored.token)?
-            .in_channel(ChannelType::GuildText);
-        match hook.send(line()).await {
-            // Deleted in Discord: forget it and create a new one below.
-            Err(WebhookError::Rejected { status: 404, .. }) => ctx.kv().delete(&key).await?,
-            sent => {
-                sent?;
-                return Ok(());
-            }
-        }
-    }
-    let hook = create_log_webhook(ctx, &key, log_channel).await?;
-    hook.send(line()).await?;
-    Ok(())
-}
-
-/// Creates the log channel's webhook and stores (or overwrites) its credentials.
-async fn create_log_webhook(
-    ctx: &ComponentCtx,
-    key: &str,
-    log_channel: Id<ChannelMarker>,
-) -> HandlerResult<OwnedWebhook> {
-    let channel = WebhookChannel::new(log_channel, ChannelType::GuildText);
-    let hook = ctx
-        .webhooks()
-        .create(channel, webhook_name!("Noctis log"))
-        .await?;
-    let stored = StoredWebhook {
-        id: hook.id().get(),
-        token: hook.token().to_owned(),
-        channel: log_channel.get(),
-    };
-    ctx.kv().put(key, &stored, None).await?;
-    Ok(hook)
 }

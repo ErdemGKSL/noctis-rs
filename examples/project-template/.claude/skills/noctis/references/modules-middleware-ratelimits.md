@@ -300,7 +300,7 @@ impl AwardXp {
     async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
         let Some(guild) = ctx.guild_id() else { return Ok(()) };
         let meta = ctx.state::<BotMeta>();         // Option<State<BotMeta>>
-        ctx.http().create_message(msg.channel_id).content("hi").await?;   // the App's one client
+        ctx.messages().send(msg.channel_id, render_level_up(msg.author.id)).await?; // V2 bot message, responder.md §6b
         Ok(())
     }
 }

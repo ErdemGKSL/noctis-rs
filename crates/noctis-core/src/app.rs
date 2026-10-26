@@ -338,6 +338,13 @@ impl App {
         crate::Webhooks::of(Some(&self.shared))
     }
 
+    /// The App's channel message client: post, edit and delete Components
+    /// V2 bot messages in any channel, outside an interaction (a cheap
+    /// clone).
+    pub fn messages(&self) -> crate::Messages {
+        crate::Messages::of(Some(&self.shared))
+    }
+
     /// The HTTP request timeout (default 10 s).
     ///
     /// ```

@@ -355,6 +355,13 @@ impl CommandCtx {
         crate::Webhooks::of(self.0.app.as_ref())
     }
 
+    /// The App's channel message client: post, edit and delete Components
+    /// V2 bot messages in any channel (a cheap clone); every request of a
+    /// detached test seam's client is `MessageError::Detached`.
+    pub fn messages(&self) -> crate::Messages {
+        crate::Messages::of(self.0.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns);
     /// an unconfigured client in the detached test seams.
     pub fn http(&self) -> &Arc<twilight_http::Client> {

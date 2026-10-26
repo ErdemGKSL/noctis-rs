@@ -261,6 +261,14 @@ macro_rules! ctx_accessors {
                 crate::Webhooks::of(self.0.app.as_ref())
             }
 
+            /// The App's channel message client: post, edit and delete
+            /// Components V2 bot messages in any channel (a cheap clone);
+            /// every request of a detached test seam's client is
+            /// `MessageError::Detached`.
+            pub fn messages(&self) -> crate::Messages {
+                crate::Messages::of(self.0.app.as_ref())
+            }
+
             /// The App's one Discord HTTP client (the `Arc` `App::http`
             /// returns), for endpoints the Responder does not cover;
             /// `RawHttp::raw` adds requests twilight does not model. An

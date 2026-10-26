@@ -121,79 +121,10 @@ async fn finish_setup(app: &TestApp, channel: Id<ChannelMarker>) -> anyhow::Resu
     Ok(app.click(step3.button("Finish")?).by(ADMIN).run().await?)
 }
 
-/// Finish posts a static log line through the bot's own webhook in the log channel
-/// (FR-65): created once, stored, reused on the next Finish.
+/// Finish posts the log line as a normal Components V2 bot message in the log channel:
+/// no webhook to create or store.
 #[tokio::test(flavor = "multi_thread")]
-async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
-    let app = app().await?;
-    let log: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
-    let record = |answer: serde_json::Value| {
-        let log = Arc::clone(&log);
-        move |request: &RecordedRequest| {
-            log.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(request.clone());
-            FakeResponse::json(StatusCode::OK, &answer)
-        }
-    };
-    app.http_fake()
-        .route_with(
-            Method::POST,
-            format!("/channels/{LOGS}/webhooks"),
-            record(serde_json::json!({"id": "900", "token": "log-token", "channel_id": LOGS.to_string()})),
-        )
-        .route_with(
-            Method::POST,
-            "/webhooks/900/log-token",
-            record(serde_json::json!({"id": "71", "channel_id": LOGS.to_string(), "attachments": []})),
-        );
-
-    for _ in 0..2 {
-        assert!(
-            finish_setup(&app, LOGS)
-                .await?
-                .text()
-                .contains("Setup complete")
-        );
-    }
-
-    let requests = log
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
-    let creates = requests
-        .iter()
-        .filter(|r| r.path.ends_with("/webhooks"))
-        .count();
-    let sends: Vec<_> = requests
-        .iter()
-        .filter(|r| r.path.ends_with("/log-token"))
-        .collect();
-    assert_eq!((creates, sends.len()), (1, 2), "created once, then reused");
-    for send in sends {
-        assert_eq!(
-            send.query.as_deref(),
-            Some("wait=true&with_components=true")
-        );
-        let body = send
-            .json()
-            .ok_or_else(|| anyhow::anyhow!("webhook body is not JSON"))?;
-        assert_eq!(body["flags"], 32768);
-        assert!(body.get("content").is_none());
-        assert_eq!(body["components"][0]["type"], 17);
-        let text = body["components"][0]["components"][0]["content"]
-            .as_str()
-            .unwrap_or_default();
-        assert!(text.contains(&format!("<#{LOGS}>")), "{text}");
-        assert!(text.contains(&format!("<@&{MODS}>")), "{text}");
-    }
-    Ok(())
-}
-
-/// A Finish with a different log channel does not reuse the stored webhook: it creates
-/// one in the new channel and logs through that.
-#[tokio::test(flavor = "multi_thread")]
-async fn setup_finish_new_log_channel_creates_a_new_webhook() -> anyhow::Result<()> {
+async fn setup_finish_logs_as_a_v2_bot_message() -> anyhow::Result<()> {
     const OTHER_LOGS: Id<ChannelMarker> = Id::new(301);
     let guild = TestGuild::new(GUILD, "Test Guild")
         .text_channel(LOGS, "logs")
@@ -204,8 +135,10 @@ async fn setup_finish_new_log_channel_creates_a_new_webhook() -> anyhow::Result<
         .guild(guild)
         .user(TestUser::new(ADMIN).permissions(Permissions::MANAGE_GUILD));
     let log: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
-    let record = |answer: serde_json::Value| {
+    let record = |channel: Id<ChannelMarker>| {
         let log = Arc::clone(&log);
+        let answer =
+            serde_json::json!({"id": "71", "channel_id": channel.to_string(), "attachments": []});
         move |request: &RecordedRequest| {
             log.lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -213,23 +146,16 @@ async fn setup_finish_new_log_channel_creates_a_new_webhook() -> anyhow::Result<
             FakeResponse::json(StatusCode::OK, &answer)
         }
     };
-    let message = |channel: Id<ChannelMarker>| serde_json::json!({"id": "71", "channel_id": channel.to_string(), "attachments": []});
     app.http_fake()
         .route_with(
             Method::POST,
-            format!("/channels/{LOGS}/webhooks"),
-            record(serde_json::json!({"id": "900", "token": "log-token", "channel_id": LOGS.to_string()})),
+            format!("/channels/{LOGS}/messages"),
+            record(LOGS),
         )
         .route_with(
             Method::POST,
-            format!("/channels/{OTHER_LOGS}/webhooks"),
-            record(serde_json::json!({"id": "901", "token": "other-token", "channel_id": OTHER_LOGS.to_string()})),
-        )
-        .route_with(Method::POST, "/webhooks/900/log-token", record(message(LOGS)))
-        .route_with(
-            Method::POST,
-            "/webhooks/901/other-token",
-            record(message(OTHER_LOGS)),
+            format!("/channels/{OTHER_LOGS}/messages"),
+            record(OTHER_LOGS),
         );
 
     for channel in [LOGS, OTHER_LOGS] {
@@ -241,22 +167,32 @@ async fn setup_finish_new_log_channel_creates_a_new_webhook() -> anyhow::Result<
         );
     }
 
-    let paths: Vec<_> = log
+    let requests = log
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter()
-        .map(|r| r.path.clone())
-        .collect();
+        .clone();
+    let paths: Vec<_> = requests.iter().map(|r| r.path.clone()).collect();
     assert_eq!(
         paths,
         [
-            format!("/api/v10/channels/{LOGS}/webhooks"),
-            "/api/v10/webhooks/900/log-token".to_owned(),
-            format!("/api/v10/channels/{OTHER_LOGS}/webhooks"),
-            "/api/v10/webhooks/901/other-token".to_owned(),
+            format!("/api/v10/channels/{LOGS}/messages"),
+            format!("/api/v10/channels/{OTHER_LOGS}/messages"),
         ],
-        "a new channel gets its own webhook"
+        "each Finish posts in its configured channel"
     );
+    for (send, channel) in requests.iter().zip([LOGS, OTHER_LOGS]) {
+        let body = send
+            .json()
+            .ok_or_else(|| anyhow::anyhow!("message body is not JSON"))?;
+        assert_eq!(body["flags"], 32768);
+        assert!(body.get("content").is_none());
+        assert_eq!(body["components"][0]["type"], 17);
+        let text = body["components"][0]["components"][0]["content"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(text.contains(&format!("<#{channel}>")), "{text}");
+        assert!(text.contains(&format!("<@&{MODS}>")), "{text}");
+    }
     Ok(())
 }
 

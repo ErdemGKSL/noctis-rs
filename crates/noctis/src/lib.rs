@@ -1938,6 +1938,50 @@ pub mod gateway {
     };
 }
 
+pub mod message {
+    //! Components V2 bot messages in any channel, outside an interaction:
+    //! announcements, scheduled posts, panels posted from an event handler
+    //! or a lifecycle hook. Discord accepts `IS_COMPONENTS_V2` on a normal
+    //! Create Message and Edit Message, so no webhook is needed.
+    //!
+    //! - [`Messages`] (`ctx.messages()` on every context, `app.messages()`):
+    //!   [`send`](Messages::send) posts a `V2Message` in a channel with the
+    //!   bot token; [`edit`](Messages::edit) and [`delete`](Messages::delete)
+    //!   act by channel and message id. Route buttons, selects, Refs, locale
+    //!   keys, the Limits and attachments are handled exactly as in a reply.
+    //! - [`SendMessage`]: `.flags(CreateFlags)`, `.reply_to(message_id)`; it
+    //!   resolves to a [`ChannelMessage`], whose `edit` keeps the attachments
+    //!   the message holds. [`EditMessage`]: `.flags(EditFlags)`; an edit by
+    //!   id clears `content`, `embeds`, `poll` and `sticker_ids`, so a legacy
+    //!   bot message becomes V2 (CV2-02).
+    //! - Errors are [`MessageError`]: `Invalid` before any request,
+    //!   `Rejected { status, code }` when Discord refuses (missing
+    //!   `SEND_MESSAGES`, an unknown channel), `RateLimited` (never retried).
+    //!
+    //! ```no_run
+    //! use noctis::prelude::*;
+    //! use noctis::message::MessageError;
+    //! use noctis::twilight::model::id::Id;
+    //! use noctis::twilight::model::id::marker::ChannelMarker;
+    //! use noctis::ui::{Components, Container, TextDisplay, V2Message};
+    //!
+    //! async fn announce(ctx: &EventCtx, channel: Id<ChannelMarker>) -> Result<(), MessageError> {
+    //!     let card = Container::new().push(TextDisplay::new("Event starts in 1 hour"));
+    //!     let view = V2Message::new(Components::new().push(card));
+    //!     let posted = ctx.messages().send(channel, view).await?;
+    //!     posted
+    //!         .edit(Components::new().push(TextDisplay::new("Event started")))
+    //!         .await?;
+    //!     Ok(())
+    //! }
+    //! # let _ = announce;
+    //! ```
+
+    pub use noctis_core::{
+        ChannelMessage, DeleteMessage, EditMessage, MessageError, Messages, SendMessage,
+    };
+}
+
 pub mod webhook {
     //! Views over webhooks (FR-65): log channels, personas and cross-posts
     //! with the same Components V2 safety as interaction replies.

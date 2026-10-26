@@ -409,6 +409,12 @@ impl EventCtx {
     pub fn webhooks(&self) -> crate::Webhooks {
         crate::Webhooks::of(Some(&self.0.app))
     }
+
+    /// The App's channel message client: post, edit and delete Components
+    /// V2 bot messages in any channel (a cheap clone).
+    pub fn messages(&self) -> crate::Messages {
+        crate::Messages::of(Some(&self.0.app))
+    }
 }
 
 impl crate::kind::__Extensions for EventCtx {

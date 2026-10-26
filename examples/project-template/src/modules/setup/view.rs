@@ -4,7 +4,7 @@ use noctis::id::marker::UserMarker;
 use noctis::prelude::*;
 use noctis::ui::{
     ActionRow, Button, ButtonStyle, Components, Container, ContainerComponent, Separator,
-    StaticComponents, StaticContainer, StaticMessage, TextDisplay, V2Message,
+    TextDisplay, V2Message,
 };
 
 use super::{
@@ -151,20 +151,16 @@ pub fn render_setup_done(config: GuildConfig, s: &Strings) -> V2Message {
     )
 }
 
-/// The line Finish posts to the log channel through its webhook: static, so it would
-/// fit a webhook the bot does not own too (WH-02).
-pub fn render_setup_log(config: GuildConfig, by: Id<UserMarker>, s: &Strings) -> StaticMessage {
+/// The line Finish posts to the log channel as a normal bot message
+/// (`ctx.messages().send(..)`): a V2 View like any other, so it may carry buttons too.
+pub fn render_setup_log(config: GuildConfig, by: Id<UserMarker>, s: &Strings) -> V2Message {
     let text = s.setup.log_enabled(
         format!("<@{by}>"),
         format!("<#{}>", config.log_channel),
         format!("<@&{}>", config.mod_role),
     );
-    StaticMessage::new(
-        StaticComponents::new().push(
-            StaticContainer::new()
-                .accent(DONE)
-                .push(TextDisplay::new(text)),
-        ),
+    V2Message::new(
+        Components::new().push(Container::new().accent(DONE).push(TextDisplay::new(text))),
     )
 }
 

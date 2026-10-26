@@ -177,6 +177,7 @@
 mod app;
 mod authority;
 mod autocomplete;
+mod channel_message;
 pub mod cli;
 mod command;
 mod component;
@@ -275,6 +276,9 @@ pub use autocomplete::{
     PartialOptions, SuggestionLabel, SuggestionValue, Suggestions,
 };
 pub use boot_flags::{BootFlagError, BootFlags};
+pub use channel_message::{
+    ChannelMessage, DeleteMessage, EditMessage, MessageError, Messages, SendMessage,
+};
 pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
 #[doc(hidden)]
 pub use component::{__Absent, __ExpiredHook, __HookCtx, __StaleHook};

@@ -19,7 +19,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `72557931a4cfd95963a3521853043b8232777913a225ae8c1ed494f74cf75d6a` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `8822a07141a484d84c45bb8330be08a93433b4b7e4f3165ac419cc7d4b8b5342` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -403,7 +403,8 @@ async fn main() -> anyhow::Result<()> {
 | Destructive action | Danger button → confirm View → `one_shot` by-ref Route | Quality rule 3 |
 | Per-user settings on a shared message | Ephemeral sub-panel (`#[button("id", response = ephemeral, defaults(..))]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
 | A one-line notice, no interaction | `ctx.reply_text(key)` or `HandlerError::user(key)` | Localized, ephemeral |
-| Post to a log channel or white-label persona | an owned webhook (`ctx.webhooks().create(..)` once, store id + token, then `owned(..).send(render_x(..))`); a webhook you don't own takes only a `StaticMessage` | WH-01..05; `references/responder.md` §7 |
+| Post a View to a channel outside an interaction (log line, announcement, scheduled post, a panel posted from an event or a hook) | a normal bot message: `ctx.messages().send(channel, render_x(..))` (`app.messages()` outside a handler); edit it with the returned `ChannelMessage`. Components V2 works in normal bot messages, with Route buttons and selects; no webhook needed | CV2-01, MSG-07; `references/responder.md` §6b |
+| Post under another name or avatar (white-label persona, per-message author) | an owned webhook (`ctx.webhooks().create(..)` once, store id + token, then `owned(..).send(render_x(..))`); a webhook you don't own takes only a `StaticMessage` | WH-01..05; `references/responder.md` §7 |
 
 Image vs text: if users need to **read** many numbers at a glance → image; if they need
 to **act** on an item → a Section with an accessory button or a select option.
@@ -476,7 +477,7 @@ Read only what the task touches.
 | `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), Lifecycle Hooks (`#[derive(Hook)]`, `noctis::lifecycle`, `HookCtx`, `ErrorOrigin::Hook`) and plugin events (`ExtensionEvent`, `Emitter`), shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps (`apps = [..]`, `Module::apps`, `GuildAccess` allow/deny lists, pipeline stage 3) and `Runtime` |
 | `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `CommandInput::with_error`, `OptionError::Constraint`) |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
-| `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |
+| `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, bot messages in any channel (`ctx.messages()`), webhooks |
 | `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`alt!`/`rgb!`; attachments: upload, keep-by-id edits, Upload Budget, rendered-image alt |
 | `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |

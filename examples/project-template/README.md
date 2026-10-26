@@ -151,16 +151,16 @@ user code. Code lines (non-blank, not a comment, up to `#[cfg(test)]`):
 | File | Code lines |
 | --- | ---: |
 | `src/main.rs` | 25 |
-| `src/modules/setup/mod.rs` | 118 |
-| `src/modules/setup/view.rs` | 149 |
-| `src/modules/setup/handlers.rs` | 165 |
+| `src/modules/setup/mod.rs` | 104 |
+| `src/modules/setup/view.rs` | 145 |
+| `src/modules/setup/handlers.rs` | 116 |
 | `src/modules/profile/view.rs` | 82 |
-| **SM-1 files** | **539** |
-| whole `src/` | 1799 |
+| **SM-1 files** | **472** |
+| whole `src/` | 1732 |
 
-Goal: ≤ 150. **Missed** (539): the template's setup flow does more than SM-1's minimum
-(per-step validation, Back and Cancel, a stale-panel restart, a one-shot Finish, logging
-through a stored, replaceable webhook). Reproduce the count from this directory:
+Goal: ≤ 150. **Missed** (472): the template's setup flow does more than SM-1's minimum
+(per-step validation, Back and Cancel, a stale-panel restart, a one-shot Finish, a V2
+log line posted as a normal bot message). Reproduce the count from this directory:
 
 ```sh
 for f in src/main.rs src/modules/setup/{mod,view,handlers}.rs src/modules/profile/view.rs; do

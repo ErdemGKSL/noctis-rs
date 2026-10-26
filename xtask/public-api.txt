@@ -89,6 +89,7 @@ pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub fn noctis::App::is_publisher(&self) -> bool
 pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::App::messages(&self) -> noctis::message::Messages
 pub fn noctis::App::module_state_poll(&self) -> core::time::Duration
 pub fn noctis::App::modules(&self) -> noctis::Modules
 pub fn noctis::App::presence(&self) -> noctis::gateway::PresenceHandle
@@ -552,6 +553,7 @@ pub fn noctis::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::CommandCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::CommandCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::CommandCtx::module(&self) -> &'static str
 pub fn noctis::CommandCtx::modules(&self) -> noctis::Modules
 pub fn noctis::CommandCtx::rate_limits(&self) -> noctis::RateLimits
@@ -707,6 +709,7 @@ pub fn noctis::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::ComponentCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::ComponentCtx::modules(&self) -> noctis::Modules
 pub fn noctis::ComponentCtx::response_locale(&self) -> noctis::rules::Locale
@@ -1027,6 +1030,7 @@ pub fn noctis::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::ExpiredCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::ExpiredCtx::modules(&self) -> noctis::Modules
 pub fn noctis::ExpiredCtx::response_locale(&self) -> noctis::rules::Locale
@@ -1496,6 +1500,7 @@ pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::ModalSubmitCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::ModalSubmitCtx::modules(&self) -> noctis::Modules
 pub fn noctis::ModalSubmitCtx::response_locale(&self) -> noctis::rules::Locale
@@ -2712,6 +2717,7 @@ pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twiligh
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
+pub fn noctis::events::EventCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::modules(&self) -> noctis::Modules
 pub fn noctis::events::EventCtx::shard(&self) -> u32
@@ -2730,6 +2736,7 @@ pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twiligh
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
+pub fn noctis::events::EventCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::modules(&self) -> noctis::Modules
 pub fn noctis::events::EventCtx::shard(&self) -> u32
@@ -4060,6 +4067,7 @@ pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::lifecycle::HookCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
 pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -4076,6 +4084,7 @@ pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::lifecycle::HookCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
 pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -4240,6 +4249,74 @@ impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
 pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
 impl noctis::lifecycle::HookEvent for noctis::lifecycle::ShutdownStarted
 pub const noctis::lifecycle::ShutdownStarted::NAME: &'static str
+pub mod noctis::message
+pub struct noctis::message::ChannelMessage
+impl noctis::message::ChannelMessage
+pub fn noctis::message::ChannelMessage::channel_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>
+pub fn noctis::message::ChannelMessage::delete(&self) -> noctis::message::DeleteMessage
+pub fn noctis::message::ChannelMessage::edit(&self, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::message::EditMessage<'_>
+pub fn noctis::message::ChannelMessage::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::MessageMarker>
+impl core::fmt::Debug for noctis::message::ChannelMessage
+pub fn noctis::message::ChannelMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::message::DeleteMessage
+impl core::fmt::Debug for noctis::message::DeleteMessage
+pub fn noctis::message::DeleteMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::future::into_future::IntoFuture for noctis::message::DeleteMessage
+pub type noctis::message::DeleteMessage::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::message::DeleteMessage as core::future::into_future::IntoFuture>::Output> + core::marker::Send)>>
+pub type noctis::message::DeleteMessage::Output = core::result::Result<(), noctis::message::MessageError>
+pub fn noctis::message::DeleteMessage::into_future(self) -> Self::IntoFuture
+pub struct noctis::message::EditMessage<'a>
+impl noctis::message::EditMessage<'_>
+pub fn noctis::message::EditMessage<'_>::flags(self, noctis::ui::EditFlags) -> Self
+impl<'a> core::fmt::Debug for noctis::message::EditMessage<'a>
+pub fn noctis::message::EditMessage<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::future::into_future::IntoFuture for noctis::message::EditMessage<'a>
+pub type noctis::message::EditMessage<'a>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::message::EditMessage<'a> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::message::EditMessage<'a>::Output = core::result::Result<(), noctis::message::MessageError>
+pub fn noctis::message::EditMessage<'a>::into_future(self) -> Self::IntoFuture
+#[non_exhaustive] pub enum noctis::message::MessageError
+pub noctis::message::MessageError::Detached
+pub noctis::message::MessageError::Encode
+pub noctis::message::MessageError::Encode::reason: alloc::string::String
+pub noctis::message::MessageError::Invalid(noctis::ui::UiError)
+pub noctis::message::MessageError::RateLimited(noctis::http::RateLimited)
+pub noctis::message::MessageError::RefCollision
+pub noctis::message::MessageError::RefStore(noctis::ports::PortError)
+pub noctis::message::MessageError::Rejected
+pub noctis::message::MessageError::Rejected::code: core::option::Option<u32>
+pub noctis::message::MessageError::Rejected::status: u16
+pub noctis::message::MessageError::Transport
+impl core::convert::From<noctis::ResponderError> for noctis::message::MessageError
+pub fn noctis::message::MessageError::from(noctis::ResponderError) -> Self
+impl core::convert::From<noctis::ui::UiError> for noctis::message::MessageError
+pub fn noctis::message::MessageError::from(noctis::ui::UiError) -> Self
+impl core::error::Error for noctis::message::MessageError
+pub fn noctis::message::MessageError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::message::MessageError
+pub fn noctis::message::MessageError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::message::MessageError
+pub fn noctis::message::MessageError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::convert::From<noctis::ResponderError> for noctis::message::MessageError
+pub fn noctis::message::MessageError::from(noctis::ResponderError) -> Self
+pub struct noctis::message::Messages
+impl noctis::message::Messages
+pub fn noctis::message::Messages::delete(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::message::DeleteMessage
+pub fn noctis::message::Messages::edit(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::message::EditMessage<'static>
+pub fn noctis::message::Messages::send(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::message::SendMessage
+impl core::clone::Clone for noctis::message::Messages
+pub fn noctis::message::Messages::clone(&self) -> Self
+impl core::fmt::Debug for noctis::message::Messages
+pub fn noctis::message::Messages::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::message::SendMessage
+impl noctis::message::SendMessage
+pub fn noctis::message::SendMessage::flags(self, noctis::ui::CreateFlags) -> Self
+pub fn noctis::message::SendMessage::reply_to(self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> Self
+impl core::fmt::Debug for noctis::message::SendMessage
+pub fn noctis::message::SendMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::future::into_future::IntoFuture for noctis::message::SendMessage
+pub type noctis::message::SendMessage::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::message::SendMessage as core::future::into_future::IntoFuture>::Output> + core::marker::Send)>>
+pub type noctis::message::SendMessage::Output = core::result::Result<noctis::message::ChannelMessage, noctis::message::MessageError>
+pub fn noctis::message::SendMessage::into_future(self) -> Self::IntoFuture
 pub mod noctis::observe
 pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
 #[non_exhaustive] pub struct noctis::observe::MetricInfo
@@ -5067,6 +5144,7 @@ pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub fn noctis::prelude::App::is_publisher(&self) -> bool
 pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::App::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::App::module_state_poll(&self) -> core::time::Duration
 pub fn noctis::prelude::App::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::App::presence(&self) -> noctis::gateway::PresenceHandle
@@ -5233,6 +5311,7 @@ pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::CommandCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::CommandCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::CommandCtx::rate_limits(&self) -> noctis::RateLimits
@@ -5304,6 +5383,7 @@ pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> noctis::rules::Loca
 pub fn noctis::prelude::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::prelude::ComponentCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ComponentCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::ComponentCtx::response_locale(&self) -> noctis::rules::Locale
@@ -5402,6 +5482,7 @@ pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::prelude::ExpiredCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ExpiredCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::ExpiredCtx::response_locale(&self) -> noctis::rules::Locale
@@ -5471,6 +5552,7 @@ pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::HookCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
 pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -5487,6 +5569,7 @@ pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::HookCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
 pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -5600,6 +5683,7 @@ pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Lo
 pub fn noctis::prelude::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
+pub fn noctis::prelude::ModalSubmitCtx::messages(&self) -> noctis::message::Messages
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ModalSubmitCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::ModalSubmitCtx::response_locale(&self) -> noctis::rules::Locale
