@@ -205,6 +205,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- skill-check
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    # FR-74: the facade's rustdoc builds without warnings with default and with all
+    # features (what docs.rs builds), its doctests pass, and docs-check finds no broken
+    # link, anchor or same-repo URL, no unlinked guide and no `ignore` doctest. It never
+    # fetches a URL. `--all-features` needs a C compiler and cmake (libwebp, libopus).
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --release -p noctis --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --release -p noctis --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo test --release -p noctis --all-features --doc
+      - run: cargo run --release -p xtask -- docs-check
+
   template-build:
     name: Project template build
     runs-on: ubuntu-latest

@@ -221,6 +221,18 @@ Read the full design:
 | [Discord rules catalog](docs/discord-rules.md) | Every Discord limit Noctis enforces and where (compile time, App build or runtime) |
 | [Research](_bmad-output/planning-artifacts/research/) | twilight, Components V2, takumi, and the tescord/dbi features Noctis carries over |
 
+## Guides
+
+| Guide | What it covers |
+| --- | --- |
+| [Guides index](docs/guides/README.md) | Every guide, with one line each |
+| [Coming from tescord, dbi, serenity or poise](docs/guides/concept-map.md) | What each concept you know is called in Noctis, and what Noctis does not do |
+| [Cluster deployment](docs/guides/cluster.md) | Running one bot as several processes: Shard Ranges, the shared `IdentifyQueue`, the HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, one publisher |
+| [Voice and music bots](docs/guides/voice.md) | The `voice` feature: joining, tracks and the queue, Opus passthrough, Cluster notes, testing |
+
+The API reference is on [docs.rs](https://docs.rs/noctis), and the [changelog](CHANGELOG.md)
+has the migration notes.
+
 ## Roadmap
 
 Noctis is planned and built with the [BMad Method](https://docs.bmad-method.org/). The
@@ -429,7 +441,9 @@ Noctis brings the ergonomics of [tescord](https://www.npmjs.com/package/tescord)
 [`@mostfeatured/dbi`](https://www.npmjs.com/package/@mostfeatured/dbi) to Rust:
 space-separated command names, auto-publish, typed locales, and data in
 `custom_id`s. It fixes their known gaps: O(n) dispatch, unchecked `custom_id`
-length, refs lost on restart, and silently dropped options.
+length, refs lost on restart, and silently dropped options. The
+[concept map](docs/guides/concept-map.md) translates tescord, dbi, serenity and poise
+concepts to Noctis.
 
 ## Building from source
 

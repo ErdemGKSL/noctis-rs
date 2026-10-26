@@ -14,12 +14,17 @@
 //!   (required references, rule id index, no planning markers), and lints the
 //!   example crates and Markdown Rust examples for UI Doctrine violations
 //!   (FR-49, FR-50, AD-17, AD-28).
+//! - `docs-check [--root <path>]`: the offline link check of the launch
+//!   documentation: relative links, GitHub anchors and same-repo URLs in the
+//!   Markdown and the Rust sources, every guide linked from `README.md` and
+//!   `docs/guides/README.md`, and no `ignore` doctest (FR-74).
 //! - `tw-grammar [--check]`: generates `crates/noctis-image/src/tw/generated.rs`
 //!   from the pinned takumi-core sources and the closed suffix table; `--check`
 //!   fails when the committed file is stale (FR-32, FR-66, AD-15, AD-28).
 
 mod api_snapshot;
 mod deps_check;
+mod docs_check;
 mod public_api;
 mod rules_catalog;
 mod skill_check;
@@ -45,6 +50,10 @@ tasks:
       docs/discord-rules.md (references, rule id index, no planning markers)
       and lint the examples for UI Doctrine violations (default root: the
       noctis-rs repo)
+  docs-check [--root <path>]
+      check Markdown and rustdoc links, anchors and same-repo URLs offline,
+      that README.md and docs/guides/README.md link every guide, and that no
+      doctest is marked ignore (default root: the noctis-rs repo)
   tw-grammar [--check]
       generate crates/noctis-image/src/tw/generated.rs from the pinned
       takumi-core sources; --check fails if the committed file is stale
@@ -94,6 +103,13 @@ fn main() -> ExitCode {
                 usage(ExitCode::from(USAGE_ERROR))
             }
         },
+        Some((task, rest)) if task == "docs-check" => match root_arg(rest) {
+            Ok(root) => docs_check::run(&root),
+            Err(message) => {
+                eprintln!("docs-check: {message}");
+                usage(ExitCode::from(USAGE_ERROR))
+            }
+        },
         Some((task, rest)) if task == "tw-grammar" => {
             let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
             match rest {
@@ -134,7 +150,7 @@ fn deps_check_manifest(args: &[String]) -> Result<PathBuf, String> {
     }
 }
 
-/// Parses `rules-catalog`'s and `skill-check`'s arguments into the repository
+/// Parses `rules-catalog`'s, `skill-check`'s and `docs-check`'s arguments into the repository
 /// root to check.
 fn root_arg(args: &[String]) -> Result<PathBuf, String> {
     match args {

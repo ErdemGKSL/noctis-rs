@@ -73,3 +73,8 @@ trybuild.workspace = true
 
 [lints]
 workspace = true
+
+# docs.rs documents every feature (`image`, `voice` and `testkit` included);
+# its build image has the C compiler and cmake libwebp and libopus need.
+[package.metadata.docs.rs]
+all-features = true

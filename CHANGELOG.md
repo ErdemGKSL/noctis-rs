@@ -101,9 +101,59 @@ cargo test --release -p noctis --test alloc_dispatch
 cargo test --release -p noctis-codec --test alloc_decode
 ```
 
+### Documentation
+
+- New guides in `docs/guides/`: [Coming from tescord, dbi, serenity or
+  poise](docs/guides/concept-map.md) (a concept map for people) and [Cluster
+  deployment](docs/guides/cluster.md) (Shard Ranges, the shared `IdentifyQueue`, the
+  HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, one publisher). `README.md` has a
+  `## Guides` section, and [`docs/guides/README.md`](docs/guides/README.md) indexes
+  every guide.
+- The `noctis` rustdoc builds with `RUSTDOCFLAGS="-D warnings"` with default and with
+  all features (broken and ambiguous intra-doc links fixed), and docs.rs builds it with
+  every feature (`[package.metadata.docs.rs] all-features = true`).
+- New `xtask docs-check`: an offline link check (relative links, GitHub heading
+  anchors, same-repo `blob/main` and `tree/main` URLs in the Markdown and in
+  `crates/*/src`), every guide linked from `README.md` and the guides index, and no
+  `ignore` doctest. It never fetches a URL. CI's new `docs` job runs it with both
+  rustdoc builds and `cargo test --release -p noctis --all-features --doc`.
+
 ### Changed
 
 - Component, command and autocomplete handler futures are boxed through a
   `map` combinator instead of an `async move` wrapper, which stored the
   handler's future twice inside its one allocation (about 1.4 KiB less heap
   per component interaction).
+
+### Migration notes
+
+- **First release.** 0.1.0 is the first published Noctis, so there is nothing to
+  migrate from an earlier Noctis version.
+- **Coming from tescord, dbi, serenity or poise.** The [concept
+  map](docs/guides/concept-map.md) maps each concept to its Noctis item. The biggest
+  differences:
+  - every slash command, component, modal, event handler and lifecycle hook is one
+    struct with a derive and a `#[handler]` method, registered in a `Module` (a
+    tescord Pack);
+  - component data is a typed Payload in the `custom_id` (`X { .. }.build()`), checked
+    at compile time against Discord's limits; large data goes in a Ref with a TTL;
+  - there are no collectors, await-loops or inline listeners: each component has its
+    own handler, and its state travels in the Payload, a Ref or a port;
+  - handlers answer with a Components V2 message through `ctx.respond(..)` or
+    `ctx.update(..)`; deferring, flags and the response type are automatic, and there
+    are no embeds;
+  - command descriptions and every user-facing text come from typed locale files
+    (`i18n!`, `Strings::of(ctx.user_locale())`), not from string literals;
+  - commands are published with `--publish` / `--publish-guild` (or one
+    `NOCTIS_PUBLISHER=true` process), never on READY;
+  - storage goes through ports (`ctx.kv()`, `RefStore`, …) with bounded in-memory
+    defaults; swap in your own Adapters for persistence.
+- **Running several processes.** Follow the [Cluster deployment
+  guide](docs/guides/cluster.md): the same shard total, a shared `IdentifyQueue`, one
+  HTTP proxy, shared Adapters, the same `NOCTIS_PAYLOAD_KEY` and App id, and one
+  publisher.
+- **Pre-release adopters of the project template.** Values stored with `ctx.kv()`
+  keep Discord ids as `u64` (`id.get()`, rebuilt with `Id::new_checked`), because
+  twilight's `Id` does not decode from the Kv encoding. A value stored earlier with an
+  `Id` field fails to read with `PortError::Value(Malformed)`: treat that error as
+  absent and overwrite the value.

@@ -11,7 +11,7 @@
 //!   [`UserCommand`](macro@UserCommand),
 //!   [`MessageCommand`](macro@MessageCommand),
 //!   [`EventHandler`](macro@EventHandler), [`Button`](macro@Button), the
-//!   select derives, [`Modal`](macro@Modal) and [`Hook`](macro@Hook)), the
+//!   select derives, [`Modal`](macro@prelude::Modal) and [`Hook`](macro@Hook)), the
 //!   [`handler`](macro@handler),
 //!   [`autocomplete`](macro@autocomplete), [`on_stale`](macro@on_stale),
 //!   [`on_expired`](macro@on_expired) and
@@ -43,8 +43,8 @@
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
 //! - [`prelude`]: `use noctis::prelude::*;` brings every kind derive,
 //!   [`handler`](macro@handler), [`autocomplete`](macro@autocomplete), the
-//!   [`Payload`](macro@Payload), [`PayloadEnum`](macro@PayloadEnum) and
-//!   [`Choices`](macro@Choices) derives, the `Route` and `Payload` traits,
+//!   [`Payload`](macro@prelude::Payload), [`PayloadEnum`](macro@prelude::PayloadEnum) and
+//!   [`Choices`](macro@prelude::Choices) derives, the `Route` and `Payload` traits,
 //!   [`Rgb`](ui::Rgb), the contexts and responders, and the macros
 //!   [`components!`], [`label!`], [`placeholder!`], [`content!`] and
 //!   [`rgb!`] into scope.
@@ -78,7 +78,7 @@
 //! | [`UserCommand`](macro@UserCommand) / [`MessageCommand`](macro@MessageCommand) | `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]` | `(self, ctx: CommandCtx, target: ResolvedUser \| ResolvedMessage[, r])` |
 //! | [`EventHandler`](macro@EventHandler) | optional `#[event(ordered, droppable)]` | `(self, ctx: EventCtx, event: <payload>)` |
 //! | [`Button`](macro@Button), the select derives | `#[button("id", <codec args>, response = .., auto_defer = .., defaults(..))]`, … | `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` |
-//! | [`Modal`](macro@Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx[, r: ModalResponder])` |
+//! | [`Modal`](macro@prelude::Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx[, r: ModalResponder])` |
 //! | [`Hook`](macro@Hook) | optional `#[hook(flags = [..])]` | `(self, ctx: HookCtx, event: <lifecycle event>)` |
 //!
 //! A component struct is a Route: its fields are the Payload of its
@@ -607,16 +607,16 @@
 //!   Its locales drive the resolution of every run's
 //!   `ctx.user_locale()`/`ctx.guild_locale()` ([`Locales`]; override it
 //!   with a [`LocaleResolver`] or a before-Middleware).
-//! - `prefix`: opt-in prefix commands: the [`prefix`] module's
+//! - `prefix`: opt-in prefix commands: the `prefix` module's
 //!   `PrefixPlugin` runs opted-in slash Commands from messages such as
 //!   `!warn <@5> 3`; it needs the privileged `MESSAGE_CONTENT` intent.
-//! - `voice`: voice channels through Noctis's gateway: the [`voice`]
+//! - `voice`: voice channels through Noctis's gateway: the `voice`
 //!   module's `.voice(VoiceConfig)` on the `AppBuilder` and `ctx.voice()`
 //!   (`join`, `leave`) with Songbird 0.6 as the voice driver. Needs a C
 //!   compiler and cmake (libopus is built from source).
-//! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
-//!   simulated interactions, message and Template pixel snapshots and the
-//!   memory check;
+//! - `testkit`: the `testkit` module, the bot's App on local Discord
+//!   fakes with simulated interactions, message and Template pixel
+//!   snapshots and the memory check;
 //!   enable it in `[dev-dependencies]` only.
 #![deny(missing_docs)]
 
@@ -2725,7 +2725,7 @@ pub mod i18n {
     //! The runtime half of [`i18n!`](crate::i18n!): [`Catalog`], the
     //! compiled files `catalog()` returns (pass it to
     //! [`AppBuilder::locales`](crate::AppBuilder::locales)), and
-    //! [`format`], the placeholder substitution the accessors use.
+    //! [`format()`], the placeholder substitution the accessors use.
     //!
     //! ```
     //! use noctis::rules::Locale;
@@ -2825,7 +2825,7 @@ pub mod voice {
     //! handler through Noctis's own gateway, with Songbird 0.6 as the voice
     //! driver. Needs a C compiler and cmake (libopus is built from source).
     //!
-    //! - **Install.** `.voice(VoiceConfig::default())` on the [`AppBuilder`]
+    //! - **Install.** `.voice(VoiceConfig::default())` on the [`AppBuilder`](crate::AppBuilder)
     //!   ([`AppBuilderVoiceExt`]) adds the `GUILD_VOICE_STATES` intent and the
     //!   Module `noctis-voice`. [`VoiceConfig`]: `join_timeout` 1 s..=60 s
     //!   (default 10 s; another value fails the build), `self_deaf` (default

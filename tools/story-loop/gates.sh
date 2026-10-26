@@ -37,6 +37,8 @@ git rev-parse --abbrev-ref HEAD | grep -q '^story-loop/' && git log --format=%s 
 [ -z "$merged" ] && run msrv cargo +1.91 check --release --workspace
 run deny cargo deny check
 run cfg bash .github/scripts/check-build-config.sh
-for t in deps-check rules-catalog api-snapshot skill-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
+run docs env RUSTDOCFLAGS="-D warnings" cargo doc --release -p noctis --no-deps
+run docs-all env RUSTDOCFLAGS="-D warnings" cargo doc --release -p noctis --all-features --no-deps
+for t in deps-check rules-catalog api-snapshot skill-check docs-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
 run tw-grammar cargo run --release -q -p xtask -- tw-grammar --check
 echo ALL-OK
