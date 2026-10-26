@@ -24,26 +24,39 @@ if ! grep -qxF noctis-core <<< "$default_names"; then
     exit 1
 fi
 
+# hits <names>: prints each forbidden crate (or takumi* crate) found in <names>.
+hits() {
+    local crate
+    for crate in "${forbidden[@]}"; do
+        if [[ $crate == takumi ]]; then
+            grep -E '^takumi' <<< "$1" || true
+        else
+            grep -xF "$crate" <<< "$1" || true
+        fi
+    done
+}
+
 status=0
+while IFS= read -r hit; do
+    [[ -n "$hit" ]] || continue
+    echo "$name: $hit is in noctis's default dependency graph" >&2
+    status=1
+done <<< "$(hits "$default_names")"
+
+# The list is only meaningful while the optional features really pull every
+# forbidden entry.
+all_names=$(cargo tree -p noctis -e normal --prefix none --locked --features image,voice,prefix,testkit | names)
 for crate in "${forbidden[@]}"; do
     if [[ $crate == takumi ]]; then
-        hits=$(grep -E '^takumi' <<< "$default_names" || true)
+        found=$(grep -E '^takumi' <<< "$all_names" || true)
     else
-        hits=$(grep -xF "$crate" <<< "$default_names" || true)
+        found=$(grep -xF "$crate" <<< "$all_names" || true)
     fi
-    while IFS= read -r hit; do
-        [[ -n "$hit" ]] || continue
-        echo "$name: $hit is in noctis's default dependency graph" >&2
+    if [[ -z "$found" ]]; then
+        echo "$name: --features image,voice,prefix,testkit does not pull $crate; the forbidden list is stale" >&2
         status=1
-    done <<< "$hits"
+    fi
 done
-
-# The list is only meaningful while `image` really pulls noctis-image and takumi.
-image_names=$(cargo tree -p noctis -e normal --prefix none --locked --features image | names)
-if ! grep -qxF noctis-image <<< "$image_names" || ! grep -qE '^takumi' <<< "$image_names"; then
-    echo "$name: --features image does not pull noctis-image and takumi; the forbidden list is stale" >&2
-    status=1
-fi
 
 if [[ $status -eq 0 ]]; then
     echo "$name: ok" >&2

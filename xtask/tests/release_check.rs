@@ -185,9 +185,17 @@ fn real_repo_passes() {
     let out = run(&["release-check"]);
     let err = stderr(&out);
     assert_eq!(out.status.code(), Some(0), "{err}");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../Cargo.toml");
+    let text = fs::read_to_string(manifest).expect("read the root Cargo.toml");
+    let root: toml::Table = text.parse().expect("parse the root Cargo.toml");
+    let version = root["workspace"]["package"]["version"]
+        .as_str()
+        .expect("[workspace.package] version");
     let line = err.trim_end();
     assert!(
-        line.starts_with("release-check: ok (13 crates at 0.1.0; publish order: "),
+        line.starts_with(&format!(
+            "release-check: ok (13 crates at {version}; publish order: "
+        )),
         "{line}"
     );
     assert!(line.ends_with(", noctis)"), "{line}");

@@ -24,8 +24,8 @@ push to `main` runs its two jobs:
 2. **`release`** runs `release-plz release` in the protected `release` environment,
    the only place that holds the crates.io token. It publishes only when the pushed
    commit merges a release PR (`release_always = false`); on any other push it
-   releases nothing. It publishes the 13 crates in dependency order (the order
-   `cargo run --release -p xtask -- release-check` prints), then creates the tag
+   releases nothing. It publishes the 13 crates in dependency order (one valid
+   order is the one `cargo run --release -p xtask -- release-check` prints), then creates the tag
    `v<version>` and a GitHub release for `noctis` only. While crates.io rate-limits
    new crates, `.github/scripts/release-retry.sh` retries the whole step (12
    attempts, 11 minutes apart); each attempt skips the crates already published.
@@ -72,7 +72,9 @@ Do these once, in order.
      reviewer rule would hold every push for approval.
 5. **Optional: protect `main`.** Settings → Rules → Rulesets → New branch ruleset for
    `main`, requiring the `ci.yml` status checks on pull requests, with yourself on
-   the bypass list so direct pushes keep working.
+   the bypass list so direct pushes keep working. The `chore: release` PR runs no
+   `ci.yml` (GitHub does not start workflows for `GITHUB_TOKEN` events), so it is
+   merged through the bypass; CI runs on the merge push to `main`.
 6. **Check the release PR.** The next push to `main` (the one from step 1 is enough)
    makes `release-pr` open `chore: release`. Its diff must be exactly two added lines
    in `CHANGELOG.md`, right after `## [Unreleased]` and its blank line:
@@ -104,6 +106,9 @@ Do these once, in order.
    `examples/project-template/Cargo.toml`, replace the `path` dependencies on `noctis`
    with `noctis = "0.1"` plus the same features (the commented line above them shows
    the form), refresh its `Cargo.lock`, and make its gates pass.
+6. **Check the template and the roadmap.** Copy `examples/project-template/` out of
+   the repository and check that it builds with `cargo build --release` against
+   crates.io, and that the README roadmap marks Milestones 1-4 done.
 
 ## Later releases
 

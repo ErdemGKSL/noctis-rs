@@ -13,7 +13,7 @@ cd "$(dirname "$0")/../.."
 if [[ $# -eq 0 ]]; then
     # The sparse index path of `noctis`: crates of 4+ chars live under
     # <first two>/<next two>/<name>.
-    code=$(curl -sS -o /dev/null -w '%{http_code}' https://index.crates.io/no/ct/noctis 2>/dev/null) || true
+    code=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' https://index.crates.io/no/ct/noctis 2>/dev/null) || true
     case "$code" in
         404)
             echo "$name: noctis is not on crates.io yet (first release); nothing to compare" >&2

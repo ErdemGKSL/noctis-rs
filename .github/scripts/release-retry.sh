@@ -34,7 +34,7 @@ while true; do
     if [[ $status -eq 0 ]]; then
         exit 0
     fi
-    if ! grep -qiE '429|too many requests|too many new crates' "$log"; then
+    if ! grep -qiE 'status 429|429 too many requests|too many requests|too many new crates' "$log"; then
         exit "$status"
     fi
     if [[ $attempt -ge $attempts ]]; then

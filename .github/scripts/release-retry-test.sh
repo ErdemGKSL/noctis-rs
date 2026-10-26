@@ -63,6 +63,7 @@ check T3 3 3 'release-retry: still rate limited after 3 attempts' \
     3 0 -- "$tmp/stub.sh" "$tmp/count" 9 "$limit"
 # T4: another failure is not retried.
 check T4 3 1 'error: verify failed' 5 0 -- "$tmp/stub.sh" "$tmp/count" 9 'error: verify failed'
+check T4-line-429 3 1 'src/lib.rs:429:5: error' 5 0 -- "$tmp/stub.sh" "$tmp/count" 9 'src/lib.rs:429:5: error'
 # T6: usage errors.
 check T6-attempts-0 2 0 "$usage" 0 0 -- true
 check T6-attempts-neg 2 0 "$usage" -1 0 -- true

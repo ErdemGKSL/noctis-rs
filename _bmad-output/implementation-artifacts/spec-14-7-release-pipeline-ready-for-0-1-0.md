@@ -2,14 +2,21 @@
 title: 'Story 14.7: Release pipeline ready for 0.1.0'
 type: 'chore'
 created: '2026-10-26'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'da152d80f3fec24fad4ac9fb82c9fa93911b45f7'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/docs/guides/cluster.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      After 0.1.0, release-plz release-pr may auto-bump changed crates (patch bump, no version_group) on every push instead of waiting for the hand bump the runbook describes, possibly breaking the shared-version invariant.
+    evidence: |-
+      Unverified: release-plz 0.4.1 compares packages with their crates.io versions, which cannot be exercised before the first publish. Settle it by running `release-plz update` on a copy after 0.1.0 is published (or against a local registry holding 0.1.0) with a sub-crate change and no version bump; if it bumps only some crates or opens a PR without a hand bump, add `version_group` to every published package (and to release-check R2) and fix the "Later releases" runbook section.
+    location: >-
+      release-plz.toml; docs/guides/release.md (How a release works, Later releases)
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -160,6 +167,42 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-25 — Review pass
+- verdicts: 32 findings — high 0, medium 7, low 13, false 9, maybe-false 3
+- findings:
+  - `maybe-false` `defer` blind: release-plz release-pr auto-bumps changed crates after 0.1.0 (no `version_group`), contradicting the runbook's hand-bump model and the shared version — needs a release-plz run against a registry holding 0.1.0; deferred as medium (unverified).
+  - `low` `patch` blind: a release PR opened with `GITHUB_TOKEN` triggers no `ci.yml` run, so the optional ruleset (runbook setup step 5) leaves it without required checks — GitHub does not start workflows for GITHUB_TOKEN events; runbook gets a note that the release PR is merged through the bypass.
+  - `medium` `patch` blind: `release-retry.sh` treats any output containing `429` as a rate limit — `grep -qiE '429|…'` matches e.g. `src/lib.rs:429:5`, retrying a real failure 12 times 11 minutes apart; tighten the pattern and add a negative self-test case.
+  - `low` `patch` blind: `real_repo_passes` hard-codes `0.1.0`, so the first hand bump breaks the test suite — derive the version from the root `[workspace.package] version` in the test.
+  - `maybe-false` `reject` blind: the `publish-dry-run` gate leaves a second build tree on disk — where cargo's verify build lands and its size were not measurable (target was cleaned; full gates passed with 6.4 GB free); if true only low.
+  - `medium` `patch` blind: `check-default-graph.sh` staleness guard covers only `image` — voice/prefix/testkit/songbird entries can go stale and pass vacuously; extend the guard to every forbidden entry.
+  - `low` `reject` blind: `cargo tree` inspects only the host target and normal edges — the spec fixes the command (`-e normal`, no `--target`); the fix edits the spec, and a forbidden crate via a cfg(windows) or build dependency is implausible.
+  - `low` `patch` blind: the CHANGELOG 0.1.0 `### Release` text names `.github/workflows-disabled/release.yml`, wrong once 14.8 moves the workflows — name `release.yml` without the disabled path.
+  - `false` `reject` blind: unreadable root manifest reports "no [workspace.package] version" — spec K2 mandates exactly that message for a missing root `Cargo.toml`, and an unparsable manifest fails `cargo metadata` first (K3, no other checks).
+  - `low` `reject` blind: `path_only` accepts `version = "*"` and `published` treats `publish = ["other-registry"]` as crates.io — spec model defines both rules; the inputs are contrived for this workspace and the fix adds raw-manifest parsing and registry guards.
+  - `low` `reject` blind: R7 is a substring match on `commits` — spec R7 defines exactly this check; comparing against the golden body would edit the spec, and a body printing commits without the word is unlikely.
+  - `low` `patch` blind: runbook says release-plz publishes in "the order release-check prints" — release-plz computes its own order; reword as "a valid dependency order, such as the one release-check prints".
+  - `false` `reject` blind: missing CLI coverage for R3/R5/R7/C1/C2/C4/C5/D2/D4/H3 — the spec's task list names the CLI test set explicitly and assigns the other rows to unit tests, which exist.
+  - `low` `patch` blind: `semver-check.sh` curl probe has no timeout — a stalled connection hangs the CI job; add `--max-time 30`.
+  - `medium` `patch` edge: `429` regex false positive in `release-retry.sh` — grouped with the blind 429 finding.
+  - `low` `reject` edge: attempts/wait digit strings beyond 64-bit wrap in bash arithmetic — only a hand-mistyped CI argument could reach it; fix adds a length bound.
+  - `low` `reject` edge: K3 reports a leading `warning:` line of cargo metadata stderr instead of the error — rarely reached (invalid manifest), still fails loudly with the full stderr a rerun shows; fix adds a branch.
+  - `low` `reject` edge: `publish = ["some-other-registry"]` counted as published — grouped with the blind path_only/published finding.
+  - `medium` `patch` edge: forbidden voice/prefix/testkit/songbird names never proven live — grouped with the blind staleness-guard finding.
+  - `low` `reject` edge: `~~~` fences and trailing whitespace on `## [Unreleased]` give false H1/H2 problems — spec H2 names only backtick fences; the CHANGELOG uses neither, a false report fails loudly, and the fix adds branches.
+  - `maybe-false` `defer` edge: release PR auto-bumps after 0.1.0 independent of CHANGELOG headings — grouped with the blind release-plz finding (deferred).
+  - `medium` `patch` vgap: check-default-graph.sh forbidden loop is never shown to fail — grouped with the staleness-guard entry; the extended guard runs the loop over the `image,voice,prefix,testkit` graph and requires every entry to hit.
+  - `medium` `patch` vgap: release-check branches untested (no workspace repository, non-string body, missing/non-array changelog_include, non-table `[[package]]`, cycle reporting in `check`) — add the listed unit tests.
+  - `medium` `patch` vgap (other): bare `429` substring in `release-retry.sh` — grouped with the blind 429 finding.
+  - `false` `reject` intent: CHANGELOG has no `## [0.1.0]` heading — Design Notes D2 and the Never list deliberately settle this (a committed heading stops the release PR).
+  - `false` `reject` intent: no semver comparison before the first publish — S1/D6 settle it; Verification ran `--baseline-rev HEAD`.
+  - `false` `reject` intent: CI publish-dry-run never executed — CI is paused by the maintainer; the identical command runs in the local gate.
+  - `false` `reject` intent: topological order instead of AD-2 layers — a dependency order is layer-compatible because deps-check enforces layered edges.
+  - `false` `reject` intent: release PR behaviour asserted, not exercised — Verification P1 ran release-plz 0.4.1 `update` (the release-pr computation) on a committed copy; publishing needs the maintainer token (14.9).
+  - `false` `reject` intent: examples excluded besides xtask — they are `publish = false`; consistent with the intent.
+  - `low` `patch` intent: runbook omits 14.9's "README roadmap marks Milestones 1-4 done" and the copied-out template `cargo build --release` check — add both to "Publishing 0.1.0" step 5 (spec AC: runbook covers every step of 14.8 and 14.9).
+  - `false` `reject` intent: all-features tests not exercised by any gate — `tools/story-loop/gates.sh` runs `cargo test --release --workspace --all-features`.
+
 ## Design Notes
 
 **Decisions (logged in the memlog at planning).** D1 release-plz 0.4.1 with `release_always = false`: `release-pr` uses `release-plz/action@v0.5.146` (`version: 0.4.1`, `command: release-pr`, only `GITHUB_TOKEN`); `release` installs the CLI with `taiki-e/install-action@v2` (`tool: release-plz@0.4.1`), runs `release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4`, then `bash .github/scripts/release-retry.sh 12 660 -- release-plz release --git-token "$GITHUB_TOKEN" --forge github` (crates.io: burst 5 new crates, then 1 per 10 min; `timeout-minutes: 180`; retried runs skip published crates). D2 one hand-curated root `CHANGELOG.md`; release-plz writes it only for `noctis`, with a commits-free body that stamps the version heading under `## [Unreleased]`; a committed `## [0.1.0]` heading makes release-plz 0.4.1 treat the changelog as current (`changelog.rs` "already contains this version"), so no PR would open. D3 cyclic `noctis` dev-deps are path-only (cargo strips them on publish). D4 only `noctis` gets a tag (`v{{ version }}`) and GitHub release. D5 examples and xtask are never released. D6 semver: CI `semver` job via script (skip before the first publish) plus release-plz `semver_check` on `noctis`; CI-only (AD-28). D7 new `xtask release-check` guards these invariants offline. D8 workflows stay disabled; re-enabling is runbook step 1 of 14.8. License texts are not copied into each crate (the `license` field is enough for crates.io).
@@ -206,3 +249,14 @@ plus `[[package]] name = "xtask" | "music-bot" | "ui-recipes"` with `release = f
 - `for f in image image-gif image-emoji default-font i18n testkit prefix voice; do cargo check --release -p noctis --all-targets --features $f || break; done` -- expected: all pass (local stand-in for the hack matrix)
 - `cargo run --release -p xtask -- docs-check`, `-- skill-check`, `-- api-snapshot`, `-- deps-check`, `-- rules-catalog` -- expected: ok
 - `bash /home/claude/lanes/d/noctis-rs/tools/story-loop/gates.sh` via `bg.sh` -- expected: `ALL-OK` (~7 GB free at planning; if the disk fills, delete `target/debug/`)
+
+## Auto Run Result
+
+- **Summary:** release pipeline ready for 0.1.0 (CI still paused): release-plz 0.4.1 config (only `noctis` tagged/released, examples and xtask never released), `release.yml` (release-pr + rate-limit-retrying `release` job), CI semver and default-graph jobs, hand-curated root `CHANGELOG.md`, new offline `xtask release-check` guarding the invariants, `docs/guides/release.md` runbook for 14.8/14.9; path-only cyclic dev-deps.
+- **Files changed:** `.github/scripts/{check-default-graph,release-retry,release-retry-test,semver-check}.sh` (CI helpers); `.github/workflows-disabled/{ci,release}.yml` (jobs); `release-plz.toml` (golden config); `CHANGELOG.md`; `docs/guides/release.md` + guides index; `xtask/src/release_check/*`, `xtask/src/main.rs`, `xtask/tests/release_check.rs` (release-check); crate `Cargo.toml`s (path-only dev-deps, metadata); `tools/story-loop/gates.sh` (release-check + publish dry-run gates); AGENTS.md, README.md, memlog, sprint-status.
+- **Review findings:** 32 (high 0, medium 7, low 13, false 9, maybe-false 3). Patched: 429 false-positive regex in `release-retry.sh` (+negative self-test), staleness guard extended to every forbidden default-graph entry, release-check unit tests for untested branches, version derived from workspace in `real_repo_passes`, `--max-time 30` on semver curl probe, CHANGELOG release path wording, runbook order wording, GITHUB_TOKEN release-PR/ruleset note, 14.9 runbook steps (patched by verdict: medium 4 unique entries / 7 incl. grouped, low 6).
+- **Deferred:** release-plz may auto-bump changed crates after 0.1.0 without a `version_group`, contradicting the hand-bump model (needs a registry holding 0.1.0 to verify).
+- **Rejected:** host-target-only `cargo tree` (spec-fixed command); exotic `version="*"`/alt-registry inputs; R7 substring check (spec-defined); K2/K3 message edge cases; bash digit overflow on CI args; `~~~` fences; publish dry-run second build tree (unmeasurable, disk ok); intent findings settled by D2/D6/S1/D8, AD-2 layering, paused CI, and gates.sh all-features tests.
+- **Follow-up review recommended: true** -- two or more medium entries patched on a first pass; unverified risk: the rewritten 429 rate-limit pattern in `release-retry.sh` and the extended default-graph staleness guard have only been exercised locally, never against a real crates.io 429 or CI run.
+- **Verification:** `tools/story-loop/gates.sh` all green locally (fmt, clippy, workspace tests incl. all-features, deps-check, tw-grammar, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV, release-check, publish dry-run); `release-retry-test.sh`, `check-default-graph.sh`, `semver-check.sh --baseline-rev HEAD` ok. CI paused by maintainer.
+- **Residual risks:** deferred release-plz auto-bump behaviour after 0.1.0; workflows never executed on GitHub until 14.8 re-enables them; real publish needs the maintainer token (14.9).

@@ -508,6 +508,16 @@ release = false
         );
     }
 
+    #[test]
+    fn missing_workspace_repository() {
+        let mut ws = base();
+        ws.repository = None;
+        assert_eq!(
+            ws_problems(&ws),
+            ["release-check: Cargo.toml: no [workspace.package] repository"]
+        );
+    }
+
     /// C1, C2.
     #[test]
     fn foreign_published_crate_and_unpublished_facade() {
@@ -688,6 +698,33 @@ release = false
                 "release-check: release-plz.toml: package noctis changelog_include names \
                  noctis-b, which is not a published crate",
             ]
+        );
+    }
+
+    #[test]
+    fn malformed_values() {
+        let body = GOLDEN.replace(
+            "body = \"\"\"\n## [{{ version }}] - {{ timestamp }}\n\"\"\"",
+            "body = 1",
+        );
+        assert_eq!(
+            config(&base(), &body),
+            ["release-check: release-plz.toml: changelog.body must be a string (found 1)"]
+        );
+        let no_include = GOLDEN.replace("changelog_include = [\"noctis-a\"]\n", "");
+        assert_eq!(
+            config(&base(), &no_include),
+            [
+                "release-check: release-plz.toml: package noctis.changelog_include must be an \
+                 array of the published crates (found missing)"
+            ]
+        );
+        let head = &GOLDEN[..GOLDEN.find("[[package]]").expect("a [[package]]")];
+        let not_table = format!("package = [1]\n{head}");
+        assert!(
+            config(&base(), &not_table).contains(
+                &"release-check: release-plz.toml: [[package]] is not a table".to_owned()
+            )
         );
     }
 

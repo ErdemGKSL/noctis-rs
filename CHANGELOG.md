@@ -176,7 +176,7 @@ cargo test --release -p noctis-codec --test alloc_decode
 ### Release
 
 - The release pipeline: [`release-plz.toml`](release-plz.toml) (release-plz 0.4.1) and
-  `.github/workflows-disabled/release.yml`. Every push to `main` opens or updates a
+  the `release.yml` workflow. Every push to `main` opens or updates a
   `chore: release` PR that only stamps the version heading in this file; merging it
   publishes the 13 crates in dependency order from the protected `release`
   environment, with automatic retries while crates.io rate-limits new crates. Only

@@ -118,15 +118,7 @@ fn check(root: &Path, problems: &mut Problems) -> Option<String> {
     let ws = Workspace::from_metadata(&metadata, manifest.parse::<toml::Table>().ok().as_ref());
 
     rules::check_workspace(&ws, problems);
-    let order = match rules::publish_order(&ws) {
-        Ok(order) => order,
-        Err(cycle) => {
-            for name in cycle {
-                problems.add(name, "dependency cycle among published crates");
-            }
-            Vec::new()
-        }
-    };
+    let order = publish_order(&ws, problems);
     let config = match read(&root.join(RELEASE_PLZ)) {
         None => Config::Missing,
         Some(text) => match text.parse::<toml::Table>() {
@@ -143,6 +135,19 @@ fn check(root: &Path, problems: &mut Problems) -> Option<String> {
         ws.version.as_deref().unwrap_or("?"),
         order.join(", ")
     ))
+}
+
+/// The publish order; each crate of a dependency cycle is reported instead.
+fn publish_order(ws: &Workspace, problems: &mut Problems) -> Vec<String> {
+    match rules::publish_order(ws) {
+        Ok(order) => order,
+        Err(cycle) => {
+            for name in cycle {
+                problems.add(name, "dependency cycle among published crates");
+            }
+            Vec::new()
+        }
+    }
 }
 
 /// The file's text; `None` when it does not exist or is unreadable.
@@ -166,4 +171,44 @@ fn first_line(text: &str) -> &str {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .unwrap_or("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use model::{Dep, Kind, Member};
+
+    fn member(name: &str, dep: &str) -> Member {
+        Member {
+            name: name.to_owned(),
+            version: "0.1.0".to_owned(),
+            published: true,
+            description: Some("d".to_owned()),
+            license: Some("MIT".to_owned()),
+            repository: Some("https://github.com/o/r".to_owned()),
+            deps: vec![Dep {
+                to: dep.to_owned(),
+                kind: Kind::Normal,
+                path_only: false,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_cycle_reports_each_crate() {
+        let ws = Workspace {
+            version: Some("0.1.0".to_owned()),
+            repository: Some("https://github.com/o/r".to_owned()),
+            members: vec![member("noctis", "noctis-a"), member("noctis-a", "noctis")],
+        };
+        let mut problems = Problems::default();
+        assert!(publish_order(&ws, &mut problems).is_empty());
+        assert_eq!(
+            problems.lines(),
+            [
+                "release-check: noctis: dependency cycle among published crates",
+                "release-check: noctis-a: dependency cycle among published crates",
+            ]
+        );
+    }
 }
