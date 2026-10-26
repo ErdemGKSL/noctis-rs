@@ -2,21 +2,30 @@
 //! the bot token; CV2-01, CV2-02, MSG-07).
 //!
 //! [`Messages`] (from `ctx.messages()` or `App::messages()`) posts a
-//! [`V2Message`] to any channel the bot can write in, outside an
-//! interaction: an event handler, a lifecycle hook, a scheduled task. Route
-//! ids, Refs and select nonces are resolved exactly as in a reply, so the
-//! posted View's buttons and selects reach their handlers. Discord accepts
-//! `IS_COMPONENTS_V2` on Create Message and on Edit Message (set only), so a
-//! normal bot message is a full V2 message; no webhook is needed.
+//! [`V2Message`] to a guild text channel, a thread or a DM channel outside
+//! an interaction: an event handler, a lifecycle hook, a scheduled task.
+//! Route ids, Refs and select nonces are resolved exactly as in a reply, so
+//! the posted View's buttons and selects reach their handlers. Discord's
+//! "Using Message Components" names Create Message as a V2 endpoint, and its
+//! Create Message flags include `IS_COMPONENTS_V2`; Edit Message can set the
+//! flag but never clear it (CV2-01). A forum or media channel takes no
+//! Create Message (Discord's "Start Thread in Forum or Media Channel" opens
+//! a post there); post into one of its threads instead.
 //!
 //! Every send and edit goes through the Responder's own preparation (locale
 //! keys in the App's default locale, Route ids and Refs, the Limits, the
 //! Upload Budget and the attachments); flags are typed per endpoint
 //! ([`CreateFlags`] on send, [`EditFlags`] on edit, MSG-07). An edit by id
 //! clears the legacy fields, so a legacy bot message becomes V2 (CV2-02).
-//! The bot needs `VIEW_CHANNEL` and `SEND_MESSAGES` (in a thread
-//! `SEND_MESSAGES_IN_THREADS`); Discord's refusal is
-//! [`MessageError::Rejected`].
+//!
+//! Permissions, from Discord's Create, Edit and Delete Message limitations
+//! and its permissions page: in a guild channel the bot needs
+//! `SEND_MESSAGES`, and in a thread `SEND_MESSAGES_IN_THREADS` (threads do not
+//! inherit `SEND_MESSAGES`); denying `VIEW_CHANNEL` implicitly denies both;
+//! uploads need `ATTACH_FILES`; a reply needs `READ_MESSAGE_HISTORY`. Only the
+//! author edits `content` and `components`, so `edit` works on the bot's own
+//! messages only; deleting another user's message in a guild channel needs
+//! `MANAGE_MESSAGES`. Discord's refusal is [`MessageError::Rejected`].
 //!
 //! Route buttons on a posted message mint Refs with the App's `ref_ttl`,
 //! so a `by_ref` button on a long-lived message expires into `on_expired`:
@@ -69,9 +78,10 @@ pub enum MessageError {
     /// (RL-04).
     #[error(transparent)]
     RateLimited(crate::RateLimited),
-    /// Discord answered with an error status (403 code 50001 or 50013
-    /// without access or permission, 404 code 10003 or 10008 for an unknown
-    /// channel or message).
+    /// Discord answered with an error status. Its JSON `code` names the
+    /// cause, for example 50001 (missing access), 50013 (missing
+    /// permissions), 10003 (unknown channel), 10008 (unknown message),
+    /// 50083 (archived thread) or 160005 (locked thread).
     #[error("Discord rejected the message request with HTTP {status}{}", code.map(|c| format!(" (code {c})")).unwrap_or_default())]
     Rejected {
         /// The HTTP status.
@@ -163,10 +173,12 @@ impl Messages {
     }
 
     /// Edits the bot message `id` in `channel` into `msg`. The target's
-    /// format is unknown, so the legacy fields are cleared (`content: null`,
-    /// `embeds: []`, `poll: null`, `sticker_ids: []`): a legacy message
-    /// becomes V2 (CV2-02). Attachments the message holds are dropped unless
-    /// `msg` uploads them again; [`ChannelMessage::edit`] keeps them.
+    /// format is unknown, so the legacy fields are reset as Discord requires
+    /// when `IS_COMPONENTS_V2` is set (`content: null`, `embeds: []`,
+    /// `poll: null`, `sticker_ids: []`): a legacy message becomes V2
+    /// (CV2-02). The `attachments` array lists every file the message keeps
+    /// (API v10), and this edit knows none, so the message keeps only the
+    /// files `msg` uploads; [`ChannelMessage::edit`] keeps the ones it holds.
     pub fn edit(
         &self,
         channel: Id<ChannelMarker>,
@@ -184,8 +196,8 @@ impl Messages {
         }
     }
 
-    /// Deletes the message `id` in `channel` (the bot's own, or any with
-    /// `MANAGE_MESSAGES`).
+    /// Deletes the message `id` in `channel`: the bot's own, or in a guild
+    /// channel another user's with `MANAGE_MESSAGES`.
     pub fn delete(&self, channel: Id<ChannelMarker>, id: Id<MessageMarker>) -> DeleteMessage {
         DeleteMessage {
             app: self.app.clone(),
@@ -220,15 +232,19 @@ pub struct SendMessage {
 
 impl SendMessage {
     /// The Create Message flags (`SUPPRESS_EMBEDS`,
-    /// `SUPPRESS_NOTIFICATIONS`); `IS_COMPONENTS_V2` is always added.
+    /// `SUPPRESS_NOTIFICATIONS`); `IS_COMPONENTS_V2` is always added. There
+    /// is no ephemeral channel message: `EPHEMERAL` is not a Create Message
+    /// flag.
     pub fn flags(mut self, flags: CreateFlags) -> Self {
         self.flags = flags;
         self
     }
 
     /// Posts the message as a reply to `message` in the same channel
-    /// (`message_reference`, `fail_if_not_exists: false`: a deleted
-    /// target still posts).
+    /// (`message_reference` with `fail_if_not_exists: false`: when the
+    /// target no longer exists, Discord sends a normal, non-reply message
+    /// instead of an error). A reply needs `READ_MESSAGE_HISTORY`, and the
+    /// target cannot be a system message.
     pub fn reply_to(mut self, message: Id<MessageMarker>) -> Self {
         self.reply_to = Some(message);
         self
@@ -289,8 +305,10 @@ pub struct EditMessage<'a> {
 }
 
 impl EditMessage<'_> {
-    /// The Edit Message flags (`SUPPRESS_EMBEDS`, always sent);
-    /// `IS_COMPONENTS_V2` is always added.
+    /// The Edit Message flags: `SUPPRESS_EMBEDS`, the only one besides
+    /// `IS_COMPONENTS_V2` that Edit Message changes; `IS_COMPONENTS_V2` is
+    /// always added. Discord takes the sent value as the new set, so pass
+    /// `SUPPRESS_EMBEDS` on every edit that should keep it.
     pub fn flags(mut self, flags: EditFlags) -> Self {
         self.flags = flags;
         self

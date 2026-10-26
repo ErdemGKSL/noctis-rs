@@ -1941,8 +1941,11 @@ pub mod gateway {
 pub mod message {
     //! Components V2 bot messages in any channel, outside an interaction:
     //! announcements, scheduled posts, panels posted from an event handler
-    //! or a lifecycle hook. Discord accepts `IS_COMPONENTS_V2` on a normal
-    //! Create Message and Edit Message, so no webhook is needed.
+    //! or a lifecycle hook. Discord's Create Message allows the
+    //! `IS_COMPONENTS_V2` flag and Edit Message can set it (never clear it),
+    //! so no webhook is needed. Posts go to a guild text channel, a thread or
+    //! a DM channel (not a forum or media channel itself); the bot needs
+    //! `SEND_MESSAGES` (`SEND_MESSAGES_IN_THREADS` in a thread).
     //!
     //! - [`Messages`] (`ctx.messages()` on every context, `app.messages()`):
     //!   [`send`](Messages::send) posts a `V2Message` in a channel with the

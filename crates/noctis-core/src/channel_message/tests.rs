@@ -180,6 +180,9 @@ async fn cv2_02_edits() {
     assert_eq!(first["flags"], 32772);
     assert_eq!(first["content"], Value::Null);
     assert_eq!(first["embeds"], json!([]));
+    assert_eq!(first["poll"], Value::Null);
+    assert_eq!(first["sticker_ids"], json!([]));
+    assert_eq!(first["attachments"], json!([]));
     assert_eq!(seen[2].path, "/api/v10/channels/5/messages/77");
     let kept = payload(&seen[2]);
     assert!(kept.get("content").is_none());

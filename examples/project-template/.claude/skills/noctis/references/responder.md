@@ -758,12 +758,14 @@ V2 → legacy is a typed error (CV2-01).
 
 ## 6b. Bot messages in any channel (`ctx.messages()`)
 
-A normal bot message (Create Message with the bot token) carries a Components V2 View
-exactly like an interaction reply: Discord accepts `IS_COMPONENTS_V2` on Create Message
-and Edit Message. Use it for anything posted outside an interaction (log lines,
+A normal bot message (Create Message, bot token) is a full Components V2 message.
+Discord's "Using Message Components" lists Create Message next to Execute Webhook and
+interaction responses as the places to send `IS_COMPONENTS_V2`, and Create Message's
+allowed flags are `SUPPRESS_EMBEDS`, `SUPPRESS_NOTIFICATIONS`, `IS_VOICE_MESSAGE` and
+`IS_COMPONENTS_V2`. Use it for anything posted outside an interaction (log lines,
 announcements, scheduled posts, a panel posted from an event handler or a lifecycle
-hook). No webhook is needed; reach for a webhook only for a different name or avatar
-(§7).
+hook). A webhook is only for what a bot message cannot do: a different name or avatar
+per message, or opening a forum or media post with `thread_name` (§7).
 
 ```rust
 use noctis::message::MessageError;
@@ -773,7 +775,7 @@ let posted = ctx
     .messages()
     .send(log_channel, render_log(&entry, &s))     // V2Message or Components
     .flags(CreateFlags::SUPPRESS_NOTIFICATIONS)    // optional (MSG-07)
-    .reply_to(source_message)                      // optional message_reference
+    .reply_to(source_message)                      // optional reply, same channel
     .await?;                                       // ChannelMessage
 posted.edit(render_log(&closed, &s)).await?;       // keeps its attachments
 posted.delete().await?;
@@ -787,27 +789,45 @@ ctx.messages().delete(channel, message).await?;
   `.flags(..)`, `.reply_to(..)`), `EditMessage` (from `edit`: `.flags(..)`),
   `DeleteMessage` (from `delete`); each does nothing until `.await`ed. `send` resolves
   to a `ChannelMessage`: `.id()`, `.channel_id()`, `.edit(msg)`, `.delete()`.
+- **Where.** Create Message posts in a guild text channel, a thread or a DM channel. A
+  forum or media channel takes no message: Discord opens a post there with "Start
+  Thread in Forum or Media Channel" (or a webhook's `thread_name`); send into one of its
+  threads instead.
 - **Same preparation as a reply.** Route buttons, selects (nonces), Refs, locale keys
-  (App default locale: there is no user), the Limits, the Upload Budget and
-  attachments are handled exactly as in `ctx.respond(..)`, so the posted View's
-  components reach their handlers. Refs use the App's `ref_ttl`: on a long-lived panel
-  prefer inline (non-`by_ref`) Routes.
+  (App default locale: there is no user), the Limits (CV2-03/04: 40 components, 4000
+  characters), the Upload Budget (ATT-01/02: 25 MiB per request) and attachments are
+  handled exactly as in `ctx.respond(..)`, so the posted View's components reach their
+  handlers. Refs use the App's `ref_ttl`: on a long-lived panel prefer inline
+  (non-`by_ref`) Routes.
 - **Flags** (MSG-07): `.flags(CreateFlags)` on `send`, `.flags(EditFlags)` on `edit`;
-  `IS_COMPONENTS_V2` is always added. There is no ephemeral channel message.
-- **Edits.** `ChannelMessage::edit` knows the message is V2 and keeps the files Discord
-  already holds. `Messages::edit(channel, id, msg)` does not know the target's format,
-  so it clears `content`, `embeds`, `poll` and `sticker_ids`: a legacy bot message
-  becomes V2 (CV2-02); re-upload any attachment `msg` uses.
-- **Permissions.** The bot needs `VIEW_CHANNEL` and `SEND_MESSAGES`
-  (`SEND_MESSAGES_IN_THREADS` in a thread); editing works only on the bot's own
-  messages, deleting another's needs `MANAGE_MESSAGES`.
+  `IS_COMPONENTS_V2` is always added. `EPHEMERAL` is not a Create Message flag, so there
+  is no ephemeral channel message. Edit Message changes only `SUPPRESS_EMBEDS` (set or
+  unset) and `IS_COMPONENTS_V2` (set only, CV2-01), and the sent flags replace the old
+  ones: pass `EditFlags::SUPPRESS_EMBEDS` on every edit that should keep it.
+- **Edits.** Discord requires `content: null`, `embeds: []`, `poll: null` and
+  `sticker_ids: []` when an edit sets `IS_COMPONENTS_V2` on a message that used them.
+  `ChannelMessage::edit` knows its message is V2 and sends none of them;
+  `Messages::edit(channel, id, msg)` does not know the target's format and always sends
+  all four, so a legacy bot message becomes V2 (CV2-02). In API v10 an edit's
+  `attachments` lists every file the message keeps: `ChannelMessage::edit` keeps the
+  files it holds that `msg` still uses, `Messages::edit` keeps only what `msg` uploads.
+- **Replies.** `.reply_to(id)` sends `message_reference` with `fail_if_not_exists:
+  false`: when the target is gone Discord posts a normal (non-reply) message instead of
+  failing. The target cannot be a system message.
+- **Permissions** (Discord's Create/Edit/Delete Message limitations and permissions
+  page): `SEND_MESSAGES` in a guild channel; `SEND_MESSAGES_IN_THREADS` in a thread
+  (threads do not inherit `SEND_MESSAGES`); denying `VIEW_CHANNEL` implicitly denies
+  both; `ATTACH_FILES` to upload; `READ_MESSAGE_HISTORY` for a reply. Only the author
+  edits `content` and `components`, so `edit` works on the bot's own messages; deleting
+  another user's message in a guild channel needs `MANAGE_MESSAGES`.
 - **Errors** (`noctis::message::MessageError`, `#[non_exhaustive]`, `?` converts it into
   a handler error): `Invalid(UiError)` before any request, `Encode`, `RefStore`,
   `RefCollision`, `RateLimited` (never retried, wait `retry_after`), `Rejected { status,
-  code }` (403 code 50001/50013 without access or permission, 404 code 10003/10008 for an
-  unknown channel or message), `Transport`, `Detached` (a detached test context). A
-  failed side-effect post (an audit log) should be a `tracing::warn!`, not a failed
-  interaction (the template's `setup/handlers.rs` Finish does this).
+  code }` with Discord's JSON code (50001 missing access, 50013 missing permissions,
+  10003 unknown channel, 10008 unknown message, 50083 archived thread, 160005 locked
+  thread), `Transport`, `Detached` (a detached test context). A failed side-effect post
+  (an audit log) should be a `tracing::warn!`, not a failed interaction (the template's
+  `setup/handlers.rs` Finish does this).
 - **Testing.** Script `POST /channels/{id}/messages` with `app.http_fake()` (§7's recipe,
   other path) and assert `json()["flags"] == 32768`.
 
