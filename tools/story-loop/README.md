@@ -70,8 +70,8 @@ Run about one or two epics per invocation, then check the results, `git log` and
 - An agent that dies (no structured output) is retried once and then counts as a failed
   step; it no longer ends its lane silently.
 - Every 3-4 merged stories and at the end of each epic (`readme-due.py`: done stories exceed origin/main's README badge by 3, or the story closed its epic) the script refreshes `README.md`; in a lane it commits the refresh before the merge, so it lands on main with the story under the merge lock.
-- Before the Epic 14 launch stories, move `.github/workflows-disabled/*` back to
-  `.github/workflows/` and fix every CI failure.
+- CI runs again (`ci.yml`, `main.yml` in `.github/workflows/`, 2026-10-26); `release.yml` waits in
+  `.github/workflows-disabled/` for the maintainer's Story 14.8.
 
 Gates between implementation and review rounds are light (`NOCTIS_GATES_LIGHT=1`: no
 `cargo hack`, no MSRV check); the full gates run once before a story is finalized, skipping

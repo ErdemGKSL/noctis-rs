@@ -53,10 +53,11 @@ crates, so a versioned dev-dependency would need `noctis` on crates.io first.
 
 Do these once, in order.
 
-1. **Turn CI back on.** Move every file of `.github/workflows-disabled/` to
-   `.github/workflows/` (`git mv .github/workflows-disabled/*.yml .github/workflows/`),
-   update the paths that name `workflows-disabled` (AGENTS.md, this guide), push, and
-   fix every failing job until `ci.yml` is green on `main`.
+1. **Turn the release workflow on.** `ci.yml` and `main.yml` already run from
+   `.github/workflows/`; check that `ci.yml` is green on `main`. Do steps 2 to 4 first,
+   then move the release workflow (`git mv .github/workflows-disabled/release.yml
+   .github/workflows/`), update the paths that name `workflows-disabled` (AGENTS.md,
+   `tools/story-loop/README.md`, this guide) and push.
 2. **Let workflows open pull requests.** In the repository's Settings → Actions →
    General → Workflow permissions, choose **Read and write permissions** and tick
    **Allow GitHub Actions to create and approve pull requests**. Without it,
