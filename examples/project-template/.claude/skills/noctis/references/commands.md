@@ -883,8 +883,8 @@ that filter); global Commands stay published and answer the ephemeral
 | `limits()` | `&Limits`: the App's Limits (`AppBuilder::limits`), what the Responder validates against; pass it to render functions that size pages with `Budget` (`views-and-recipes.md` §4) |
 
 Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` and the
-subcommand names, in the scope Discord sends (`data.guild_id` → that guild, else global;
-no fallback between them). An unknown name logs `unknown command` on target
+subcommand names, in the scope Discord sends (`data.guild_id` → that guild, then global,
+so the `--publish-guild` dev mirror dispatches; no `data.guild_id` → global only). An unknown name logs `unknown command` on target
 `noctis::dispatch` and sends nothing. The span `noctis.interaction` records `module` and
 `path`. Noctis 0.1 does not let bot tests call a handler directly: drive it through
 `noctis::testkit::TestApp` (`testing.md`); never use `noctis::__private`.

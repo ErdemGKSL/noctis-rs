@@ -300,7 +300,7 @@ async fn three_word_path() {
     assert_eq!(p.requests().len(), 1);
 }
 
-/// Matrix 4-7: scopes, without fallback, and unknown paths.
+/// Matrix 4-7: scopes, the guild-to-global fallback, and unknown paths.
 #[tokio::test]
 async fn scopes_and_unknown_paths() {
     static GUILDS: [Id<GuildMarker>; 1] = [Id::new(9)];
@@ -331,17 +331,30 @@ async fn scopes_and_unknown_paths() {
     assert_eq!(log.lines(), ["m::gping:gping", "m::ping:ping"]);
     assert_eq!(p.requests().len(), 2);
 
-    // A guild-scoped invocation of a global path does not fall back.
-    let mut stale = slash("ping", json!([]));
-    stale["guild_id"] = json!("9");
-    p.run(inbound(&interaction(stale, json!({ "guild_id": "9" }))))
+    // A guild-scoped invocation of a global path (the `--publish-guild` dev
+    // mirror) falls back to the Global scope; a global invocation of a guild
+    // path does not.
+    let mut mirrored = slash("ping", json!([]));
+    mirrored["guild_id"] = json!("9");
+    p.run(inbound(&interaction(mirrored, json!({ "guild_id": "9" }))))
         .await;
+    assert_eq!(
+        log.lines(),
+        ["m::gping:gping", "m::ping:ping", "m::ping:ping"]
+    );
     for name in ["nope", "", "gping"] {
         p.run(inbound(&interaction(slash(name, json!([])), json!({}))))
             .await;
     }
-    assert_eq!(log.lines().len(), 2);
-    assert_eq!(p.requests().len(), 2);
+    let mut other_guild = slash("gping", json!([]));
+    other_guild["guild_id"] = json!("8");
+    p.run(inbound(&interaction(
+        other_guild,
+        json!({ "guild_id": "8" }),
+    )))
+    .await;
+    assert_eq!(log.lines().len(), 3);
+    assert_eq!(p.requests().len(), 3);
     assert!(p.reports().is_empty());
     assert_eq!(
         capture

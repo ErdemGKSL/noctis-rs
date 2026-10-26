@@ -383,22 +383,32 @@ fn command_at(scope: Option<&ScopeCommands>, path: &str) -> Option<Resolved> {
     })
 }
 
-/// Stage 1: the Command of `data`, in its scope only (no fallback).
+/// Stage 1: the Command of `data`, in its scope: a guild invocation looks in that
+/// guild's scope first, then in the Global scope, since `--publish-guild` mirrors the
+/// global Commands into the dev guild.
 fn resolve(registry: &Registry, data: &CommandData) -> Result<Resolved, String> {
-    let scope = data
+    let commands = registry.commands();
+    let global = commands.scope(Scope::Global);
+    let guild = data
         .guild_id
-        .map_or(Scope::Global, |id| Scope::Guild(id.get()));
-    let commands = registry.commands().scope(scope);
+        .and_then(|id| commands.scope(Scope::Guild(id.get())));
+    let scopes = [guild, global];
     let menu = |kind| {
-        commands
-            .and_then(|c| c.menu(kind, &data.name))
+        scopes
+            .iter()
+            .flatten()
+            .find_map(|c| c.menu(kind, &data.name))
             .map(|entry| Resolved::Menu(Arc::clone(entry)))
             .ok_or_else(|| data.name.clone())
     };
     match data.kind {
         CommandType::ChatInput => {
             let path = command_path(data);
-            command_at(commands, &path).ok_or(path)
+            scopes
+                .into_iter()
+                .flatten()
+                .find_map(|c| command_at(Some(c), &path))
+                .ok_or(path)
         }
         CommandType::User => menu(MenuKind::User),
         CommandType::Message => menu(MenuKind::Message),
