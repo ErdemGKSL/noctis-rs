@@ -1647,6 +1647,31 @@ list in CI.
     `noctis-testkit` → `noctis-voice` edge. Bots find the author's channel via REST
     (`user_voice_state`, 404 = not in voice); Noctis keeps no voice-state cache.
 
+### AD-31 — Registrations are discovered at link time, folded like `add` (added 2026-11-04)
+- **Binds:** `noctis-core`, `noctis-macros`, facade, Project Template, Usage Skill;
+  FR-81, FR-44; maintainer decision §11.
+- **Prevents:** a central registration list drifting from the code, registration
+  results that depend on link or file order, a second registration path with its own
+  merge rules, and life-before-main code.
+- **Rule:**
+  - Discovery is data, as AD-7 requires: a kind attribute's `module = "a/b"` makes the
+    derive submit a `Discovered` entry (Module id, type name, the struct's
+    `Register::__register`) with `inventory` 0.3; `#[noctis::module]` submits a
+    `DiscoveredModule` entry (the fn). Nothing runs before `main` but inventory's
+    list linking; no entry is read before `AppBuilder::build`.
+  - Discovery is opt-in per App: `AppBuilder::discover()`. `build()` mounts declared
+    Modules (sorted by id) and then merges discovered registrations (sorted by Module
+    id, then type name) into the trees before the Boot Flag and App pruning, so every
+    later step (pruning, fold, intents, publish, Module state) sees one tree, exactly
+    as if each entry had been written with `Module::module` / `Module::add`.
+  - A missing Module of a discovered id is created as `Module::new(id)` under its
+    parent path; a type added and discovered is `BuildViolation::DuplicateRegistration`.
+  - `inventory` is a `noctis-core` dependency re-exported only under
+    `noctis::__private`; bot crates never name it.
+  - Discovery reaches every crate the final binary links (the bot's lib included);
+    a crate the binary never links contributes nothing. `Module::add` stays the
+    explicit, link-independent path, and both styles mix.
+
 ## Consistency Conventions
 
 | Concern | Convention |

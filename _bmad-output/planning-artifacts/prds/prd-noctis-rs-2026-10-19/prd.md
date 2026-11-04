@@ -18,7 +18,7 @@ the epic and story authors who come next, and it builds on these inputs:
   (`tescord-features.md`), Discord Components V2 (`discord-components-v2.md`),
   twilight-rs (`twilight-rs.md`) and takumi (`takumi-image-generation.md`).
 
-Features are grouped, and their FRs are numbered globally (FR-1 … FR-80) so later
+Features are grouped, and their FRs are numbered globally (FR-1 … FR-81) so later
 documents can refer to them. FR-52 onwards were added in revision and sit inside
 the feature they belong to, so ids are unique and gap-free but not in reading
 order. Terms in §3 are used verbatim. Inline `[ASSUMPTION]` tags are collected in
@@ -1256,6 +1256,18 @@ re-encoding (maintainer decision §10).
   encode) when one track plays at unity volume.
 - Track start, end and error reach the bot as typed events; voice errors are typed
   and never panic a handler.
+
+#### FR-81: Registrations defined anywhere (added 2026-11-04)
+A bot author defines Commands, event handlers, components, modals, context menus,
+Lifecycle Hooks and Modules in any file and never keeps a central registration list
+(maintainer decision §11).
+**Consequences (testable):**
+- A kind attribute's `module = "a/b"` registers the struct with that Module through
+  link-time collection (`inventory`); `AppBuilder::discover()` mounts every linked
+  registration, merging into a mounted Module with that id or creating it.
+- `#[noctis::module]` on a `fn() -> Module` declares a Module that `discover()` mounts.
+- The result does not depend on link order, Boot Flags and App restrictions apply as
+  for `Module::add`, and a struct registered both ways is a build error.
 
 ## 5. Cross-Cutting NFRs
 

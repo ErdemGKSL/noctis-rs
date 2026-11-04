@@ -76,6 +76,13 @@ recorded here.
   the music-bot example with test and documentation coverage), FR-80 and AD-30; the
   design and codec choice are maintainer decision §10. It runs on its own lane after
   Story 16.1. The plan now has 108 stories.
+- **Correct course, 2026-11-04 (maintainer request):** the maintainer asked that
+  Commands (and the other registrations: event handlers, components, modals, context
+  menus, Lifecycle Hooks, Modules) can be defined in any file through
+  `dtolnay/inventory`, without a central `Module::add::<T>()` list. It became Epic 18,
+  "Registrations defined anywhere", with three stories (discovered registrations,
+  discovered Module declarations, the Project Template and docs on discovery), FR-81
+  and AD-31; the design is maintainer decision §11. The plan now has 111 stories.
 
 ### Validation summary (step 4)
 
@@ -697,6 +704,14 @@ gateway, plays a per-guild queue of tracks decoded by symphonia, and gets
 pre-encoded Opus to the wire without re-encoding, shown end to end by a music-bot
 example.
 **FRs covered:** FR-80; NFR-3, NFR-9 (voice path).
+
+### Epic 18: Registrations defined anywhere (P1, added 2026-11-04)
+A bot author defines a Command, event handler, component, modal, context menu,
+Lifecycle Hook or whole Module in any file, names its Module on the attribute, and
+one `AppBuilder::discover()` mounts everything the binary links, with no central
+`Module::add::<T>()` list to keep in sync.
+**FRs covered:** FR-81; FR-44, FR-73, FR-47 (discovery keeps Boot Flags and App
+restrictions).
 
 ## Epic 1: Project foundation and Discord rules as code
 
@@ -3942,3 +3957,131 @@ So that I can copy a working play/queue UI and test my voice commands without Di
 **Given** the documentation
 **When** the story is done
 **Then** `docs/guides/voice.md` covers enabling `voice`, build requirements (C compiler, cmake), joining, the queue, track events, passthrough and pre-encoding, idle leave, Cluster notes (a guild's call lives in the process that owns its shard) and limits; the Project Template, its `AGENTS.md` and the Usage Skill carry the music-bot patterns; `xtask skill-check` passes; README's feature list mentions voice
+
+## Epic 18: Registrations defined anywhere
+
+A bot author defines a Command, event handler, component, modal, context menu,
+Lifecycle Hook or a whole Module in any file of the bot, names the Module it belongs to
+on its attribute, and calls `AppBuilder::discover()` once; every such registration the
+binary links is mounted at `build()`. No central `Module::add::<T>()` list has to be
+kept in sync. Explicit `Module::add::<T>()` keeps working unchanged, and both styles
+mix in one App. Added 2026-11-04 at the maintainer's request (maintainer decision §11,
+FR-81, AD-31).
+
+**Order:** 18.1 → 18.2 → 18.3. Epic 18 depends on nothing open (Epics 1-17 are done
+except the maintainer-gated 14.8 and 14.9).
+
+**Starting point (main at 3b03775):** every kind derive (`SlashCommand`,
+`UserCommand`, `MessageCommand`, `EventHandler`, `Button`, the select kinds, `Modal`,
+`Hook`) emits `impl Register for T` through `noctis-macros/src/kind.rs`
+(`scaffolding`/`items`), whose `__register(Module) -> Module` calls `Module::__add`,
+`__add_flagged` or `__add_scoped`; `AppBuilder::module` pushes trees that
+`AppBuilder::build` folds with `Registry::fold` after `install_plugins`. `inventory`
+0.3.25 (dtolnay, crates.io 2026-10-07, MSRV 1.68, MIT OR Apache-2.0) provides
+`inventory::collect!` / `submit!` / `iter`. Verify each of these before relying on it.
+
+### Story 18.1: Discovered registrations
+
+As a bot author,
+I want to declare which Module a Command, handler, component, modal, menu or hook belongs to on its own attribute,
+So that I can put it in any file without adding it to a central `Module::add` list.
+
+**Implements:** FR-81 (registrations); AD-7, AD-26, AD-31.
+
+**Acceptance Criteria:**
+
+**Given** the workspace
+**When** the story is done
+**Then** `noctis-core` depends on `inventory` 0.3 (workspace pin), defines the hidden
+`Discovered` entry (`module` id, the struct's `__Kind::NAME`, its
+`Register::__register` fn) with `inventory::collect!`, the facade re-exports
+`inventory` under `noctis::__private` only, and `cargo deny check`, `xtask deps-check`
+and `check-default-graph.sh` pass
+
+**Given** any kind attribute (`#[command]`, `#[user_command]`, `#[message_command]`,
+`#[event]`, a Route attribute such as `#[button("id", ..)]`, `#[modal]`, `#[hook]`)
+**When** it carries `module = "a/b"`
+**Then** the derive also submits a `Discovered` entry for the struct; the id is checked
+at compile time with the Module id grammar (a bad id is a `compile_error!` naming the
+reason), `module` twice is an error, and without `module` nothing is submitted (the
+existing expansion is unchanged; trybuild `compile_fail` fixtures cover the errors)
+
+**Given** `AppBuilder::discover()`
+**When** the App builds
+**Then** every linked entry is merged before the Boot Flag and App pruning, sorted by
+Module id then type name (link order never matters): into the mounted Module with
+that id anywhere in any tree (after its own `add` registrations), else into a new
+`Module::new(id)` nested under the Module of its parent path (created the same way)
+or mounted as a new root; its `flags`/`apps` keep working; a type both added with
+`Module::add` and discovered is a `BuildViolation::DuplicateRegistration` naming the
+type and Module; `discover()` twice is the same as once; without `discover()` nothing
+discovered is mounted and `build()` logs one `debug` line with the count
+
+**Given** the gates
+**When** the story is done
+**Then** core unit tests cover merge, nesting, ordering, duplicates and pruning; a
+facade integration test registers a Command, an event handler and a Button only through
+`module = ".."` from separate files and dispatches each on `TestApp`; the public API
+is re-blessed; the Project Template, its `AGENTS.md` and the Usage Skill show one
+discovered registration
+
+### Story 18.2: Discovered Module declarations
+
+As a bot author,
+I want to declare a Module's own settings (flags, App restriction, Middleware, Templates, locales, base and group metadata) in any file,
+So that a feature folder is self-contained and nothing outside it lists the Module.
+
+**Implements:** FR-81 (Modules); AD-7, AD-26, AD-31.
+
+**Acceptance Criteria:**
+
+**Given** `#[noctis::module] fn profile() -> Module { Module::new("profile").flags(["x"]) }`
+(a non-generic, non-async free fn without arguments returning `Module`)
+**When** it compiles
+**Then** the attribute keeps the fn and submits a hidden `DiscoveredModule` entry
+calling it; any other signature is a `compile_error!` that names the expected one
+(trybuild fixtures)
+
+**Given** `AppBuilder::discover()`
+**When** the App builds
+**Then** every declared Module is mounted before the discovered registrations are
+merged, sorted by id: a root id as a new tree, a nested id under the Module of its
+parent path (declared, mounted or created); a declared id that is also mounted with
+`AppBuilder::module` is the existing `BuildViolation::DuplicateModule`; registrations
+discovered for that id merge into the declared Module, so its flags, App restriction
+and Middleware apply to them
+
+**Given** the gates
+**When** the story is done
+**Then** core unit tests and a facade integration test cover declared roots, nested
+declarations, a flagged declared Module pruning its discovered registrations and the
+duplicate case; the public API is re-blessed and the Project Template, its `AGENTS.md`
+and the Usage Skill show one declared Module
+
+### Story 18.3: Project Template, guide and linkage on discovery
+
+As a bot author starting from the Project Template,
+I want the template written in the discovery style and a guide explaining it,
+So that I add a feature by adding files, and know where discovery ends.
+
+**Implements:** FR-81, FR-74 (guide); AD-17, AD-31.
+
+**Acceptance Criteria:**
+
+**Given** the Project Template
+**When** the story is done
+**Then** every feature Module is declared with `#[noctis::module]` in its own folder and
+every registration names its Module with `module = ".."`; `configure` calls
+`.discover()` and lists no Module; its tests still pass (the bot's lib is linked into
+the test binary, which proves discovery across the lib → bin link in CI), and its
+`AGENTS.md` and Usage Skill teach discovery as the default with `Module::add` as the
+explicit alternative
+
+**Given** `docs/guides/discovery.md`
+**When** it is read
+**Then** it covers the attribute, `discover()`, the merge and order rules, the
+`DuplicateRegistration` violation, mixing with `Module::add`, several Apps per process
+(`apps = [..]`), tests (`TestApp` sees every linked registration), and the linkage
+limits: a registration in a crate the binary never links is not discovered, and
+inventory's supported targets; README's feature list mentions it; `xtask docs-check`
+and `xtask skill-check` pass

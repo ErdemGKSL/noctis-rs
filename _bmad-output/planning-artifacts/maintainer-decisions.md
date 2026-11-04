@@ -460,3 +460,25 @@ support" (Lavalink stays out); it becomes FR-80, AD-30 and Epic 17.
 - **Order.** Epic 17 runs on its own story-loop lane after Story 16.1, concurrently
   with Epic 16; merges serialize through the merge lock. Epic 14's template, skill
   and docs stories cover the `voice` feature once Epic 17 is merged.
+
+## 11. Registrations defined anywhere through inventory (2026-11-04)
+
+The maintainer asked that Commands and the other registrations can be defined in any
+file with `dtolnay/inventory`, without listing them in a Module. It becomes FR-81, AD-31
+and Epic 18.
+
+- **Opt-in per registration and per App.** A struct is discovered only when its kind
+  attribute names its Module (`module = "profile"`), and an App mounts discovered
+  entries only after `AppBuilder::discover()`. Existing code, tests and Apps that never
+  call `discover()` are unchanged, and several Apps in one process choose for
+  themselves (with `apps = [..]` to split registrations between them).
+- **Module ids stay explicit.** The Module is named on the attribute, never derived
+  from the Rust module path: Module ids are persisted (Module state) and appear in
+  spans and reports, so a file move must not change them.
+- **Same fold as `add`.** Discovered entries are merged into the Module trees before
+  pruning and the fold, sorted by Module id and type name; a missing Module is created
+  under its parent path. Registering a struct both ways is a build error, not a silent
+  double registration.
+- **Modules too.** `#[noctis::module]` on a `fn() -> Module` declares a Module's own
+  settings in its folder; `discover()` mounts it.
+- **Prefix commands** stay explicit (`PrefixPlugin::command::<T>()`) for now.
