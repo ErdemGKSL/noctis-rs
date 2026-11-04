@@ -335,6 +335,32 @@ pub enum BuildViolation {
         /// The shared id.
         id: &'static str,
     },
+    /// A struct registered with `Module::add::<T>()` also names a Module
+    /// on its kind attribute (`module = ".."`) while the App discovers
+    /// (`AppBuilder::discover`, FR-81); it stays registered once, where it
+    /// was added. Keep one of the two.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateRegistration { type_name: "bot::Ping", module: "util" };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "`bot::Ping` is added with `Module::add` and discovered for Module `util`: remove \
+    ///      `module = \"util\"` from its attribute or the `add::<Ping>()` call"
+    /// );
+    /// ```
+    #[error(
+        "`{type_name}` is added with `Module::add` and discovered for Module `{module}`: remove \
+         `module = \"{module}\"` from its attribute or the `add::<{short}>()` call",
+        short = type_name.rsplit("::").next().unwrap_or(type_name)
+    )]
+    DuplicateRegistration {
+        /// The struct's type path.
+        type_name: &'static str,
+        /// The Module id its attribute names.
+        module: &'static str,
+    },
     /// A `Module::flags` entry is not a valid Boot Flag, or repeats a flag
     /// the Module already declares (one per repeated flag); in pre-order
     /// over every mounted tree.

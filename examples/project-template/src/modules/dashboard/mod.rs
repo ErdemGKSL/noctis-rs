@@ -14,7 +14,10 @@ use noctis::prelude::*;
 
 use crate::strings::keys;
 
-pub fn module() -> Module {
+/// The Module's own settings; its Command and buttons name it with `module =
+/// "dashboard"`, and `configure`'s `.discover()` mounts it.
+#[noctis::module]
+fn module() -> Module {
     Module::new("dashboard")
         // Runs before every dashboard interaction (not events): outside a server it
         // stops with the `common.guild_only` notice, else hands the guild to the handlers
@@ -24,10 +27,6 @@ pub fn module() -> Module {
                 .skip_events()
                 .provides::<DashGuild>(),
         )
-        .add::<handlers::Dashboard>()
-        .add::<OpenTab>()
-        .add::<TurnPage>()
-        .add::<ToggleModule>()
 }
 
 /// The guild a dashboard interaction runs in: a typed Extension that [`guild_only`]
@@ -74,6 +73,7 @@ impl DashTab {
     "dash.tab",
     permissions = MANAGE_GUILD,
     defaults(style = Secondary, label = keys::DASHBOARD_TAB_OVERVIEW),
+    module = "dashboard",
 )]
 pub struct OpenTab {
     pub guild: Id<GuildMarker>,
@@ -89,6 +89,7 @@ pub struct OpenTab {
     "dash.page",
     permissions = MANAGE_GUILD,
     defaults(style = Secondary, label = keys::COMMON_NEXT),
+    module = "dashboard",
 )]
 pub struct TurnPage {
     pub guild: Id<GuildMarker>,
@@ -129,6 +130,7 @@ impl ModuleKey {
     "dash.mod",
     permissions = MANAGE_GUILD,
     defaults(style = Success, label = keys::COMMON_ENABLE),
+    module = "dashboard",
 )]
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,

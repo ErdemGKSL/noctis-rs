@@ -16,12 +16,15 @@ struct Args {
     droppable: bool,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
+    /// `module = ".."`: the Module a discovered handler joins.
+    module: Option<syn::LitStr>,
 }
 
-const EXPECTED: &str = "expected `ordered`, `droppable` or `flags = [\"beta\"]`";
+const EXPECTED: &str =
+    "expected `ordered`, `droppable`, `flags = [\"beta\"]` or `module = \"profile\"`";
 
-/// Parses `ordered`, `droppable` and `flags = [..]` (any order, each at
-/// most once).
+/// Parses `ordered`, `droppable`, `flags = [..]` and `module = ".."` (any
+/// order, each at most once).
 fn parse_args(args: TokenStream) -> syn::Result<Args> {
     let mut parsed = Args::default();
     let segments = segments(args);
@@ -38,6 +41,14 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
                 ));
             }
             parsed.flags = Flags::parse(&segment)?;
+            continue;
+        }
+        if crate::discover::is_module(&segment) {
+            parsed.module = Some(crate::discover::parse(
+                &segment,
+                parsed.module.as_ref(),
+                "#[event]",
+            )?);
             continue;
         }
         let name = match segment.as_slice() {
@@ -112,7 +123,7 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
                 Meta::NameValue(_) => {
                     return Err(syn::Error::new_spanned(
                         attr,
-                        "`#[event]` takes `ordered`, `droppable` and `flags = [..]`: `#[event(ordered)]`",
+                        "`#[event]` takes `ordered`, `droppable`, `flags = [..]` and `module = \"..\"`: `#[event(ordered)]`",
                     ));
                 }
             }
@@ -120,8 +131,13 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     };
     let core = quote!(::noctis::__private::core);
     let (ordered, droppable) = (args.ordered, args.droppable);
-    let scaffolding =
-        crate::kind::scaffolding(ident, crate::kind::Family::Event, false, &args.flags);
+    let scaffolding = crate::kind::scaffolding(
+        ident,
+        crate::kind::Family::Event,
+        false,
+        &args.flags,
+        args.module.as_ref(),
+    );
     Ok(quote! {
         #[automatically_derived]
         impl #core::__EventHandler for #ident {
@@ -230,7 +246,7 @@ mod tests {
                     #[event(x)]
                     struct S;
                 ),
-                "unknown `#[event]` argument `x`: expected `ordered`, `droppable` or `flags = [\"beta\"]`",
+                "unknown `#[event]` argument `x`: expected `ordered`, `droppable`, `flags = [\"beta\"]` or `module = \"profile\"`",
             ),
             (
                 quote!(
@@ -244,7 +260,7 @@ mod tests {
                     #[event(ordered = true)]
                     struct S;
                 ),
-                "unknown `#[event]` argument `ordered = true`: expected `ordered`, `droppable` or `flags = [\"beta\"]`",
+                "unknown `#[event]` argument `ordered = true`: expected `ordered`, `droppable`, `flags = [\"beta\"]` or `module = \"profile\"`",
             ),
         ] {
             assert_eq!(run(src.clone()), expected, "{src}");

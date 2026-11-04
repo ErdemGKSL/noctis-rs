@@ -7,8 +7,9 @@
 //!   a Media Gallery (UD-2), with a modal to edit the bio.
 //! - `voice` (template feature `voice`) — `/join channel`, `/leave`, `/play url`, `/skip`, `/stop` (FR-80).
 //!
-//! [`configure`] wires every Module, Adapter and piece of state onto an [`AppBuilder`];
-//! `main.rs` and the tests share it.
+//! [`configure`] wires the Adapters and state onto an [`AppBuilder`] and discovers every
+//! Module (`#[noctis::module]`) and registration (`module = ".."`); `main.rs` and the
+//! tests share it.
 
 pub mod adapters;
 pub mod bootstrap;
@@ -28,7 +29,7 @@ pub struct BotMeta {
     pub version: &'static str,
 }
 
-/// Mount every Module and Adapter. Token, shards and keys come from the builder the
+/// Wire the Adapters and state and discover every Module. Token, shards and keys come from the builder the
 /// caller passes in (`App::from_env()` in production, `App::builder()` for `TestApp` in tests).
 pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // Event and Render failures go to our AlertSink; other origins log at `error`.
@@ -66,11 +67,12 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
             started_at: SystemTime::now(),
             version: env!("CARGO_PKG_VERSION"),
         })
-        .module(modules::setup::module())
-        .module(modules::dashboard::module())
-        .module(modules::profile::module())
-        // Lifecycle Hooks: App start, shards, Publish, Module toggles, shutdown.
-        .module(modules::ops::module());
+        // Mounts every Module and registration the binary links, with no list here:
+        // each feature folder declares its Module with `#[noctis::module]`, and each
+        // Command, component, modal, event handler, hook and Template names its Module on
+        // its attribute (`module = "profile"`), in whatever file it lives. Adding a
+        // feature is adding files; `Module::add::<T>()` stays the explicit alternative.
+        .discover();
     // Prefix commands (template feature `prefix`, off by default): `!profile @user` and
     // `!badge gold` run the same handlers as `/profile` and `/badge`. Message text needs
     // the privileged MESSAGE_CONTENT intent (enable it in the Developer Portal too);
@@ -82,9 +84,7 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     // The Opus encoder follows the channel's bitrate; cap it with
     // `VoiceConfig::default().max_bitrate(Some(96_000))`.
     #[cfg(feature = "voice")]
-    builder
-        .voice(noctis::voice::VoiceConfig::default())
-        .module(modules::voice::module());
+    builder.voice(noctis::voice::VoiceConfig::default());
     #[cfg(feature = "prefix")]
     builder
         .intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT)

@@ -1909,6 +1909,9 @@ pub struct AppBuilder {
     renderer_type: &'static str,
     /// The mounted Module trees, in mount order.
     modules: Vec<Module>,
+    /// Whether `build` mounts the discovered registrations
+    /// ([`AppBuilder::discover`]).
+    discover: bool,
     /// The raw `(capacity, overflow)` of the event lane; `build` checks it.
     event_lane: (usize, usize),
     /// The raw handler concurrency; `build` checks it.
@@ -2043,6 +2046,7 @@ impl AppBuilder {
             renderer: None,
             renderer_type: "",
             modules: Vec::new(),
+            discover: false,
             event_lane: (DEFAULT_EVENT_CAPACITY.get(), DEFAULT_OVERFLOW_CAPACITY),
             handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
             shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
@@ -2643,6 +2647,40 @@ impl AppBuilder {
         self
     }
 
+    /// Mounts every discovered registration the binary links (FR-81): each
+    /// struct whose kind attribute names its Module (`#[command("ping",
+    /// module = "util")]`, `#[event(module = "xp")]`, `#[button("buy",
+    /// module = "shop")]`, …) and each `#[derive(Template)]` with
+    /// `module = ".."`, in any file of any linked crate, and every Module
+    /// declared with `#[noctis::module]` on a `fn() -> Module`.
+    ///
+    /// `build()` first mounts the declared Modules, sorted by id: a root id
+    /// as a new tree, a nested one under the Module of its parent path
+    /// (mounted, declared or created); an id that is also mounted with
+    /// [`module`](Self::module) is a [`BuildViolation::DuplicateModule`].
+    /// It then merges the registrations, after the plugins are installed and before
+    /// Boot Flags and App restrictions prune the trees, sorted by Module id,
+    /// then type path (link order never matters): into the mounted Module
+    /// with that id anywhere in any tree, after its own registrations, else
+    /// into a new `Module::new(id)` under the Module of its parent path
+    /// (created the same way) or as a new root. A discovered registration's
+    /// `flags` and `apps` work as with [`Module::add`]. A struct both added
+    /// with [`Module::add`] and discovered is a
+    /// [`BuildViolation::DuplicateRegistration`]. Calling it twice is the
+    /// same as once; an App that never calls it mounts nothing discovered.
+    ///
+    /// ```
+    /// use noctis_core::{App, Module};
+    ///
+    /// let mut builder = App::builder();
+    /// // `/ping` names `module = "util"`; its Module is created.
+    /// builder.module(Module::new("profile")).discover();
+    /// ```
+    pub fn discover(&mut self) -> &mut Self {
+        self.discover = true;
+        self
+    }
+
     /// Bounds the event lane: `capacity` queued events (1..=1048576,
     /// default 4096) and `overflow` non-droppable events behind a full
     /// lane (0..=4194304, default 16384). Out of range is a
@@ -3113,6 +3151,7 @@ impl AppBuilder {
     )]
     pub fn build(&mut self) -> Result<App, BuildError> {
         self.install_plugins();
+        self.mount_discovered();
         if !HTTP_TIMEOUT_RANGE.contains(&self.http_timeout) {
             self.violations.push(BuildViolation::InvalidHttpTimeout {
                 actual: self.http_timeout,
@@ -3366,6 +3405,27 @@ impl AppBuilder {
     /// Hands the folded Templates to the Renderer (a rejection is a
     /// [`BuildViolation::TemplateRejected`]); without a Renderer, warns
     /// when Templates are registered.
+    /// Merges the discovered registrations into the trees when the App
+    /// discovers ([`discover`](Self::discover)); otherwise logs how many
+    /// were left out.
+    fn mount_discovered(&mut self) {
+        if std::mem::take(&mut self.discover) {
+            let modules = crate::module::discover::linked_modules();
+            crate::module::discover::mount_modules(&mut self.modules, modules);
+            let entries = crate::module::discover::linked();
+            crate::module::discover::mount(&mut self.modules, &entries, &mut self.violations);
+        } else {
+            let count = crate::module::discover::linked_count();
+            if count > 0 {
+                tracing::debug!(
+                    target: "noctis::modules",
+                    count,
+                    "discovered registrations not mounted: call AppBuilder::discover() to mount them"
+                );
+            }
+        }
+    }
+
     fn register_templates(&mut self, registry: &Registry) {
         let templates = registry.templates();
         match &self.renderer {

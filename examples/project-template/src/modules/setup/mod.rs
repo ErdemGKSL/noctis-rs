@@ -14,16 +14,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::strings::keys;
 
-/// The Module. The `/setup` base command takes its description from
-/// `cmd.setup.description` in `locales/en-US.yaml`, so it needs no `.base(..)`.
-pub fn module() -> Module {
+/// The Module, declared here and mounted by `configure`'s `.discover()`; every struct
+/// with `module = "setup"` (the Command in `handlers.rs`, the components below) joins
+/// it. The `/setup` base command takes its description from `cmd.setup.description` in
+/// `locales/en-US.yaml`, so it needs no `.base(..)`.
+#[noctis::module]
+fn module() -> Module {
     Module::new("setup")
-        .add::<handlers::SetupStart>()
-        .add::<SetupState>()
-        .add::<PickLogChannel>()
-        .add::<PickModRole>()
-        .add::<CancelSetup>()
-        .add::<FinishSetup>()
 }
 
 // ---------------------------------------------------------------------------------------
@@ -57,6 +54,7 @@ impl SetupStep {
     "setup",
     owner = owner,
     defaults(style = Primary, label = keys::SETUP_NEXT),
+    module = "setup",
 )]
 pub struct SetupState {
     pub owner: Id<UserMarker>,
@@ -75,6 +73,7 @@ pub struct SetupState {
     "setup.ch",
     owner = owner,
     defaults(placeholder = keys::SETUP_CHANNEL_PLACEHOLDER, channel_types = [GuildText]),
+    module = "setup",
 )]
 pub struct PickLogChannel {
     pub owner: Id<UserMarker>,
@@ -89,6 +88,7 @@ pub struct PickLogChannel {
     "setup.role",
     owner = owner,
     defaults(placeholder = keys::SETUP_ROLE_PLACEHOLDER),
+    module = "setup",
 )]
 pub struct PickModRole {
     pub owner: Id<UserMarker>,
@@ -103,6 +103,7 @@ pub struct PickModRole {
     "setup.cancel",
     owner = owner,
     defaults(style = Secondary, label = keys::SETUP_CANCEL),
+    module = "setup",
 )]
 pub struct CancelSetup {
     pub owner: Id<UserMarker>,
@@ -122,6 +123,7 @@ pub struct CancelSetup {
     ttl = "15m",
     owner = owner,
     defaults(style = Success, label = keys::SETUP_FINISH),
+    module = "setup",
 )]
 pub struct FinishSetup {
     pub owner: Id<UserMarker>,

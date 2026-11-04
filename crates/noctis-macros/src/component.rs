@@ -132,6 +132,7 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
         Family::Component,
         !attr.args.auto_defer,
         &attr.args.flags,
+        attr.args.module.0.as_ref(),
     );
     Ok(quote! {
         #route

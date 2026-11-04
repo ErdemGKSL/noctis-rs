@@ -32,6 +32,7 @@ mod common;
 mod component;
 mod components;
 mod defaults;
+mod discover;
 mod duration;
 mod event;
 mod flags;
@@ -370,6 +371,13 @@ pub fn user_command(_: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn message_command(_: TokenStream, item: TokenStream) -> TokenStream {
     withdrawn::attribute(withdrawn::Attr::MessageCommand, &item.into()).into()
+}
+
+/// Declares a Module in any file (FR-81, AD-31): on `fn <name>() -> Module`,
+/// keeps the fn and registers it for `AppBuilder::discover()`.
+#[proc_macro_attribute]
+pub fn module(args: TokenStream, item: TokenStream) -> TokenStream {
+    discover::module_attr(args.into(), item.into()).into()
 }
 
 /// Withdrawn: `#[event]` on a free function.

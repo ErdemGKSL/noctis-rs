@@ -25,6 +25,7 @@ use crate::strings::Strings;
     "dashboard",
     permissions = MANAGE_GUILD,
     contexts = [Guild],
+    module = "dashboard",
 )]
 pub struct Dashboard {
     /// The description is `cmd.dashboard.opt.module.description` in `locales/en-US.yaml`.

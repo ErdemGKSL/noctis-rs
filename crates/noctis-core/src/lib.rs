@@ -301,6 +301,9 @@ pub use guard::{
     __owner_id,
 };
 pub use handler::{HandlerError, HandlerResult};
+/// The link-time collection the derives' `module = ".."` submits to (AD-31).
+#[doc(hidden)]
+pub use inventory as __inventory;
 #[doc(hidden)]
 pub use kind::{
     __AttachHooks, __AttachRateLimited, __BindExpired, __BindStale, __H, __HE, __HER, __HR,
@@ -330,6 +333,8 @@ pub use middleware::{
 };
 #[doc(hidden)]
 pub use module::Descriptor;
+#[doc(hidden)]
+pub use module::discover::{Discovered, DiscoveredModule};
 pub use module::{Module, ModuleIdError, Register};
 pub use module_state::{ModuleScope, ModuleStateError, Modules};
 pub use namespace::{AppId, AppIdError, IntoPort, Namespaced, NamespacedPort, Shared};

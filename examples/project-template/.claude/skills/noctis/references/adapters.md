@@ -482,7 +482,7 @@ impl Renderer for FixedRenderer {
 
 // Instead of `.theme(..)`/`.image(..)`; no font needed.
 let app = App::builder()
-    .module(modules::profile::module())
+    .discover()                                // the bot's Modules, Templates included
     .renderer(FixedRenderer::new(Bytes::from_static(b"\x89PNG"), OutputFormat::Png))
     .build()?;
 ```

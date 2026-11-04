@@ -7,6 +7,9 @@ these guides link to its references for the details.
 
 - [Coming from tescord, dbi, serenity or poise](concept-map.md): the concept map from
   those frameworks to Noctis, and what Noctis deliberately does not do.
+- [Registrations defined anywhere](discovery.md): `module = ".."` on every kind
+  attribute, `#[noctis::module]` declarations, `AppBuilder::discover()`, the merge and
+  order rules, mixing with `Module::add`, tests and where discovery ends.
 - [Cluster deployment](cluster.md): running a bot as several processes that each own a
   Shard Range: the shared `IdentifyQueue`, the HTTP proxy, shared Adapters,
   `NOCTIS_PAYLOAD_KEY`, one publisher and a checklist.

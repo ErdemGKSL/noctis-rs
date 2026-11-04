@@ -54,7 +54,7 @@ impl Menu {
     }
 }
 
-const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags` or `apps`";
+const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps` or `module`";
 
 const KEY_LITERAL: &str = "`key` takes a string literal";
 
@@ -75,6 +75,8 @@ struct Args {
     apps: Apps,
     /// `rate_limit(..)`, once per scope (INT-14).
     rate_limits: RateLimits,
+    /// `module = ".."`: the Module a discovered menu joins (FR-81).
+    module: Option<LitStr>,
 }
 
 /// The error of a menu attribute without its name.
@@ -110,6 +112,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         flags: Flags::default(),
         apps: Apps::default(),
         rate_limits: RateLimits::default(),
+        module: None,
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -130,7 +133,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
                 parsed.rate_limits.parse(&segment)?;
                 continue;
             }
-            "response" | "auto_defer" | "key" | "flags" | "apps" => {}
+            "response" | "auto_defer" | "key" | "flags" | "apps" | "module" => {}
             other if meta::is_meta(other) => {}
             _ => {
                 return Err(syn::Error::new(
@@ -156,6 +159,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
         if name == "apps" {
             parsed.apps = Apps::parse(&segment)?;
+            continue;
+        }
+        if name == "module" {
+            parsed.module = Some(crate::discover::parse(&segment, None, attr)?);
             continue;
         }
         if let Some(result) = parsed.handler.parse(&name, &segment) {
@@ -275,6 +282,7 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
         args.handler.manual,
         &args.flags,
         &args.apps,
+        args.module.as_ref(),
     );
     Ok(quote! {
         #[automatically_derived]

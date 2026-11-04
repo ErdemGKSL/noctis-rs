@@ -194,8 +194,8 @@ development_status:
   17-4-music-bot-example-testkit-support-and-voice-documentation: done
   epic-17-retrospective: optional
 
-  epic-18: in-progress
-  18-1-discovered-registrations: in-progress
-  18-2-discovered-module-declarations: backlog
-  18-3-project-template-guide-and-linkage-on-discovery: backlog
+  epic-18: done
+  18-1-discovered-registrations: done
+  18-2-discovered-module-declarations: done
+  18-3-project-template-guide-and-linkage-on-discovery: done
   epic-18-retrospective: optional

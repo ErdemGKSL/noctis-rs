@@ -10,7 +10,6 @@ use noctis::image::RemoteImage;
 use noctis::image::unstable::{RenderJob, Renderer};
 use noctis::testkit::conformance;
 use noctis_bot_template::adapters::{BoundedCacheStore, FixedRenderer};
-use noctis_bot_template::modules;
 use noctis_bot_template::modules::profile::ProfileCard;
 
 #[tokio::test]
@@ -42,11 +41,12 @@ async fn fixed_renderer_renders_a_profile_card_job() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The profile Module builds on the custom Renderer alone: no theme, no font.
+/// Every discovered Module (the profile card's Template included) builds on the custom
+/// Renderer alone: no theme, no font.
 #[tokio::test]
 async fn fixed_renderer_replaces_the_image_plugin() -> anyhow::Result<()> {
     let app = App::builder()
-        .module(modules::profile::module())
+        .discover()
         .renderer(FixedRenderer::new(
             Bytes::from_static(b"\x89PNG"),
             OutputFormat::Png,

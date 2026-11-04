@@ -1,0 +1,23 @@
+error: invalid Module id `Stats` in `module`: `S` at index 0 is not allowed: use only a-z, 0-9, `_` and `-`, with `/` between segments
+ --> tests/types/discover_module_invalid.rs:5:48
+  |
+5 | #[command("stats", description = "d", module = "Stats")]
+  |                                                ^^^^^^^
+
+error: invalid Module id `xp//award` in `module`: empty segment at index 3: separate segments with exactly one `/`, with none at the start or end
+  --> tests/types/discover_module_invalid.rs:17:18
+   |
+17 | #[event(module = "xp//award")]
+   |                  ^^^^^^^^^^^
+
+error: `module` takes the Module id as a string literal: write `module = "profile"`
+  --> tests/types/discover_module_invalid.rs:22:22
+   |
+22 | #[button("shop.buy", module = shop, defaults(label = "Buy"))]
+   |                      ^^^^^^
+
+error: duplicate `#[hook]` argument `module`
+  --> tests/types/discover_module_invalid.rs:27:24
+   |
+27 | #[hook(module = "ops", module = "ops")]
+   |                        ^^^^^^

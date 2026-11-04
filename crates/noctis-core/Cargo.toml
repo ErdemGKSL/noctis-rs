@@ -19,6 +19,7 @@ hickory-resolver.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client", "server", "http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
+inventory.workspace = true
 metrics.workspace = true
 noctis-codec.workspace = true
 noctis-gateway.workspace = true

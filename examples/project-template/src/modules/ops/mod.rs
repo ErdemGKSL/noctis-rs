@@ -4,12 +4,17 @@
 //! at a time, so keep them short and `tokio::spawn` slow work; they run even while
 //! this Module is disabled at runtime, and an `Err` or a panic goes to the
 //! `ErrorOrigin::Hook` Error Sink without stopping the App.
+//!
+//! The hooks are discovered: `#[hook(module = "ops")]` registers each with the `ops`
+//! Module declared below, and `configure`'s `.discover()` mounts them. No
+//! `Module::add` list.
 
 use noctis::lifecycle::{AllShardsReady, HookCtx, ModuleToggled, ShardFatal};
 use noctis::prelude::*;
 
 /// Logs once per run when every shard of this process is ready.
 #[derive(Hook, Debug)]
+#[hook(module = "ops")]
 pub struct Online;
 
 impl Online {
@@ -28,6 +33,7 @@ impl Online {
 /// Logs a shard that closed for good (for example 4014: a privileged intent the
 /// Developer Portal does not grant).
 #[derive(Hook, Debug)]
+#[hook(module = "ops")]
 pub struct ShardDown;
 
 impl ShardDown {
@@ -45,6 +51,7 @@ impl ShardDown {
 
 /// Audits every Module toggle made through this App (the dashboard's Modules tab).
 #[derive(Hook, Debug)]
+#[hook(module = "ops")]
 pub struct ModuleAudit;
 
 impl ModuleAudit {
@@ -62,10 +69,8 @@ impl ModuleAudit {
     }
 }
 
-/// The `ops` Module: the three Lifecycle Hooks above.
-pub fn module() -> Module {
+/// The `ops` Module: the Lifecycle Hooks above.
+#[noctis::module]
+fn module() -> Module {
     Module::new("ops")
-        .add::<Online>()
-        .add::<ShardDown>()
-        .add::<ModuleAudit>()
 }

@@ -5,23 +5,26 @@
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, Meta};
+use syn::{Data, DeriveInput, Fields, LitStr, Meta};
 
 use crate::command::{segments, span_of};
 use crate::flags::Flags;
 
-const EXPECTED: &str = "expected `flags = [\"beta\"]`";
+const EXPECTED: &str = "expected `flags = [\"beta\"]` or `module = \"ops\"`";
 
 const UNIT: &str = "`#[derive(Hook)]` needs a unit struct";
 
-const NAME_VALUE: &str = "`#[hook]` takes `flags = [..]`: `#[hook(flags = [\"beta\"])]`";
+const NAME_VALUE: &str =
+    "`#[hook]` takes `flags = [..]` and `module = \"..\"`: `#[hook(flags = [\"beta\"])]`";
 
-/// Parses `flags = [..]` (at most once); every other argument is an error.
-fn parse_args(args: TokenStream) -> syn::Result<Flags> {
+/// Parses `flags = [..]` and `module = ".."` (each at most once); every
+/// other argument is an error.
+fn parse_args(args: TokenStream) -> syn::Result<(Flags, Option<LitStr>)> {
     let mut flags = Flags::default();
+    let mut module = None;
     let segments = segments(args);
     if segments.len() == 1 && segments[0].is_empty() {
-        return Ok(flags);
+        return Ok((flags, module));
     }
     for segment in segments {
         if matches!(segment.first(), Some(TokenTree::Ident(i)) if i == "flags") {
@@ -34,6 +37,14 @@ fn parse_args(args: TokenStream) -> syn::Result<Flags> {
             flags = Flags::parse(&segment)?;
             continue;
         }
+        if crate::discover::is_module(&segment) {
+            module = Some(crate::discover::parse(
+                &segment,
+                module.as_ref(),
+                "#[hook]",
+            )?);
+            continue;
+        }
         let tokens: TokenStream = segment.iter().cloned().collect();
         let span = segment
             .first()
@@ -43,7 +54,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Flags> {
             format!("unknown `#[hook]` argument `{tokens}`: {EXPECTED}"),
         ));
     }
-    Ok(flags)
+    Ok((flags, module))
 }
 
 /// Expands the derive; on an error, the error and the placeholder impls
@@ -70,8 +81,8 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
         return Err(syn::Error::new_spanned(ident, UNIT));
     }
     let mut attrs = input.attrs.iter().filter(|a| a.path().is_ident("hook"));
-    let flags = match attrs.next() {
-        None => Flags::default(),
+    let (flags, module) = match attrs.next() {
+        None => (Flags::default(), None),
         Some(attr) => {
             if let Some(second) = attrs.next() {
                 return Err(syn::Error::new_spanned(
@@ -80,14 +91,20 @@ pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
                 ));
             }
             match &attr.meta {
-                Meta::Path(_) => Flags::default(),
+                Meta::Path(_) => (Flags::default(), None),
                 Meta::List(list) => parse_args(list.tokens.clone())?,
                 Meta::NameValue(_) => return Err(syn::Error::new_spanned(attr, NAME_VALUE)),
             }
         }
     };
     let core = quote!(::noctis::__private::core);
-    let scaffolding = crate::kind::scaffolding(ident, crate::kind::Family::Hook, false, &flags);
+    let scaffolding = crate::kind::scaffolding(
+        ident,
+        crate::kind::Family::Hook,
+        false,
+        &flags,
+        module.as_ref(),
+    );
     Ok(quote! {
         #[automatically_derived]
         impl #core::__LifecycleHook for #ident {
@@ -174,7 +191,7 @@ mod tests {
         }
         // A 33-character flag and a non-ASCII one fail like on `#[event]`.
         for flag in ["a".repeat(33), "bêta".to_owned()] {
-            let lit = syn::LitStr::new(&flag, Span::call_site());
+            let lit = LitStr::new(&flag, Span::call_site());
             let hook = run(quote!(
                 #[hook(flags = [#lit])]
                 struct S;
@@ -198,14 +215,14 @@ mod tests {
                     #[hook(ordered)]
                     struct S;
                 ),
-                "unknown `#[hook]` argument `ordered`: expected `flags = [\"beta\"]`",
+                "unknown `#[hook]` argument `ordered`: expected `flags = [\"beta\"]` or `module = \"ops\"`",
             ),
             (
                 quote!(
                     #[hook(x = 1)]
                     struct S;
                 ),
-                "unknown `#[hook]` argument `x = 1`: expected `flags = [\"beta\"]`",
+                "unknown `#[hook]` argument `x = 1`: expected `flags = [\"beta\"]` or `module = \"ops\"`",
             ),
             (
                 quote!(

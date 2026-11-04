@@ -202,8 +202,9 @@ pub(crate) fn scaffolding(
     family: Family,
     manual: bool,
     flags: &Flags,
+    module: Option<&LitStr>,
 ) -> TokenStream {
-    scaffolding_scoped(ident, family, manual, flags, &Apps::default())
+    scaffolding_scoped(ident, family, manual, flags, &Apps::default(), module)
 }
 
 /// [`scaffolding`] for a registration restricted to the App ids `apps`
@@ -214,12 +215,15 @@ pub(crate) fn scaffolding_scoped(
     manual: bool,
     flags: &Flags,
     apps: &Apps,
+    module: Option<&LitStr>,
 ) -> TokenStream {
     let items = items(ident, family, manual, flags, apps);
     let check = missing_handler_check(ident, family);
+    let submit = crate::discover::submit(ident, module);
     quote! {
         #items
         #check
+        #submit
     }
 }
 
@@ -271,6 +275,8 @@ fn items(ident: &Ident, family: Family, manual: bool, flags: &Flags, apps: &Apps
 
         #[automatically_derived]
         impl #core::Register for #ident {
+            const __NAME: &'static ::core::primitive::str = <Self as #core::__Kind>::NAME;
+
             #[allow(unused_imports)]
             fn __register(module: #core::Module) -> #core::Module {
                 use ::noctis::__private::core::__NoHandler as _;
@@ -313,6 +319,7 @@ mod tests {
             Family::Component,
             false,
             &Flags::default(),
+            None,
         )
         .to_string();
         assert!(out.contains("__add (<"), "{out}");
@@ -320,11 +327,27 @@ mod tests {
         assert!(out.contains("AutoDefer"), "{out}");
         assert!(out.contains("Register for Buy"), "{out}");
         assert!(out.contains("__NOCTIS_HAS_HANDLER"), "{out}");
+        assert!(out.contains("const __NAME"), "{out}");
+        assert!(!out.contains("__inventory"), "{out}");
+        let module = LitStr::new("shop", Span::call_site());
+        let discovered = scaffolding(
+            &Ident::new("Buy", Span::call_site()),
+            Family::Component,
+            false,
+            &Flags::default(),
+            Some(&module),
+        )
+        .to_string();
+        assert!(
+            discovered.contains("__inventory :: submit !"),
+            "{discovered}"
+        );
         let manual = scaffolding(
             &Ident::new("P", Span::call_site()),
             Family::Slash,
             true,
             &Flags::default(),
+            None,
         );
         assert!(manual.to_string().contains("Manual"));
         let flags =
@@ -334,6 +357,7 @@ mod tests {
             Family::Slash,
             false,
             &flags,
+            None,
         )
         .to_string();
         assert!(
@@ -347,6 +371,7 @@ mod tests {
             false,
             &Flags::default(),
             &apps,
+            None,
         )
         .to_string();
         assert!(
@@ -359,6 +384,7 @@ mod tests {
             false,
             &flags,
             &apps,
+            None,
         )
         .to_string();
         assert!(

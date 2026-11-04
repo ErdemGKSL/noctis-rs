@@ -56,7 +56,8 @@ impl TemplateView for ProfileCard {
 }
 ```
 
-Register it on its Module: `Module::new("profile").template::<ProfileCard>()`. Two
+Register it on its Module: `module = "profile"` in `#[template(..)]` (discovered by
+`AppBuilder::discover()`, as the template does) or `Module::new("profile").template::<ProfileCard>()`. Two
 Templates with the same `id` anywhere in the App fail `App::build` with
 `BuildViolation::DuplicateTemplate { id, first_module, first_type, second_module,
 second_type }` (registering the same type twice counts too). The derive implements

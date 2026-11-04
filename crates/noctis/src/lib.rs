@@ -1064,6 +1064,37 @@ pub use noctis_macros::autocomplete;
 /// ```
 pub use noctis_macros::handler;
 
+/// Declares a [`Module`] in any file (FR-81): put it on a free
+/// `fn <name>() -> Module` without arguments, generics or `async`, and
+/// [`AppBuilder::discover`] mounts the Module it returns, so a feature folder
+/// holds its own Module settings (Boot Flags, App restriction, Middleware,
+/// Templates, locales, `base`/`group`) and nothing outside it lists the
+/// Module.
+///
+/// Declared Modules mount before the discovered registrations merge, sorted
+/// by id: a root id as a new tree, a nested id (`"profile/badges"`) under the
+/// Module of its parent path. Structs whose attribute names the same id
+/// (`module = "profile"`) merge into it, so the Module's flags and
+/// Middleware apply to them. An id also mounted with
+/// [`AppBuilder::module`] is a [`BuildViolation::DuplicateModule`].
+///
+/// ```
+/// use noctis::prelude::*;
+///
+/// #[noctis::module]
+/// fn profile() -> Module {
+///     Module::new("profile").flags(["profiles"])
+/// }
+///
+/// // Elsewhere: `#[command("profile", module = "profile")]` structs join it.
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let app = App::builder().discover().build().unwrap();
+/// assert!(app.modules().ids().any(|id| id == "profile"));
+/// # }
+/// ```
+pub use noctis_macros::module;
+
 /// Marks the method of a component or modal struct that answers a
 /// **stale** `custom_id`: one rendered before a deploy that changed the
 /// Route's `schema`, its body kind (`by_ref`, `overflow = spill`) or a flag
@@ -2503,6 +2534,9 @@ pub mod image {
     /// [`AnimatedFormat::DEFAULT`], and `Gif`/`Apng` need `image-gif`.
     /// `Serialize` and `Deserialize` are required too. `#[asset]` /
     /// `#[asset(required)]` fields declare [`RemoteImage`]s (`[IMG-03]`).
+    /// `module = "profile"` registers it with that Module for
+    /// [`AppBuilder::discover`](crate::AppBuilder::discover) (FR-81), in
+    /// place of `Module::template::<T>()`.
     pub use noctis_macros::Template;
     /// `theme!()`: the crate's `noctis-theme.css` as a [`Theme`], validated
     /// at `cargo check` (`[TW-02]`); `theme!("path")` reads a file relative

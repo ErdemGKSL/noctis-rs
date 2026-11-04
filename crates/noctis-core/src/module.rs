@@ -13,6 +13,9 @@ use crate::menu::ContextMenuHandler;
 use crate::metadata::BaseMeta;
 use crate::middleware::{AfterMiddleware, BeforeMiddleware};
 
+#[doc(hidden)]
+pub mod discover;
+
 pub(crate) mod sealed {
     use crate::Module;
 
@@ -127,6 +130,12 @@ impl Descriptor for LifecycleHook {}
     note = "`Module::add::<T>()` registers one struct per interaction"
 )]
 pub trait Register {
+    /// The struct's type path (`__Kind::NAME`); empty for a hand-written
+    /// impl. `Module::add` records it so a struct both added and discovered
+    /// is reported ([`BuildViolation::DuplicateRegistration`](crate::BuildViolation::DuplicateRegistration)).
+    #[doc(hidden)]
+    const __NAME: &'static str = "";
+
     /// Appends the struct's descriptor to `module`.
     #[doc(hidden)]
     fn __register(module: Module) -> Module;
@@ -275,6 +284,9 @@ pub struct Module {
     templates: Vec<(TemplateDescriptor, &'static str)>,
     locales: Vec<noctis_i18n::Catalog>,
     children: Vec<Module>,
+    /// The type paths (`Register::__NAME`) of the structs `add` registered,
+    /// in `add` order; read by discovery's duplicate check.
+    added: Vec<&'static str>,
 }
 
 /// One kind of registration in `add` order, each with the Boot Flags its
@@ -370,6 +382,7 @@ impl Module {
             templates: Vec::new(),
             locales: Vec::new(),
             children: Vec::new(),
+            added: Vec::new(),
         }
     }
 
@@ -379,7 +392,10 @@ impl Module {
     /// component or a modal). Adding the same struct twice registers it
     /// twice.
     #[must_use = "Module::add returns the Module with the registration added"]
-    pub fn add<T: Register>(self) -> Self {
+    pub fn add<T: Register>(mut self) -> Self {
+        if !T::__NAME.is_empty() {
+            self.added.push(T::__NAME);
+        }
         T::__register(self)
     }
 
@@ -829,6 +845,7 @@ impl Module {
                 .iter()
                 .filter_map(|child| child.selected(selection, app))
                 .collect(),
+            added: self.added.clone(),
         })
     }
 
@@ -926,6 +943,7 @@ impl fmt::Debug for Module {
             .field("templates", &templates)
             .field("locales", &locales)
             .field("children", &self.children)
+            .field("added", &self.added)
             .finish()
     }
 }

@@ -23,7 +23,7 @@ use noctis::voice::VoiceConfig;
 
 builder
     .voice(VoiceConfig::default())            // installs the VoicePlugin
-    .module(modules::voice::module());
+    .discover();                              // the `voice` Module (src/modules/voice/)
 ```
 
 - `.voice(VoiceConfig)` (trait `AppBuilderVoiceExt`, sealed) installs the one

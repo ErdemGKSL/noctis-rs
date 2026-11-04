@@ -229,6 +229,7 @@ Read the full design:
 | --- | --- |
 | [Guides index](docs/guides/README.md) | Every guide, with one line each |
 | [Coming from tescord, dbi, serenity or poise](docs/guides/concept-map.md) | What each concept you know is called in Noctis, and what Noctis does not do |
+| [Registrations defined anywhere](docs/guides/discovery.md) | `module = ".."` on any Command, component, handler, hook or Template, `#[noctis::module]` and `AppBuilder::discover()`: no central registration list |
 | [Cluster deployment](docs/guides/cluster.md) | Running one bot as several processes: Shard Ranges, the shared `IdentifyQueue`, the HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, one publisher |
 | [Voice and music bots](docs/guides/voice.md) | The `voice` feature: joining, tracks and the queue, Opus passthrough, Cluster notes, testing |
 | [Releasing Noctis](docs/guides/release.md) | The maintainer's release runbook: release-plz, the release PR, the protected `release` environment, publishing 0.1.0, troubleshooting |
@@ -303,6 +304,9 @@ done. Live per-story status is in
   - Sharding on `twilight-gateway` with bucketed identify.
   - A never-dropped priority interaction lane and a bounded event lane.
   - Modules with typed event handlers; gateway intents derived from the handlers.
+  - Registrations defined in any file: `module = ".."` on the attribute,
+    `#[noctis::module]` declarations and `AppBuilder::discover()`, collected at link
+    time with `inventory`.
   - Error Sinks, tracing spans and a public metrics catalog.
   - Graceful shutdown with a drain grace period and fatal close reporting.
   - A warm, deadline-safe Discord HTTP edge.

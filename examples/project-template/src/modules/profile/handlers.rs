@@ -29,6 +29,7 @@ const XP_PER_LEVEL: u64 = 100;
     "profile",
     contexts = [Guild],
     rate_limit(user, 3, per = "10s"),
+    module = "profile",
 )]
 pub struct Profile {
     /// The description is `cmd.profile.opt.user.description` in `locales/en-US.yaml`.
@@ -52,7 +53,7 @@ impl Profile {
 /// modal must be the first response, INT-05), so the handler takes the `Manual`
 /// responder, the only one with `show_modal()`, and opens it before any slow work.
 #[derive(SlashCommand, Debug)]
-#[command("bio", auto_defer = false, contexts = [Guild])]
+#[command("bio", auto_defer = false, contexts = [Guild], module = "profile")]
 pub struct Bio;
 
 impl Bio {
@@ -102,7 +103,7 @@ const BADGES: &[&str] = &[
 /// `#[autocomplete(name)]` method. The command re-checks the value, because Discord
 /// sends whatever the user typed (OPT-12).
 #[derive(SlashCommand, Debug)]
-#[command("badge", contexts = [Guild])]
+#[command("badge", contexts = [Guild], module = "profile/badges")]
 pub struct Badge {
     /// The description is `cmd.badge.opt.name.description` in `locales/en-US.yaml`.
     #[option(autocomplete)]
@@ -146,6 +147,7 @@ impl Badge {
     "Show profile",
     key = "show_profile",
     contexts = [Guild],
+    module = "profile",
 )]
 pub struct ShowProfile;
 

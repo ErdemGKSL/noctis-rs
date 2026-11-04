@@ -19,7 +19,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `8822a07141a484d84c45bb8330be08a93433b4b7e4f3165ac419cc7d4b8b5342` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `1e1c0d528a70d4a04f81fff441724b9bff1027761f0b70cae94f47681d4aaec3` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -45,7 +45,11 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
   always a method on it, `impl X { #[handler] async fn handle(self, ctx: …) }`
   (`#[handler]` takes no arguments; there are no free-function handlers).
 - **Module** groups features (tescord's Pack) and registers each struct by type:
-  `Module::new("profile").add::<Profile>().add::<EditBio>()`.
+  `Module::new("profile").add::<Profile>().add::<EditBio>()`, or the struct names its
+  Module itself and is **discovered** from any file: `module = "profile"` on its kind
+  attribute (`#[command("profile", module = "profile")]`, `#[event(module = "xp")]`,
+  `#[button("shop.buy", module = "shop", ..)]`, `#[hook(module = "ops")]`) plus one
+  `.discover()` on the App builder (`modules-middleware-ratelimits.md` §1b).
 - **Command** = a `#[derive(SlashCommand)]` struct whose fields are its options (a unit
   struct when there are none) with its Command Path: `#[command("settings logs
   channel")]`. Context menus: `#[derive(UserCommand)]` / `#[derive(MessageCommand)]`.
@@ -139,10 +143,13 @@ impl Dashboard {
     }
 }
 
-// mod.rs
-pub fn module() -> Module {
-    Module::new("dashboard").add::<Dashboard>().add::<OpenTab>().add::<TurnPage>()
+// mod.rs: the Module's own settings; `Dashboard`, `OpenTab` and `TurnPage` join it
+// through `module = "dashboard"` on their attributes (§1b of the modules reference)
+#[noctis::module]
+fn module() -> Module {
+    Module::new("dashboard").before(Middleware::before(guild_only).provides::<DashGuild>())
 }
+// explicit alternative: Module::new("dashboard").add::<Dashboard>().add::<OpenTab>() …
 ```
 
 Answer with `ctx.respond(msg)` from a Command, `ctx.update(msg)` from a component or
@@ -266,7 +273,7 @@ impl TemplateView for ProfileCard {
         }
     }
 }
-// register: Module::new("profile").template::<ProfileCard>()  (same id twice: BuildViolation::DuplicateTemplate)
+// register: `module = "profile"` in #[template(..)] (discovered), or Module::new("profile").template::<ProfileCard>()  (same id twice: BuildViolation::DuplicateTemplate)
 // classes are checked at `cargo check` ([TW-01]) against noctis-theme.css ([TW-02]);
 // static images: `const LOGO: StaticImage = StaticImage::new("logo", include_bytes!("logo.png"));`
 // registered with `.image(ImageConfig::new().image(LOGO))`, drawn with `<img src={LOGO} tw="w-16 h-16" />`.
@@ -376,9 +383,7 @@ pub fn configure(b: &mut AppBuilder) -> &mut AppBuilder {
         .theme(noctis::image::theme!())
         .cache_store(adapters::BoundedCacheStore::new(50_000))
         .state(BotMeta { /* … */ })
-        .module(modules::setup::module())
-        .module(modules::dashboard::module())
-        .module(modules::profile::module())
+        .discover()   // every `#[noctis::module]` and `module = ".."` registration linked
 }
 
 #[tokio::main]

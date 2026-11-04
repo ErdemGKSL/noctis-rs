@@ -32,7 +32,7 @@ use crate::strings::{Strings, keys};
 /// Discord and the voice driver (up to `VoiceConfig::join_timeout`, 10 s), so the
 /// auto-defer acknowledges it first; `response = ephemeral` keeps that private.
 #[derive(SlashCommand, Debug)]
-#[command("join", contexts = [Guild], response = ephemeral)]
+#[command("join", contexts = [Guild], response = ephemeral, module = "voice")]
 pub struct Join {
     /// The description is `cmd.join.opt.channel.description` in `locales/en-US.yaml`.
     #[option(channel_types = [GuildVoice, GuildStageVoice])]
@@ -60,7 +60,7 @@ impl Join {
 
 /// `/leave`: leaves this server's voice channel (op 4 with no channel).
 #[derive(SlashCommand, Debug)]
-#[command("leave", contexts = [Guild], response = ephemeral)]
+#[command("leave", contexts = [Guild], response = ephemeral, module = "voice")]
 pub struct Leave;
 
 impl Leave {
@@ -86,7 +86,7 @@ impl Leave {
 /// `169.254.169.254`, ...), so a real bot should allow-list hosts (for example only
 /// `cdn.discordapp.com` attachments) before `Track::url`.
 #[derive(SlashCommand, Debug)]
-#[command("play", contexts = [Guild], response = ephemeral)]
+#[command("play", contexts = [Guild], response = ephemeral, module = "voice")]
 pub struct Play {
     /// The description is `cmd.play.opt.url.description` in `locales/en-US.yaml`;
     /// `Track::url` accepts at most 4096 bytes.
@@ -146,7 +146,7 @@ async fn author_channel(
 
 /// `/skip`: skips the current track; the next one starts.
 #[derive(SlashCommand, Debug)]
-#[command("skip", contexts = [Guild], response = ephemeral)]
+#[command("skip", contexts = [Guild], response = ephemeral, module = "voice")]
 pub struct Skip;
 
 impl Skip {
@@ -169,7 +169,7 @@ impl Skip {
 
 /// `/stop`: stops the current track and clears the queue; the bot stays in the channel.
 #[derive(SlashCommand, Debug)]
-#[command("stop", contexts = [Guild], response = ephemeral)]
+#[command("stop", contexts = [Guild], response = ephemeral, module = "voice")]
 pub struct Stop;
 
 impl Stop {
@@ -188,6 +188,7 @@ impl Stop {
 
 /// Logs every failed track (`VOICE_TRACK_ERROR`); the queue has already moved on.
 #[derive(Hook)]
+#[hook(module = "voice")]
 pub struct TrackErrorLog;
 
 impl TrackErrorLog {
@@ -199,13 +200,9 @@ impl TrackErrorLog {
 }
 
 /// The `voice` Module: `/join`, `/leave`, `/play`, `/skip`, `/stop` and the
-/// `TrackErrorLog` hook.
-pub fn module() -> Module {
+/// `TrackErrorLog` hook name it with `module = "voice"`; it exists only with the
+/// template's `voice` feature, because this file does.
+#[noctis::module]
+fn module() -> Module {
     Module::new("voice")
-        .add::<Join>()
-        .add::<Leave>()
-        .add::<Play>()
-        .add::<Skip>()
-        .add::<Stop>()
-        .add::<TrackErrorLog>()
 }

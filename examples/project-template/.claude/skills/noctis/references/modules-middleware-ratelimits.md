@@ -28,7 +28,7 @@ pub fn module() -> Module {
 }
 
 // main / configure:
-builder.module(profile::module()).module(ops::module());
+builder.module(profile::module());   // or declare it with #[noctis::module] (§1b)
 ```
 
 Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
@@ -70,6 +70,64 @@ trait the derives implement).
   folds its own copy. `Module::new("x").apps(["acme"])` (and `apps = [..]` on a Command
   attribute) keeps a Module or Command only on the listed Apps, like a Boot Flag; a bad
   id is a `BuildViolation::InvalidAppRestriction` (`app-and-sharding.md` §10).
+
+### 1b. Discovered registrations (FR-81)
+
+A struct can name its Module on its own kind attribute instead of being listed in a
+`.add::<X>()` chain, so it can live in any file of the bot (any crate the binary links):
+
+```rust
+// src/modules/ops/mod.rs: no Module::add list anywhere
+#[derive(Hook)]
+#[hook(module = "ops")]
+pub struct Online;
+
+// src/commands/stats.rs
+#[derive(SlashCommand)]
+#[command("stats", module = "stats", flags = ["beta"])]
+pub struct Stats;
+
+// configure
+builder.module(profile::module()).discover();
+```
+
+- `module = "a/b"` works on every kind attribute: `#[command]`, `#[user_command]`,
+  `#[message_command]`, `#[event]`, `#[button]` and the select attributes, `#[modal]`,
+  `#[hook]`. The id follows the Module id grammar and is checked at `cargo check`.
+- `AppBuilder::discover()` mounts every discovered struct at `build()`, after plugins and
+  before Boot Flags and App restrictions prune: into the mounted Module with that id
+  anywhere in any tree (after its own `.add`s), else into a new `Module::new(id)` under
+  the Module of its parent path (created too) or as a new root. Order is by Module id,
+  then type path, never by file or link order. `flags`/`apps` work as usual.
+- Without `.discover()` nothing discovered is mounted (an App can opt out; `TestApp`
+  built from your `configure` discovers too). Calling it twice is the same as once.
+- A struct both `.add`ed and discovered fails `build()` with
+  `BuildViolation::DuplicateRegistration { type_name, module }`: keep one of the two.
+- Templates take `module = ".."` too: `#[template(id = "profile.card", .., module =
+  "profile")]` replaces `.template::<ProfileCard>()`.
+- Module-level settings (flags, App restriction, Middleware, `base`/`group`, `uses`,
+  locales) live in a Module declaration, in the feature's own folder:
+
+```rust
+#[noctis::module]                          // a free fn() -> Module: no args, generics, async
+fn module() -> Module {
+    Module::new("dashboard")
+        .before(Middleware::before(guild_only).skip_events().provides::<DashGuild>())
+}
+
+#[noctis::module]
+fn badges() -> Module {                    // nested: mounted under `profile`
+    Module::new("profile/badges").flags(["badges"])
+}
+```
+
+  `discover()` mounts declared Modules first, sorted by id (a nested id under the Module
+  of its parent path), then merges the discovered structs into them, so the Module's
+  flags and Middleware apply to them. Declaring an id that is also mounted with
+  `.module(..)` is a `BuildViolation::DuplicateModule`. The template declares every
+  feature Module this way (`src/modules/*/mod.rs`) and `configure` lists none.
+- Discovery reaches every crate the final binary links (your bot's lib included, so
+  `TestApp` in `tests/` sees it all); a crate the binary never links contributes nothing.
 
 ### Module trees (FR-44)
 

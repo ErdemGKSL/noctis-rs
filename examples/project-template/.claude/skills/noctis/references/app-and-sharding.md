@@ -819,7 +819,7 @@ impl Online {
 }
 
 #[derive(Hook)]
-#[hook(flags = ["audit"])]            // optional: Boot Flags, the only argument
+#[hook(flags = ["audit"])]            // optional: Boot Flags and `module = ".."` (discovery)
 pub struct ModuleAudit;
 
 impl ModuleAudit {
@@ -830,7 +830,9 @@ impl ModuleAudit {
     }
 }
 
-Module::new("ops").add::<Online>().add::<ModuleAudit>();   // src/modules/ops/mod.rs
+Module::new("ops").add::<Online>().add::<ModuleAudit>();
+// or, as src/modules/ops/mod.rs does: `#[hook(module = "ops")]` on each struct and
+// `.discover()` on the App builder (modules-middleware-ratelimits.md §1b)
 ```
 
 **Signature.** Exactly `async fn <any>(self, ctx: HookCtx, event: E) -> HandlerResult<()>`

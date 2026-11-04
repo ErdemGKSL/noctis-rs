@@ -1393,6 +1393,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         crate::kind::Family::Modal,
         !attr.args.auto_defer,
         &attr.args.flags,
+        attr.args.module.0.as_ref(),
     );
     let render = render_impls(
         name,

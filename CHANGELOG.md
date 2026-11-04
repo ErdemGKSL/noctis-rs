@@ -32,6 +32,10 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   grouped in Modules; O(1) dispatch by Route, typed Payloads in the `custom_id` with a
   compile-time length proof, Refs for large state, middleware, rate limits and an
   automatic defer before the 3 s deadline; Publish only when the commands changed.
+- **Registrations defined anywhere.** `module = ".."` on any kind attribute (and on
+  `#[template]`), `#[noctis::module]` Module declarations and
+  `AppBuilder::discover()` mount Commands, components, handlers, hooks, Templates and
+  Modules from any file, with no central list ([guide](docs/guides/discovery.md)).
 - **Components V2 UI kit.** Typed builders for every V2 and modal component, placement
   checked by the type system, compile-time and runtime limit validation, cost and
   budget helpers, and the Responder (`ctx.respond`, `ctx.update`, `ctx.reply_text`).

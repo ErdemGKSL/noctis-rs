@@ -28,7 +28,7 @@ use crate::common::combine;
 /// The longest Template id.
 const MAX_ID_LEN: usize = 64;
 
-const KEYS: &str = "`id`, `version`, `size`, `format` and `animation(..)`";
+const KEYS: &str = "`id`, `version`, `size`, `format`, `animation(..)` and `module`";
 const STILL_FORMATS: &str =
     "`Png`, `Jpeg { quality: 1..=100 }`, `Webp { quality: 1..=100 }` or `WebpLossless`";
 const ANIMATED_FORMATS: &str = "`Webp { quality: 1..=100 }`, `Gif` or `Apng`";
@@ -67,6 +67,8 @@ pub(crate) struct Settings {
     pub(crate) size: (u32, u32),
     pub(crate) format: Still,
     pub(crate) animation: Option<Animation>,
+    /// `module = ".."`: the Module a discovered Template joins (FR-81).
+    pub(crate) module: Option<String>,
 }
 
 /// The derive's entry point.
@@ -157,6 +159,10 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     };
     let mut out = emit(&input.ident, &settings);
     out.extend(emit_assets(&input.ident, &assets));
+    out.extend(crate::discover::submit_template(
+        &input.ident,
+        settings.module.as_deref(),
+    ));
     Ok(out)
 }
 
@@ -308,6 +314,7 @@ fn parse_settings(
     let mut errors = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     let (mut id, mut version, mut size, mut format, mut animation) = (None, None, None, None, None);
+    let mut module = None;
     while !input.is_empty() {
         let key = Ident::parse_any(input)?;
         let name = key.to_string();
@@ -331,6 +338,18 @@ fn parse_settings(
                 match parse_animation(&content, &key)? {
                     Ok(a) => animation = Some(a),
                     Err(errs) => errors.extend(errs),
+                }
+            }
+            "module" => {
+                input
+                    .parse::<Token![=]>()
+                    .map_err(|_| syn::Error::new(key.span(), "expected `=` after `module`"))?;
+                let lit: LitStr = input
+                    .parse()
+                    .map_err(|e| syn::Error::new(e.span(), crate::discover::NOT_A_STRING))?;
+                match crate::discover::check_lit(&lit) {
+                    Ok(()) => module = Some(lit.value()),
+                    Err(err) => errors.push(err),
                 }
             }
             "id" | "version" | "size" | "format" => {
@@ -386,6 +405,7 @@ fn parse_settings(
             size,
             format,
             animation,
+            module,
         })),
         _ => Ok(Err(vec![syn::Error::new_spanned(
             attr,

@@ -54,6 +54,7 @@ fn template_ok() {
             size: (934, 282),
             format: Still::Png,
             animation: None,
+            module: None,
         }
     );
     // Any key order.
@@ -267,7 +268,7 @@ fn template_keys() {
     );
     fails(
         base(quote!(, colour = 1)),
-        "unknown key `colour` in `#[template(..)]`: it takes `id`, `version`, `size`, `format` and `animation(..)`",
+        "unknown key `colour` in `#[template(..)]`: it takes `id`, `version`, `size`, `format`, `animation(..)` and `module`",
     );
     fails(quote!(), "is missing `id = ");
 }

@@ -120,6 +120,7 @@ pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::AppBuilder::discover(&mut self) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::AppBuilder::expired_handler<F, Fut, R>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::ExpiredCtx, noctis::Expired) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<R>> + core::marker::Send + 'static, R: noctis::IntoResponse<noctis::Component> + noctis::IntoResponse<noctis::ModalSubmit>
@@ -376,6 +377,9 @@ pub noctis::BuildViolation::DuplicateModule
 pub noctis::BuildViolation::DuplicateModule::id: &'static str
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
+pub noctis::BuildViolation::DuplicateRegistration
+pub noctis::BuildViolation::DuplicateRegistration::module: &'static str
+pub noctis::BuildViolation::DuplicateRegistration::type_name: &'static str
 pub noctis::BuildViolation::DuplicateRenderer
 pub noctis::BuildViolation::DuplicateRenderer::first: &'static str
 pub noctis::BuildViolation::DuplicateRenderer::second: &'static str
@@ -2156,6 +2160,7 @@ pub proc macro noctis::#[handler]
 pub proc macro noctis::i18n!()
 pub use noctis::id
 pub proc macro noctis::label!()
+pub proc macro noctis::#[module]
 pub proc macro noctis::#[on_expired]
 pub proc macro noctis::#[on_rate_limited]
 pub proc macro noctis::#[on_stale]
@@ -5175,6 +5180,7 @@ pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::discover(&mut self) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::prelude::AppBuilder::expired_handler<F, Fut, R>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::ExpiredCtx, noctis::Expired) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<R>> + core::marker::Send + 'static, R: noctis::IntoResponse<noctis::Component> + noctis::IntoResponse<noctis::ModalSubmit>

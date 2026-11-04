@@ -76,6 +76,8 @@ tracing-subscriber = { version = "0.3.23", default-features = false }
 metrics = "0.24"
 metrics-util = { version = "0.20.4", default-features = false }
 arc-swap = "1.9"
+# Link-time collection of discovered registrations (AD-31, Epic 18).
+inventory = "0.3.25"
 moka = { version = "0.12", default-features = false }
 rayon = "1.12"
 blake3 = "1.8"

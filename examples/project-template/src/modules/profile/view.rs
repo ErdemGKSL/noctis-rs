@@ -70,7 +70,13 @@ pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message
 /// part of the render cache key; bump `version` when `view` changes. `Deserialize` is
 /// required too: the Renderer decodes the value it was sent (AD-22).
 #[derive(Template, Serialize, Deserialize, Debug)]
-#[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
+#[template(
+    id = "profile.card",
+    version = 1,
+    size = (934, 282),
+    format = Png,
+    module = "profile"
+)]
 pub struct ProfileCard {
     pub name: String,
     pub subtitle: String,

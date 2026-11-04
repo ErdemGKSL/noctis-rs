@@ -482,3 +482,9 @@ and Epic 18.
 - **Modules too.** `#[noctis::module]` on a `fn() -> Module` declares a Module's own
   settings in its folder; `discover()` mounts it.
 - **Prefix commands** stay explicit (`PrefixPlugin::command::<T>()`) for now.
+- (decision, 2026-11-04, Epic 18) Templates are discovered too: `module = ".."` on
+  `#[template(..)]` (maintainer asked in the epic thread). Middleware and locale
+  catalogs are values, not structs, so they stay on the declared Module.
+- (decision, 2026-11-04, Epic 18) The Module id grammar is duplicated in
+  `noctis-macros/src/discover.rs` (macros cannot depend on `noctis-core`); keep it in
+  step with `noctis-core/src/module.rs` `check_id`.

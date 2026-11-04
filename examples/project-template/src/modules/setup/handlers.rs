@@ -26,6 +26,7 @@ use crate::strings::{Strings, keys};
     permissions = MANAGE_GUILD,
     contexts = [Guild],
     apps = ["noctis-template"],
+    module = "setup",
 )]
 pub struct SetupStart;
 

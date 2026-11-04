@@ -72,6 +72,8 @@ pub(crate) struct RouteArgs {
     pub(crate) flags: Flags,
     /// `rate_limit(..)`, once per scope (AD-23 stage 5, INT-14).
     pub(crate) rate_limits: RateLimits,
+    /// `module = ".."`: the Module a discovered Route joins (FR-81).
+    pub(crate) module: crate::discover::ModuleArg,
 }
 
 /// The Route Guard arguments of a kind attribute (FR-19, AD-23 stage 8);
@@ -126,7 +128,7 @@ pub(crate) struct RefArgs {
 
 /// The argument names after the id, besides `defaults(..)` and
 /// `rate_limit(..)`.
-const ARG_NAMES: [&str; 12] = [
+const ARG_NAMES: [&str; 13] = [
     "by_ref",
     "overflow",
     "schema",
@@ -139,6 +141,7 @@ const ARG_NAMES: [&str; 12] = [
     "permissions",
     "guard",
     "flags",
+    "module",
 ];
 
 const TTL_HELP: &str = "write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")";
@@ -272,6 +275,7 @@ struct Seen {
     guards: GuardArgs,
     flags: Flags,
     rate_limits: RateLimits,
+    module: crate::discover::ModuleArg,
     names: Vec<String>,
 }
 
@@ -347,6 +351,7 @@ fn parse_list(
             guards: seen.guards,
             flags: seen.flags,
             rate_limits: seen.rate_limits,
+            module: seen.module,
         },
         seen.defaults,
     ))
@@ -489,6 +494,10 @@ fn parse_arg(
         ("guard", value) => parse_guard(name, value, a, seen, errors),
         ("flags", _) => match Flags::parse(segment) {
             Ok(flags) => seen.flags = flags,
+            Err(error) => errors.push(error),
+        },
+        ("module", _) => match crate::discover::parse(segment, None, &format!("#[{a}]")) {
+            Ok(module) => seen.module = crate::discover::ModuleArg(Some(module)),
             Err(error) => errors.push(error),
         },
         (_, value) => parse_schema(name, value, seen, errors),
@@ -843,6 +852,7 @@ mod tests {
             guards: super::GuardArgs::default(),
             flags: crate::flags::Flags::default(),
             rate_limits: crate::rate_limit::RateLimits::default(),
+            module: crate::discover::ModuleArg::default(),
         }
     }
 

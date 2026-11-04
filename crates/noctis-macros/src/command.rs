@@ -32,7 +32,7 @@ const CAP_LITERAL: &str =
     "`max_expansions` takes an integer literal, such as `max_expansions = 30`";
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`";
 
 /// The hidden flag of Noctis's own trybuild fixtures: `locales` is relative
 /// to the invoking source file.
@@ -58,6 +58,8 @@ struct Args {
     apps: Apps,
     /// `rate_limit(..)`, once per scope (INT-14).
     rate_limits: RateLimits,
+    /// `module = ".."`: the Module a discovered Command joins (FR-81).
+    module: Option<LitStr>,
 }
 
 /// The handler arguments every Command macro shares: `response` and
@@ -224,6 +226,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         flags: Flags::default(),
         apps: Apps::default(),
         rate_limits: RateLimits::default(),
+        module: None,
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -266,6 +269,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             parsed.apps = Apps::parse(&segment)?;
             continue;
         }
+        if name == "module" {
+            parsed.module = Some(crate::discover::parse(&segment, None, "#[command]")?);
+            continue;
+        }
         if matches!(
             name.as_str(),
             "locales" | "default_locale" | FROM_SOURCE_FILE
@@ -290,7 +297,7 @@ fn check_arg_name(name: &str, span: Span) -> syn::Result<()> {
             ))
         }
         "description" | "max_expansions" | "response" | "auto_defer" | "locales"
-        | "default_locale" | "flags" | "apps" | FROM_SOURCE_FILE => Ok(()),
+        | "default_locale" | "flags" | "apps" | "module" | FROM_SOURCE_FILE => Ok(()),
         other if meta::is_meta(other) => Ok(()),
         _ => Err(syn::Error::new(
             span,
@@ -821,6 +828,7 @@ fn expand(
         args.handler.manual,
         &args.flags,
         &args.apps,
+        args.module.as_ref(),
     );
     Ok(quote! {
         #options
@@ -1194,7 +1202,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", ephemeral),
@@ -1218,7 +1226,7 @@ mod tests {
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),

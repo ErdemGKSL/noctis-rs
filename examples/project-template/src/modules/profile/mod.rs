@@ -21,26 +21,22 @@ use crate::strings::keys;
 pub use handlers::{Badge, Profile};
 pub use view::ProfileCard;
 
-pub fn module() -> Module {
+/// The Module, declared here; every struct of this folder names it with `module =
+/// "profile"` (the card Template too, which `#[template(.., module = "profile")]`
+/// registers for the Renderer; App build rejects a Template id used twice), and
+/// `configure`'s `.discover()` mounts it.
+#[noctis::module]
+fn module() -> Module {
     Module::new("profile")
-        .add::<Profile>()
-        .add::<handlers::Bio>()
-        .add::<handlers::ShowProfile>()
-        .add::<RefreshProfile>()
-        .add::<EditBio>()
-        .add::<BioForm>()
-        .add::<events::AwardXp>()
-        // Registers the card for the Renderer; App build rejects a Template id used twice.
-        .template::<ProfileCard>()
-        // A child's id is its parent's id plus one segment (checked at App build).
-        .module(
-            // Boot Flag `badges`: the Module exists only when the selection is `all` (the
-            // default) or holds `badges` (`--features badges`, `NOCTIS_FEATURES=badges`).
-            // Registers `/badge` and its `#[autocomplete(name)]` method together.
-            Module::new("profile/badges")
-                .flags(["badges"])
-                .add::<Badge>(),
-        )
+}
+
+/// A child's id is its parent's id plus one segment (checked at App build). Boot Flag
+/// `badges`: the Module exists only when the selection is `all` (the default) or holds
+/// `badges` (`--features badges`, `NOCTIS_FEATURES=badges`). `/badge` (`module =
+/// "profile/badges"`) and its `#[autocomplete(name)]` method join it.
+#[noctis::module]
+fn badges() -> Module {
+    Module::new("profile/badges").flags(["badges"])
 }
 
 // ---------------------------------------------------------------------------------------
@@ -53,7 +49,7 @@ pub fn module() -> Module {
 ///
 /// Width (`noctis_route_width`): `profile: F 1 + route 7 + sep 1 + S 0 + N 0 + body 13 + T 0 = 22 (limit 100)`.
 #[derive(Button, Debug, Clone, Copy)]
-#[button("profile", defaults(style = Secondary, label = keys::COMMON_REFRESH))]
+#[button("profile", defaults(style = Secondary, label = keys::COMMON_REFRESH), module = "profile")]
 pub struct RefreshProfile {
     pub user: Id<UserMarker>,
     pub editable: bool,
@@ -70,6 +66,7 @@ pub struct RefreshProfile {
     auto_defer = false,
     owner = user,
     defaults(style = Primary, label = keys::PROFILE_EDIT_BIO),
+    module = "profile",
 )]
 pub struct EditBio {
     pub user: Id<UserMarker>,
@@ -112,6 +109,7 @@ pub enum Pronouns {
     // is refused before the handler runs.
     rate_limit(user, 1, per = "1m", manual),
     defaults(title = keys::PROFILE_BIO_MODAL_TITLE),
+    module = "profile",
 )]
 pub struct BioForm {
     pub user: Id<UserMarker>,

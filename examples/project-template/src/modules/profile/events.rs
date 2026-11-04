@@ -12,7 +12,7 @@ use super::xp_key;
 /// no `.intents(..)` call; message content and DMs are not requested) and the gateway
 /// starts parsing `MESSAGE_CREATE`. Concurrent (not `ordered`), never droppable.
 #[derive(EventHandler, Debug)]
-#[event]
+#[event(module = "profile")]
 pub struct AwardXp;
 
 impl AwardXp {

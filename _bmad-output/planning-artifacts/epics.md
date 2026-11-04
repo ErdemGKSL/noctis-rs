@@ -4051,6 +4051,12 @@ parent path (declared, mounted or created); a declared id that is also mounted w
 discovered for that id merge into the declared Module, so its flags, App restriction
 and Middleware apply to them
 
+**Given** `#[template(id = "..", .., module = "profile")]` (added 2026-11-04 at the
+maintainer's request)
+**When** the App discovers
+**Then** the Template is registered with that Module as `Module::template::<T>()` would,
+and a second registration of its id is the existing `DuplicateTemplate`
+
 **Given** the gates
 **When** the story is done
 **Then** core unit tests and a facade integration test cover declared roots, nested
