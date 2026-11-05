@@ -2769,6 +2769,7 @@ name = "noctis-prefix"
 version = "0.1.0"
 dependencies = [
  "noctis-core",
+ "serde_json",
  "tracing",
  "twilight-model",
 ]

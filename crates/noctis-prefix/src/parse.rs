@@ -88,6 +88,11 @@ impl Entry {
         self.options
     }
 
+    /// The scope the Command is registered in.
+    pub(crate) fn scope(&self) -> Scope {
+        self.scope
+    }
+
     /// The resolved base metadata Discord would enforce.
     pub(crate) fn metadata(&self) -> &CommandMetadata {
         &self.metadata

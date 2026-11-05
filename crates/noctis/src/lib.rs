@@ -2871,10 +2871,17 @@ pub mod prefix {
     //!   its edits and follow-ups; when Discord refuses the DM (`50007`) it
     //!   is a reply deleted after [`PrefixPlugin::ephemeral_ttl`] (default
     //!   10 s, 1-60 s).
-    //! - **Not yet emulated.** A Command whose base declares `permissions`
-    //!   or `nsfw = true`, or that has a CHANNEL option with
-    //!   `channel_types`, stays slash-only for now (a `debug` line when the
-    //!   table is built).
+    //! - **Guards.** Discord's checks are emulated before the handler runs.
+    //!   `permissions` (`default_member_permissions`) and the guild's
+    //!   Command permission overrides (Server Settings → Integrations) use
+    //!   Discord's algorithm: the author's channel permissions (roles and
+    //!   overwrites; the owner and ADMINISTRATOR pass), then the channel
+    //!   override, then user, role and `@everyone` overrides, the Command's
+    //!   before the app's. A refusal gets the ephemeral
+    //!   `noctis.guard.permissions` notice. `nsfw = true` Commands are
+    //!   ignored outside age-restricted channels (a thread follows its
+    //!   parent) and in DMs. A CHANNEL option's `channel_types` fails like
+    //!   any other bad argument (`Constraint`, `[OPT-07]`).
     //! - **Limits.** Only users
     //!   (mentioned or the author) and attachments are resolved:
     //!   `ResolvedRole`, `ResolvedChannel` and member data are not, so such

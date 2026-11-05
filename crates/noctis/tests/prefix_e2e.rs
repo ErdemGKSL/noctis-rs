@@ -478,3 +478,193 @@ async fn closed_dms_get_a_short_lived_reply() {
     assert!(posted.elapsed() >= Duration::from_millis(900));
     app.stop().await.unwrap();
 }
+
+#[derive(SlashCommand)]
+#[command("ban", description = "Ban a member", permissions = BAN_MEMBERS)]
+struct Ban;
+
+impl Ban {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.reply_text("banned").public().await
+    }
+}
+
+#[derive(SlashCommand)]
+#[command("lewd", description = "Age-restricted", nsfw = true)]
+struct Lewd;
+
+impl Lewd {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.reply_text("lewd").public().await
+    }
+}
+
+#[derive(SlashCommand)]
+#[command("topic", description = "Set a text channel's topic")]
+struct Topic {
+    #[option(description = "Where", channel_types = [GuildText])]
+    channel: Id<noctis::twilight::model::id::marker::ChannelMarker>,
+}
+
+impl Topic {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.reply_text(format!("topic {}", self.channel))
+            .public()
+            .await
+    }
+}
+
+/// A guild 9 owned by user 1 whose `@everyone` may send messages and whose
+/// role 10 may ban.
+fn guild_json() -> Value {
+    let role = |id: &str, permissions: &str| {
+        json!({
+            "id": id, "name": id, "color": 0,
+            "colors": {"primary_color": 0, "secondary_color": null, "tertiary_color": null},
+            "hoist": false, "managed": false, "mentionable": false,
+            "permissions": permissions, "position": 0, "flags": 0,
+        })
+    };
+    json!({
+        "id": "9", "name": "g", "owner_id": "1", "preferred_locale": "en-US",
+        "afk_timeout": 300, "default_message_notifications": 0, "explicit_content_filter": 0,
+        "features": [], "mfa_level": 0, "nsfw_level": 0, "premium_progress_bar_enabled": false,
+        "premium_tier": 0, "system_channel_flags": 0, "verification_level": 0,
+        "emojis": [], "stickers": [],
+        "roles": [role("9", "3072"), role("10", "4")],
+    })
+}
+
+fn channel_json(id: u64, kind: u8, nsfw: bool) -> Value {
+    json!({
+        "id": id.to_string(), "guild_id": "9", "type": kind, "name": "c", "position": 0,
+        "permission_overwrites": [], "nsfw": nsfw,
+    })
+}
+
+/// An App serving the guard Commands by prefix, with guild 9, channel 5
+/// (text, `nsfw` as given) and channel 6 (voice) readable over REST; the
+/// app has no command permission overrides.
+async fn guarded_app(nsfw: bool) -> TestApp {
+    let mut builder = App::builder();
+    builder
+        .intents(Intents::MESSAGE_CONTENT)
+        .module(Module::new("mod").add::<Ban>().add::<Lewd>().add::<Topic>())
+        .plugin(PrefixPlugin::new("!"));
+    let app = TestApp::build(&mut builder).await.unwrap();
+    let fake = app.http_fake();
+    fake.route(
+        Method::GET,
+        "/guilds/9",
+        FakeResponse::json(StatusCode::OK, &guild_json()),
+    );
+    fake.route(
+        Method::GET,
+        "/channels/5",
+        FakeResponse::json(StatusCode::OK, &channel_json(5, 0, nsfw)),
+    );
+    fake.route(
+        Method::GET,
+        "/channels/6",
+        FakeResponse::json(StatusCode::OK, &channel_json(6, 2, false)),
+    );
+    fake.route(
+        Method::GET,
+        "/applications/@me",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "700" })),
+    );
+    fake.route(
+        Method::GET,
+        "/applications/700/guilds/9/commands/permissions",
+        FakeResponse::json(StatusCode::OK, &json!([])),
+    );
+    fake.route(
+        Method::POST,
+        CHANNEL,
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
+    );
+    fake.route(
+        Method::POST,
+        "/users/@me/channels",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "40", "type": 1 })),
+    );
+    fake.route(
+        Method::POST,
+        "/channels/40/messages",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "88" })),
+    );
+    app
+}
+
+/// A guild message from user 3 with `roles`.
+fn member_message(id: u64, content: &str, roles: &[&str]) -> Value {
+    let mut value = message(id, content, &person());
+    value["member"] = json!({
+        "deaf": false, "mute": false, "flags": 0, "roles": roles,
+        "joined_at": "2026-01-01T00:00:00.000000+00:00",
+    });
+    value
+}
+
+/// Story 19.2: `permissions` is checked with Discord's algorithm; a denial
+/// is the ephemeral `noctis.guard.permissions` notice in the DM.
+#[tokio::test(flavor = "multi_thread")]
+async fn prefix_permissions_are_enforced() {
+    let app = guarded_app(false).await;
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(40, "!ban", &[]));
+    let dm = wait_for(&app, Method::POST, "/channels/40/messages", 1).await;
+    assert_eq!(
+        body(&dm[0])["components"][0]["content"],
+        "You don't have permission to use this."
+    );
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(41, "!ban", &["10"]));
+    let sent = wait_sent(&app, 1).await;
+    assert_eq!(body(&sent[0])["components"][0]["content"], "banned");
+    assert_eq!(body(&sent[0])["message_reference"]["message_id"], "41");
+    app.stop().await.unwrap();
+}
+
+/// Story 19.2: an `nsfw` Command answers only in an age-restricted channel.
+#[tokio::test(flavor = "multi_thread")]
+async fn prefix_nsfw_needs_an_age_restricted_channel() {
+    let app = guarded_app(false).await;
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(50, "!lewd", &[]));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        app.http_fake()
+            .requests()
+            .iter()
+            .all(|r| r.method != Method::POST),
+        "{:?}",
+        app.http_fake().requests()
+    );
+    app.stop().await.unwrap();
+    let app = guarded_app(true).await;
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(51, "!lewd", &[]));
+    let sent = wait_sent(&app, 1).await;
+    assert_eq!(body(&sent[0])["components"][0]["content"], "lewd");
+    app.stop().await.unwrap();
+}
+
+/// Story 19.2: a CHANNEL option's `channel_types` is checked against the
+/// named channel; a mismatch is the slash decode's validation notice.
+#[tokio::test(flavor = "multi_thread")]
+async fn prefix_channel_types_are_enforced() {
+    let app = guarded_app(false).await;
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(60, "!topic <#6>", &[]));
+    let sent = wait_sent(&app, 1).await;
+    assert_eq!(body(&sent[0])["components"][0]["content"], VALIDATION);
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", member_message(61, "!topic <#5>", &[]));
+    let sent = wait_sent(&app, 2).await;
+    assert_eq!(body(&sent[1])["components"][0]["content"], "topic 5");
+    app.stop().await.unwrap();
+}

@@ -1784,7 +1784,9 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
 ///
 /// It enforces none of the Command's `default_member_permissions`,
 /// `contexts` or `nsfw` metadata (Discord enforces those only for real
-/// interactions): the caller must check them before `run_command`.
+/// interactions): the caller checks them before `run_command`.
+/// `noctis::prefix::PrefixPlugin` does, including the guild's Command
+/// permission overrides.
 ///
 /// The shipped caller is `noctis::prefix::PrefixPlugin` (the `prefix`
 /// feature), which parses `!warn <@5> 3` against the Command's options.
@@ -1891,6 +1893,8 @@ pub struct CommandInvocation {
     shard: u32,
     locale: Option<String>,
     ephemeral_ttl: Duration,
+    /// The caller's guard emulation refused the author (AD-32).
+    denied: bool,
 }
 
 /// How long an ephemeral answer posted in the channel stays by default.
@@ -1914,6 +1918,7 @@ impl CommandInvocation {
             shard: 0,
             locale: None,
             ephemeral_ttl: EPHEMERAL_TTL,
+            denied: false,
         }
     }
 
@@ -1947,6 +1952,16 @@ impl CommandInvocation {
     #[must_use]
     pub fn ephemeral_ttl(mut self, ttl: Duration) -> Self {
         self.ephemeral_ttl = ttl.clamp(Duration::from_secs(1), Duration::from_mins(1));
+        self
+    }
+
+    /// Marks the author as lacking the Command's permissions (the prefix
+    /// plugin's guard emulation, AD-32): the handler does not run and the
+    /// author gets the ephemeral `noctis.guard.permissions` notice.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __deny(mut self) -> Self {
+        self.denied = true;
         self
     }
 
@@ -2039,6 +2054,7 @@ impl Dispatcher {
             shard,
             locale,
             ephemeral_ttl,
+            denied,
         } = invocation;
         let span = tracing::info_span!(
             "noctis.dispatch",
@@ -2100,6 +2116,42 @@ impl Dispatcher {
             },
             entry.handler.name(),
         ));
+        // The caller's guard emulation refused the author: the ephemeral
+        // permissions notice, as a Guard denial gives (AD-32).
+        if denied {
+            span.in_scope(|| {
+                tracing::debug!(
+                    target: "noctis::guard",
+                    handler = entry.handler.name(),
+                    guard = "permissions",
+                    "denied"
+                );
+            });
+            let locale = locales.get().user;
+            let shared = self.message_shared(
+                (channel_id, message_id),
+                (user_id, ephemeral_ttl),
+                Ephemerality::Ephemeral,
+                locales,
+            );
+            let text =
+                span.in_scope(|| notice::text(&*self.app.strings, locale, keys::GUARD_PERMISSIONS));
+            if let Err(error) = shared
+                .notice_message_as(
+                    OutgoingMessage::V2(V2Message::new(
+                        noctis_ui::Components::new().push(noctis_ui::TextDisplay::new(text)),
+                    )),
+                    Ephemerality::Ephemeral,
+                )
+                .instrument(span.clone())
+                .await
+            {
+                span.in_scope(|| {
+                    tracing::warn!(target: "noctis::dispatch", %error, "could not send the denial notice");
+                });
+            }
+            return Ok(());
+        }
         let around = Around::new(
             &entry.chain,
             || RunInfo {

@@ -10,20 +10,22 @@
 //! This crate is internal; use `noctis` (feature `prefix`) instead. Its API is
 //! not stable and may change in any release.
 
+mod guard;
 mod parse;
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use noctis_core::__rules::command::OptionType;
-use noctis_core::events::{EventCtx, MessageCreate};
+use noctis_core::events::{CommandPermissionsUpdate, EventCtx, MessageCreate};
 use noctis_core::{
-    AppBuilder, BuildViolation, CommandInvocation, DispatchError, Dispatcher, EventHandler,
-    HandlerResult, Module, Plugin,
+    AppBuilder, BuildViolation, CommandInput, CommandInvocation, DispatchError, Dispatcher,
+    EventHandler, HandlerResult, Module, OptionError, OptionValue, Plugin,
 };
 use twilight_model::channel::Message;
 use twilight_model::gateway::Intents;
 
+use crate::guard::{Guards, Verdict};
 use crate::parse::{Entry, Table};
 
 /// The longest prefix, in Unicode scalar values.
@@ -131,40 +133,11 @@ fn table(prefix: &str, dispatcher: &Dispatcher) -> Table {
     let entries = dispatcher
         .__prefix_commands()
         .into_iter()
-        .filter_map(|(scope, path, handler, metadata)| {
-            let entry = Entry::new(scope, path, handler.options(), metadata);
-            match unenforced(&entry) {
-                Some(what) => {
-                    tracing::debug!(
-                        path,
-                        command = handler.name(),
-                        "not a prefix command: it declares {what}, which a message does not \
-                         enforce yet"
-                    );
-                    None
-                }
-                None => Some(entry),
-            }
+        .map(|(scope, path, handler, metadata)| {
+            Entry::new(scope, path, handler.options(), metadata)
         })
         .collect();
     Table::new(prefix, entries)
-}
-
-/// What `entry` declares that a message does not enforce yet, if anything.
-fn unenforced(entry: &Entry) -> Option<&'static str> {
-    if entry.metadata().default_member_permissions.is_some() {
-        Some("`permissions`")
-    } else if entry.metadata().nsfw == Some(true) {
-        Some("`nsfw = true`")
-    } else if entry
-        .options()
-        .iter()
-        .any(|o| o.kind == OptionType::Channel && !o.channel_types.is_empty())
-    {
-        Some("`channel_types`")
-    } else {
-        None
-    }
 }
 
 impl Plugin for PrefixPlugin {
@@ -174,25 +147,41 @@ impl Plugin for PrefixPlugin {
         }
         let prefix: Arc<str> = Arc::from(self.prefix.as_str());
         let ttl = self.ephemeral_ttl;
+        let guards = Arc::new(Guards::default());
+        let updates = Arc::clone(&guards);
         let table = Arc::new(OnceLock::new());
         let handler = move |ctx: EventCtx, event: MessageCreate| {
             let table = Arc::clone(&table);
             let prefix = Arc::clone(&prefix);
+            let guards = Arc::clone(&guards);
             async move {
                 let table = table.get_or_init(|| self::table(&prefix, ctx.dispatcher()));
-                on_message(table, ttl, &ctx, event.0).await
+                on_message(table, &guards, ttl, &ctx, event.0).await
             }
         };
+        // Discord sends it when the guild's command permission overrides
+        // change: the next prefix run reads them again.
+        let on_update = move |_ctx: EventCtx, event: CommandPermissionsUpdate| {
+            updates.invalidate(event.0.guild_id);
+            async { Ok(()) }
+        };
         app.module(
-            Module::new(MODULE).__add(
-                EventHandler::__new::<MessageCreate, _, _>(
-                    "noctis_prefix::PrefixPlugin",
-                    false,
-                    false,
-                    handler,
+            Module::new(MODULE)
+                .__add(
+                    EventHandler::__new::<MessageCreate, _, _>(
+                        "noctis_prefix::PrefixPlugin",
+                        false,
+                        false,
+                        handler,
+                    )
+                    .__with_intents(Intents::MESSAGE_CONTENT),
                 )
-                .__with_intents(Intents::MESSAGE_CONTENT),
-            ),
+                .__add(EventHandler::__new::<CommandPermissionsUpdate, _, _>(
+                    "noctis_prefix::PrefixPlugin::permissions",
+                    false,
+                    false,
+                    on_update,
+                )),
         );
     }
 }
@@ -200,6 +189,7 @@ impl Plugin for PrefixPlugin {
 /// Runs the Command a message names, if any.
 async fn on_message(
     table: &Table,
+    guards: &Guards,
     ephemeral_ttl: Duration,
     ctx: &EventCtx,
     message: Message,
@@ -218,12 +208,23 @@ async fn on_message(
         );
         return Ok(());
     }
-    let input = parse::bind(entry.path(), args, entry.options(), &message);
-    let invocation =
+    let verdict = guards.check(ctx, entry, &message).await;
+    if verdict == Verdict::Ignore {
+        tracing::debug!(path = entry.path(), "prefix command hidden in this channel");
+        return Ok(());
+    }
+    let mut input = parse::bind(entry.path(), args, entry.options(), &message);
+    if verdict == Verdict::Run && input.error().is_none() {
+        input = check_channel_types(ctx, entry, input).await;
+    }
+    let mut invocation =
         CommandInvocation::new(input, message.channel_id, message.id, message.author.id)
             .guild_id(message.guild_id)
             .shard(ctx.shard())
             .ephemeral_ttl(ephemeral_ttl);
+    if verdict == Verdict::Deny {
+        invocation = invocation.__deny();
+    }
     if let Err(err) = ctx.dispatcher().run_command(invocation).await {
         match err {
             DispatchError::UnknownCommand { path } => {
@@ -235,11 +236,44 @@ async fn on_message(
     Ok(())
 }
 
+/// OPT-07 for a message: each bound CHANNEL option with `channel_types`
+/// must name a channel of a listed type (a slash client offers no other);
+/// the first that does not marks `input` failed.
+async fn check_channel_types(ctx: &EventCtx, entry: &Entry, input: CommandInput) -> CommandInput {
+    for option in entry
+        .options()
+        .iter()
+        .filter(|o| o.kind == OptionType::Channel && !o.channel_types.is_empty())
+    {
+        let Some(OptionValue::Channel(id)) = input.get(option.name) else {
+            continue;
+        };
+        let kind = match ctx.cache().channel(*id).await {
+            Ok(Some(channel)) => Some(channel.kind),
+            _ => match ctx.http().channel(*id).await {
+                Ok(response) => response.model().await.ok().map(|c| c.kind),
+                Err(_) => None,
+            },
+        };
+        let reason = match kind {
+            Some(kind) if option.channel_types.contains(&u8::from(kind)) => continue,
+            Some(kind) => format!(
+                "[OPT-07] channel type {} is not one of the option's channel_types {:?}",
+                u8::from(kind),
+                option.channel_types
+            ),
+            None => "[OPT-07] the channel could not be read to check its type".to_owned(),
+        };
+        return input.with_error(OptionError::Constraint {
+            option: option.name.to_owned(),
+            reason,
+        });
+    }
+    input
+}
+
 #[cfg(test)]
 mod tests {
-    use noctis_core::__rules::command::{OptionDecl, Scope};
-    use noctis_core::{CommandMetadata, Permissions};
-
     use super::*;
 
     fn plugin(prefix: &str) -> PrefixPlugin {
@@ -296,26 +330,5 @@ mod tests {
             let message = only(&plugin("!").ephemeral_ttl(ttl));
             assert!(message.starts_with("ephemeral_ttl is"), "{message}");
         }
-    }
-
-    /// Until guards are emulated, a Command that
-    /// declares them is left out of the table.
-    #[test]
-    fn unenforced_metadata_is_left_out() {
-        static CHANNEL: [OptionDecl<'static>; 1] =
-            [OptionDecl::new("where", OptionType::Channel, "d").channel_types(&[0])];
-        static PLAIN_CHANNEL: [OptionDecl<'static>; 1] =
-            [OptionDecl::new("where", OptionType::Channel, "d")];
-        let entry = |options, metadata| Entry::new(Scope::Global, "p", options, metadata);
-        let perms = CommandMetadata::new().default_member_permissions(Permissions::BAN_MEMBERS);
-        assert_eq!(unenforced(&entry(&[], perms)), Some("`permissions`"));
-        let nsfw = CommandMetadata::new().nsfw(true);
-        assert_eq!(unenforced(&entry(&[], nsfw)), Some("`nsfw = true`"));
-        assert_eq!(
-            unenforced(&entry(&CHANNEL, CommandMetadata::new())),
-            Some("`channel_types`")
-        );
-        let fine = CommandMetadata::new().nsfw(false);
-        assert_eq!(unenforced(&entry(&PLAIN_CHANNEL, fine)), None);
     }
 }

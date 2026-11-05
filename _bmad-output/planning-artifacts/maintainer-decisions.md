@@ -521,3 +521,20 @@ to `all`. This amends FR-14 and becomes AD-32 and Epic 19.
   message now keeps its default ephemeral visibility (DM), as over an interaction.
   Validation, error and disabled-Module notices stay public channel replies: a typo
   should be answered where it was typed.
+- (decision) Story 19.2 override order, from Discord's permissions docs: the channel
+  decides first (the Command's channel entry, its "All Channels" entry `guild_id - 1`,
+  then the app-wide entries; a thread's parent counts; a channel deny refuses), then
+  user, roles (any allow wins) and `@everyone`, the Command's entries before the app's.
+  The owner and ADMINISTRATOR always pass, as in the client. Without an override,
+  `default_member_permissions` is checked against the author's channel permissions
+  (`compute_base_permissions` + `compute_overwrites`); no bits means administrators only.
+- (decision) A guard refusal sends the ephemeral `noctis.guard.permissions` notice
+  through `CommandInvocation::__deny` (hidden), so the notice stays in core and is
+  localized like every other notice. An `nsfw` Command outside an age-restricted
+  channel or in a DM is ignored (no answer), matching the slash client, which hides it.
+- (decision) The guard rules reuse META-01, CMD-07 and OPT-07 instead of new ids:
+  they are the same Discord limits, now also enforced at runtime for prefix runs.
+- (decision) The application id and Command ids come from `GET /applications/@me` and
+  `GET /applications/{id}/commands` parsed leniently from raw JSON (only `id`/`name`),
+  since twilight's full models fail on missing optional fields; overrides are cached per
+  guild and invalidated by `CommandPermissionsUpdate`.

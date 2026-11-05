@@ -645,8 +645,9 @@ impl Prefix {
   `DispatchError` is `#[non_exhaustive]`. A failing handler goes to the `Command` Error
   Sink, not into the result.
 - The Dispatcher enforces none of the Command's `default_member_permissions`, `contexts`
-  or `nsfw` metadata (Discord enforces those only for real interactions): check them
-  yourself before calling `run_command`.
+  or `nsfw` metadata (Discord enforces those only for real interactions): a hand-written
+  caller checks them before `run_command`. `PrefixPlugin` does (`commands.md`, "Prefix
+  commands").
 - The response is a message transport: `reply` and a returned message post a reply to
   the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer_reply()` (public)
   shows the typing indicator (the later message is then posted as the reply), edits,

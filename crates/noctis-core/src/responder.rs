@@ -2306,11 +2306,22 @@ impl Shared {
     /// overrides answer through it (FR-46).
     pub(crate) async fn notice_message(
         self: &Arc<Self>,
+        msg: OutgoingMessage,
+    ) -> Result<(), ResponderError> {
+        self.notice_message_as(msg, Ephemerality::Public).await
+    }
+
+    /// As [`notice_message`](Self::notice_message), with `over_message` as
+    /// the visibility over a message transport (an ephemeral one goes to
+    /// the author's DM, AD-32).
+    pub(crate) async fn notice_message_as(
+        self: &Arc<Self>,
         mut msg: OutgoingMessage,
+        over_message: Ephemerality,
     ) -> Result<(), ResponderError> {
         self.prepare(&mut msg, Ephemerality::Ephemeral).await?;
         let visibility = if self.transport.is_message() {
-            Ephemerality::Public
+            over_message
         } else {
             Ephemerality::Ephemeral
         };
@@ -2326,7 +2337,7 @@ impl Shared {
                     }
                     Transport::Message(target) => Some(
                         target
-                            .post(false, true, |reference| {
+                            .post(visibility == Ephemerality::Ephemeral, true, |reference| {
                                 self.message_body(target, &msg, reference)
                             })
                             .await?

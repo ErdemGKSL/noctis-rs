@@ -986,10 +986,21 @@ builder
   `PrefixPlugin::ephemeral_ttl` (default 10 s, 1-60 s).
   `PrefixPlugin::new("!").ephemeral_ttl(Duration::from_secs(5))` sets it; outside 1-60 s
   the build fails (`ephemeral_ttl is …: pass 1 to 60 seconds`).
-- **Not yet emulated:** a Command whose base declares
-  `permissions` or `nsfw = true`, or that has a
-  CHANNEL option with `channel_types`, is left out of the prefix table (one `debug` line
-  on `noctis_prefix` per Command when the table is built) and stays slash-only.
+- **Guards** are emulated like Discord does for a slash run, before the handler:
+  - `permissions` (`default_member_permissions`) and the guild's Command permission
+    overrides (Server Settings → Integrations, `CommandPermissionsUpdate` keeps them
+    fresh) follow Discord's algorithm. The server owner and ADMINISTRATOR always pass.
+    Otherwise the channel override decides first (the Command's channel entry, its
+    "All Channels" entry, then the app-wide ones; a thread's parent counts; a deny
+    refuses), then the author's user override, their role overrides (any allow wins)
+    and `@everyone`, the Command's before the app's. Without an override,
+    `permissions` is checked against the author's permissions in the channel (roles
+    plus channel overwrites). A refusal runs no handler and gets the **ephemeral**
+    `noctis.guard.permissions` notice (DM, or a short-lived reply).
+  - `nsfw = true`: ignored (no answer) in a channel that is not age-restricted and in
+    DMs; a thread follows its parent.
+  - A CHANNEL option's `channel_types`: a channel of another type fails like any bad
+    argument (`OptionError::Constraint`, `[OPT-07]`).
 
 | Option type | Accepted argument |
 | --- | --- |
