@@ -494,6 +494,12 @@ same handler through a shared response abstraction. It ships in v1 behind the
   message-content intent.
 - With it on, a message `<prefix><Command Path> <args>` runs the same handler as the
   slash form; argument parse failures produce the same typed errors as FR-10.
+- Amended 2026-11-05 (maintainer decision §12): prefix commands are an emulation of
+  the slash Commands, never coded separately. With the plugin installed every Command
+  answers by prefix unless `command_type = "slash"`; `command_type = "prefix"` is never
+  published; `permissions`, `nsfw`, `channel_types` and `contexts` are enforced for
+  messages, and an ephemeral answer goes to the author's DM (a short-lived channel
+  reply when DMs are closed).
 
 ### 4.3 Interaction Routing, Payloads and Refs
 

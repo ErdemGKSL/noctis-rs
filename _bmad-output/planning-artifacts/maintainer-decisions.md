@@ -488,3 +488,20 @@ and Epic 18.
 - (decision, 2026-11-04, Epic 18) The Module id grammar is duplicated in
   `noctis-macros/src/discover.rs` (macros cannot depend on `noctis-core`); keep it in
   step with `noctis-core/src/module.rs` `check_id`.
+
+## 12. Prefix commands emulate slash Commands (2026-11-05)
+
+The maintainer asked that prefix commands be the emulated form of the normal Commands
+and never coded separately, with `command_type = "slash" | "prefix" | "all"` defaulting
+to `all`. This amends FR-14 and becomes AD-32 and Epic 19.
+
+- **No opt-in.** With `PrefixPlugin` installed, every Command with type `all` or
+  `prefix` answers by prefix; `PrefixPlugin::command::<T>()` is removed.
+- **`prefix` is never published**; `slash` never answers a message.
+- **Guards are emulated, not refused:** `permissions` (with the guild's command
+  permission overrides), `nsfw` and `channel_types` are enforced for messages with
+  Discord's rules.
+- **Ephemeral (maintainer, 2026-11-05, decision card):** the answer goes to the
+  author's DM; if Discord refuses the DM (50007) it is a channel reply deleted after a
+  short TTL.
+- (decision) `command_type` takes a string literal, as the maintainer wrote it.

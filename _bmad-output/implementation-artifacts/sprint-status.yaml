@@ -199,3 +199,9 @@ development_status:
   18-2-discovered-module-declarations: done
   18-3-project-template-guide-and-linkage-on-discovery: done
   epic-18-retrospective: optional
+
+  epic-19: in-progress
+  19-1-command-type-and-the-automatic-prefix-table: in-progress
+  19-2-guard-emulation-for-prefix-runs: backlog
+  19-3-ephemeral-emulation-for-prefix-runs: backlog
+  epic-19-retrospective: optional

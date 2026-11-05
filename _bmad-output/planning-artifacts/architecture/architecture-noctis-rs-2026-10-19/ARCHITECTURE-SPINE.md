@@ -1672,6 +1672,23 @@ list in CI.
     a crate the binary never links contributes nothing. `Module::add` stays the
     explicit, link-independent path, and both styles mix.
 
+### AD-32 — Prefix runs emulate the slash Command (added 2026-11-05)
+- **Binds:** `noctis-prefix`, `noctis-core`, `noctis-macros`, Project Template, Usage
+  Skill; FR-14; maintainer decision §12.
+- **Prevents:** a second command definition for prefix use, prefix runs that bypass
+  Discord-side restrictions, and private answers posted publicly.
+- **Rule:**
+  - One Command, two surfaces: `CommandHandler` carries `CommandType` (`Slash`,
+    `Prefix`, `All`; default `All`). Publish sends `Slash` and `All`; the prefix plugin
+    answers `Prefix` and `All`. The plugin reads its table from the Registry after
+    the fold, never from opted-in types.
+  - A prefix run goes through `Dispatcher::run_command` and the same pipeline; what
+    Discord enforces before an interaction reaches the bot (`default_member_permissions`
+    with the guild's command permission overrides, `nsfw`, `channel_types`, `contexts`)
+    is enforced by Noctis before the handler, with Discord's own algorithms.
+  - An ephemeral answer over the message transport goes to the author's DM, else a
+    channel reply deleted after the plugin's `ephemeral_ttl`.
+
 ## Consistency Conventions
 
 | Concern | Convention |

@@ -83,6 +83,14 @@ recorded here.
   "Registrations defined anywhere", with three stories (discovered registrations,
   discovered Module declarations, the Project Template and docs on discovery), FR-81
   and AD-31; the design is maintainer decision §11. The plan now has 111 stories.
+- **Correct course, 2026-11-05 (maintainer request):** the maintainer asked that prefix
+  commands be an emulation of the normal Commands, never coded separately: with the
+  prefix plugin installed, every `#[command]` also answers as a prefix command,
+  selected by `command_type = "slash" | "prefix" | "all"` (default `all`). It became
+  Epic 19, "Prefix commands emulate slash Commands", with three stories (`command_type`
+  and the automatic prefix table, guard emulation, ephemeral emulation), FR-14
+  amended and AD-32; the design is maintainer decision §12. The plan now has 114
+  stories.
 
 ### Validation summary (step 4)
 
@@ -712,6 +720,13 @@ one `AppBuilder::discover()` mounts everything the binary links, with no central
 `Module::add::<T>()` list to keep in sync.
 **FRs covered:** FR-81; FR-44, FR-73, FR-47 (discovery keeps Boot Flags and App
 restrictions).
+
+### Epic 19: Prefix commands emulate slash Commands (P1, added 2026-11-05)
+With the prefix plugin installed, every slash Command also runs from a message: the
+same struct, handler, options, guards and response kinds, emulated over the message
+transport. `command_type = "slash" | "prefix" | "all"` (default `all`) picks the
+surfaces; nothing is opted in by type.
+**FRs covered:** FR-14 (amended); FR-10, FR-19.
 
 ## Epic 1: Project foundation and Discord rules as code
 
@@ -4091,3 +4106,131 @@ explicit alternative
 limits: a registration in a crate the binary never links is not discovered, and
 inventory's supported targets; README's feature list mentions it; `xtask docs-check`
 and `xtask skill-check` pass
+
+## Epic 19: Prefix commands emulate slash Commands
+
+A bot author writes a Command once. With `PrefixPlugin::new("!")` installed, every
+`#[command]` answers `!<Command Path> <args>` too, through the same handler and the same
+typed options, and the Command's Discord-side guards (`permissions`, `nsfw`,
+`channel_types`, `contexts`) and its `response = ephemeral` are emulated for messages.
+`command_type = "slash" | "prefix" | "all"` (default `all`) on `#[command]` picks the
+surfaces: `slash` is never reachable by prefix, `prefix` is never published. Added
+2026-11-05 at the maintainer's request (maintainer decision §12, FR-14 amended, AD-32).
+
+**Order:** 19.1 → 19.2 → 19.3.
+
+**Starting point (main at 95f092e):** `noctis-prefix` (Story 15.4) builds its `Table` from
+types opted in with `PrefixPlugin::command::<T>()` (`T::PATHS`, `T::OPTIONS`,
+`T::METADATA`, `T::EPHEMERALITY`) and refuses Commands with `permissions`,
+`nsfw = true`, `response = ephemeral` or a CHANNEL option with `channel_types`; it binds
+arguments with `parse::bind` and runs them with `Dispatcher::run_command`, whose
+responder replies over `Transport::Message` (reply, typing for defer, edit, delete).
+`CommandHandler` already carries paths, options, metadata and ephemerality. Discord
+rules cited below are from `discord-api-docs` (`developers/interactions/application-commands.mdx`,
+`developers/topics/permissions.mdx`, `developers/topics/opcodes-and-status-codes.mdx`,
+`developers/events/gateway-events.mdx`); verify each again before relying on it.
+
+### Story 19.1: `command_type` and the automatic prefix table
+
+As a bot author,
+I want every Command I write to answer as a prefix command too, unless I say otherwise,
+So that I never code or register prefix commands separately.
+
+**Implements:** FR-14 (amended); AD-7, AD-32.
+
+**Acceptance Criteria:**
+
+**Given** `#[command("..", command_type = "slash" | "prefix" | "all")]`
+**When** it compiles
+**Then** the value is checked at expansion (any other literal is a `compile_error!`
+naming the three), it is stored on the `CommandHandler` (`CommandType`), and without it
+the type is `All`
+
+**Given** an App with `PrefixPlugin::new("!")`
+**When** it builds
+**Then** the plugin's table is every Command of the Registry whose type is `All` or
+`Prefix` (discovered or added, every scope), built once per App from the Registry, not
+from types: `PrefixPlugin::command::<T>()` is removed; a Command with `Slash` never
+answers a message; prefix and path checks (P1-P3) stay build violations
+
+**Given** Publish (and `--dry-run`)
+**When** it builds the bodies
+**Then** a `Prefix` Command is never sent to Discord, a base or group whose leaves are
+all `Prefix` is not sent either, and the build-time tree checks still run on every
+Command (a prefix-only name follows the same naming rules)
+
+**Given** the gates
+**When** the story is done
+**Then** core and plugin tests cover the three types, publish filtering and the
+automatic table; a facade end-to-end test runs one Command by slash and by prefix
+without opting it in; the public API is re-blessed; the Project Template (its
+`.command::<..>()` list removed), its `AGENTS.md` and the Usage Skill teach
+`command_type`
+
+### Story 19.2: Guard emulation for prefix runs
+
+As a bot author,
+I want a prefix run to respect the same Discord-side restrictions as the slash form,
+So that `!ban` is not a way around `permissions = BAN_MEMBERS`.
+
+**Implements:** FR-14 (amended), FR-19; AD-23, AD-32.
+
+**Acceptance Criteria:**
+
+**Given** a Command with `permissions = ..` (`default_member_permissions`) run from a
+guild message
+**When** the author lacks any of its bits in that channel
+**Then** no handler runs and the author gets the same ephemeral-equivalent denial a
+Guard gives (`noctis.guard.permissions`); the permissions are computed with Discord's
+algorithm (permissions.mdx `compute_base_permissions` / `compute_overwrites`: owner
+and ADMINISTRATOR bypass) from the message's partial `member` roles, the cached roles
+and channel overwrites (REST when not cached); a thread uses its parent's overwrites;
+`permissions = []` (`"0"`) allows only administrators
+
+**Given** the guild has application command permission overrides (Server Settings →
+Integrations)
+**When** a prefix run is checked
+**Then** they are read with the bot token from `GET /applications/{app}/guilds/{guild}/commands/permissions`
+(cached per guild, refreshed on `APPLICATION_COMMAND_PERMISSIONS_UPDATE`), and applied
+in Discord's order: user overwrite, then role overwrites, then `@everyone` (id = guild
+id), with channel overwrites (and "All Channels", id = guild id − 1) deciding the
+channel; a read failure falls back to `default_member_permissions` and logs a `warn`
+
+**Given** `nsfw = true`
+**When** it runs from a message
+**Then** it runs only in an age-restricted channel (a thread follows its parent), and
+never from a DM (Noctis cannot see the user's DM setting)
+
+**Given** a CHANNEL option with `channel_types`
+**When** the bound channel's type is not listed
+**Then** it is the same `OptionError` a slash decode gives for a wrong type, and no
+handler runs
+
+**Given** the gates
+**When** the story is done
+**Then** unit tests cover the permission algorithm against permissions.mdx's examples,
+overrides, nsfw and channel types; `docs/discord-rules.md` and `noctis-rules` gain the
+rule ids for what a prefix run enforces
+
+### Story 19.3: Ephemeral emulation for prefix runs
+
+As a bot author,
+I want a `response = ephemeral` Command to stay private when it runs from a message,
+So that the user who typed it is the only one who sees the answer.
+
+**Implements:** FR-14 (amended); AD-11, AD-32.
+
+**Acceptance Criteria:**
+
+**Given** a Command whose run is ephemeral (`response = ephemeral`, or a responder call
+that answers ephemerally) invoked by prefix
+**When** it answers
+**Then** the answer is sent to the author by DM (a DM channel opened with the bot
+token), with edits and follow-ups going to that DM; when Discord refuses the DM
+(`50007` Cannot send messages to this user) the answer is a reply in the invoking
+channel that is deleted after `PrefixPlugin::ephemeral_ttl` (default 10 s, 1-60 s)
+
+**Given** the gates
+**When** the story is done
+**Then** testkit-based tests cover DM delivery, the 50007 fallback and its deletion,
+and the Project Template, Usage Skill and FR-14 text describe the emulation
