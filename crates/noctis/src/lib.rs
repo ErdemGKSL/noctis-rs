@@ -607,9 +607,10 @@
 //!   Its locales drive the resolution of every run's
 //!   `ctx.user_locale()`/`ctx.guild_locale()` ([`Locales`]; override it
 //!   with a [`LocaleResolver`] or a before-Middleware).
-//! - `prefix`: opt-in prefix commands: the `prefix` module's
-//!   `PrefixPlugin` runs opted-in slash Commands from messages such as
-//!   `!warn <@5> 3`; it needs the privileged `MESSAGE_CONTENT` intent.
+//! - `prefix`: prefix commands emulated from slash Commands: the `prefix`
+//!   module's `PrefixPlugin` runs every Command (but `command_type =
+//!   "slash"` ones) from messages such as `!warn <@5> 3`; it needs the
+//!   privileged `MESSAGE_CONTENT` intent.
 //! - `voice`: voice channels through Noctis's gateway: the `voice`
 //!   module's `.voice(VoiceConfig)` on the `AppBuilder` and `ctx.voice()`
 //!   (`join`, `leave`) with Songbird 0.6 as the voice driver. Needs a C
@@ -626,21 +627,21 @@ pub use noctis_core::{
     AutocompleteValue, BaseMeta, BeforeCtx, BeforeMiddleware, BootFlagError, BootFlags, BuildError,
     BuildViolation, CacheDisabled, CacheError, CallbackResource, CanShowModal, Command, CommandCtx,
     CommandHandler, CommandInput, CommandInvocation, CommandMetadata, CommandOption, CommandPath,
-    CommandResponder, Component, ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder,
-    ContextMenuHandler, DeferMode, DiscordCacheConfig, DiscordCacheReader, DiscordCacheResources,
-    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
-    Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused, FollowupHandle,
-    GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError,
-    IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption, Invocation, Kv,
-    LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales, LogSink, Manual,
-    MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit,
-    ModalSubmitCtx, Module, ModuleIdError, ModuleScope, ModuleStateError, Modules, NoticeText,
-    OptionError, OptionValue, Options, OutgoingMessage, OverlayViolation, Partial, PartialOptions,
-    Pending, Permissions, Plugin, RateLimit, RateLimitError, RateLimitHit, RateLimitedCtx,
-    RateLimits, RateScope, RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict,
-    Responded, Responder, ResponderError, ResponderKind, ResponderState, RunError, RunOutcome,
-    Runtime, SelectedValues, StartError, State, SuggestionLabel, SuggestionValue, Suggestions,
-    Token, TokenError, UnknownCommandPath, Visibility,
+    CommandResponder, CommandType, Component, ComponentCtx, ComponentHandler, ComponentKind,
+    ComponentResponder, ContextMenuHandler, DeferMode, DiscordCacheConfig, DiscordCacheReader,
+    DiscordCacheResources, DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin,
+    ErrorReport, ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
+    FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
+    HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
+    Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales,
+    LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
+    ModalSubmit, ModalSubmitCtx, Module, ModuleIdError, ModuleScope, ModuleStateError, Modules,
+    NoticeText, OptionError, OptionValue, Options, OutgoingMessage, OverlayViolation, Partial,
+    PartialOptions, Pending, Permissions, Plugin, RateLimit, RateLimitError, RateLimitHit,
+    RateLimitedCtx, RateLimits, RateScope, RefOps, Register, ReplyText, ReportKind, Resource,
+    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
+    RunError, RunOutcome, Runtime, SelectedValues, StartError, State, SuggestionLabel,
+    SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -714,6 +715,12 @@ pub use noctis_core::{
 ///   citing `[INT-05]`: `auto_defer = false` without that responder, that
 ///   responder without `auto_defer = false`, or `auto_defer = false`
 ///   without any responder parameter.
+/// - `command_type = "all" | "slash" | "prefix"` (default `"all"`, AD-32):
+///   where the Command answers. With the `prefix` feature's `PrefixPlugin`
+///   installed, an `"all"` Command also runs from `!<path> <args>`
+///   messages; `"slash"` never runs from a message; `"prefix"` is never
+///   published and answers only messages. [`CommandHandler::command_type`]
+///   reads it ([`CommandType`]); any other value is a compile error.
 /// - the metadata arguments (see "Metadata" below).
 ///
 /// Every check of [`rules::command::validate_pattern_spacing`],
@@ -2826,13 +2833,16 @@ pub mod i18n {
 
 #[cfg(feature = "prefix")]
 pub mod prefix {
-    //! Prefix commands (feature `prefix`, P2, FR-14): [`PrefixPlugin`] runs
-    //! opted-in slash Commands from messages such as `!warn <@5> 3 rude`,
-    //! through the same `#[handler]`.
+    //! Prefix commands (feature `prefix`, P2, FR-14, AD-32): [`PrefixPlugin`]
+    //! emulates the App's slash Commands from messages such as
+    //! `!warn <@5> 3 rude`, through the same `#[handler]`. Prefix commands
+    //! are never coded or listed separately.
     //!
-    //! - **Opt-in by type.** `PrefixPlugin::new("!").command::<Warn>()`: only
-    //!   opted-in Commands answer, and each must also be mounted in a Module.
-    //!   The prefix is 1 to 32 Unicode scalars without whitespace, matched
+    //! - **Every Command.** `PrefixPlugin::new("!")`: every mounted Command
+    //!   answers, except those declared `command_type = "slash"`;
+    //!   `command_type = "prefix"` ones answer only here and are never
+    //!   published ([`CommandType`](crate::CommandType)). A guild-scoped
+    //!   Command answers only in its guild. The prefix is 1 to 32 Unicode scalars without whitespace, matched
     //!   case-sensitively and followed directly by the Command Path, whose
     //!   words match case-insensitively (`!WARN` runs `warn`).
     //! - **Intent.** The plugin's `MESSAGE_CREATE` handler needs the
@@ -2855,11 +2865,13 @@ pub mod prefix {
     //!   a public `noctis.validation.failed` reply and the Command Error Sink
     //!   gets the error.
     //! - **Ignored.** Messages from bots or webhooks, system messages, text
-    //!   without the prefix or an opted-in path, and Commands whose
+    //!   without the prefix or a known path, and Commands whose
     //!   `contexts` exclude the place get no answer.
-    //! - **Limits.** A message carries no permission data, so a Command
-    //!   declaring `permissions`, `nsfw = true` or a CHANNEL option with
-    //!   `channel_types` cannot be opted in (build violation). Only users
+    //! - **Not yet emulated.** A Command whose base declares `permissions`
+    //!   or `nsfw = true`, that declares `response = ephemeral`, or that has
+    //!   a CHANNEL option with `channel_types` stays slash-only for now (a
+    //!   `debug` line when the table is built).
+    //! - **Limits.** Only users
     //!   (mentioned or the author) and attachments are resolved:
     //!   `ResolvedRole`, `ResolvedChannel` and member data are not, so such
     //!   fields fail with `Unresolved`; take ids (`Id<RoleMarker>`) instead.
@@ -2890,7 +2902,7 @@ pub mod prefix {
     //!     .intents(Intents::MESSAGE_CONTENT)
     //!     .module(Module::new("fun").add::<Say>())
     //!     // `!say hello world` runs the same handler as `/say`.
-    //!     .plugin(PrefixPlugin::new("!").command::<Say>());
+    //!     .plugin(PrefixPlugin::new("!"));
     //! let app = builder.build()?;
     //! # let _ = app;
     //! # Ok(())

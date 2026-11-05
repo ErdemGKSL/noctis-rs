@@ -314,6 +314,9 @@ async fn scopes_and_unknown_paths() {
         .__add(
             logging(&log, "m::gping", &["gping"])
                 .__with_metadata(CommandMetadata::new().guilds(&GUILDS)),
+        )
+        .__add(
+            logging(&log, "m::ponly", &["ponly"]).__with_command_type(crate::CommandType::Prefix),
         );
     let p = Pipeline::start(module).await;
     let mut guild_data = slash("gping", json!([]));
@@ -342,7 +345,8 @@ async fn scopes_and_unknown_paths() {
         log.lines(),
         ["m::gping:gping", "m::ping:ping", "m::ping:ping"]
     );
-    for name in ["nope", "", "gping"] {
+    // AD-32: a `command_type = "prefix"` Command is unknown to interactions.
+    for name in ["nope", "", "gping", "ponly"] {
         p.run(inbound(&interaction(slash(name, json!([])), json!({}))))
             .await;
     }
@@ -360,7 +364,7 @@ async fn scopes_and_unknown_paths() {
         capture
             .lines_with(&["noctis::dispatch", "unknown command"])
             .len(),
-        4
+        5
     );
 }
 
@@ -818,6 +822,7 @@ async fn dispatcher_runs_commands() {
             logging(&log, "m::gping", &["ping"])
                 .__with_metadata(CommandMetadata::new().guilds(&GUILDS)),
         )
+        .__add(logging(&log, "m::sonly", &["sonly"]).__with_command_type(crate::CommandType::Slash))
         .__add(CommandHandler::__new_plain_with_options(
             "m::warn",
             &["warn"],
@@ -876,6 +881,12 @@ async fn dispatcher_runs_commands() {
         .await
         .unwrap_err();
     assert!(matches!(&err, DispatchError::UnknownCommand { path } if &**path == "nope"));
+    // AD-32: a `command_type = "slash"` Command never runs from a message.
+    let err = dispatcher
+        .run_command(invocation(CommandInput::new("sonly")))
+        .await
+        .unwrap_err();
+    assert!(matches!(&err, DispatchError::UnknownCommand { path } if &**path == "sonly"));
     assert_eq!(p.requests().len(), 3);
 
     let input = CommandInput::new("warn")

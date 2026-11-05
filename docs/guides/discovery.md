@@ -132,4 +132,5 @@ discovered structs that name its id. Two mistakes are build errors:
   targets, among others. On a target it does not support, nothing is discovered and the
   App builds without those registrations (the Commands are then missing from Publish),
   so use `Module::add` there.
-- Prefix commands stay explicit: `PrefixPlugin::new("!").command::<T>()`.
+- Prefix commands need no list either: with `PrefixPlugin::new("!")` installed, every
+  discovered Command also answers `!<path>` unless it declares `command_type = "slash"`.

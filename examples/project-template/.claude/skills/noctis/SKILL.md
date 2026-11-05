@@ -19,7 +19,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `1e1c0d528a70d4a04f81fff441724b9bff1027761f0b70cae94f47681d4aaec3` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `ddb799742b0bab22cf57ad97b0eaa155f5bd9315bfcd9bc151787815705ad729` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -480,7 +480,7 @@ Read only what the task touches.
 | File | Read when you… |
 | --- | --- |
 | `references/app-and-sharding.md` | build/run the App, single-binary assets and the first-run `.env`, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence and gateway commands (`noctis::gateway`: `Presence`, `LargeThreshold`, `MemberRequest`, `GatewayError`), Lifecycle Hooks (`#[derive(Hook)]`, `noctis::lifecycle`, `HookCtx`, `ErrorOrigin::Hook`) and plugin events (`ExtensionEvent`, `Emitter`), shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps (`apps = [..]`, `Module::apps`, `GuildAccess` allow/deny lists, pipeline stage 3) and `Runtime` |
-| `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `CommandInput::with_error`, `OptionError::Constraint`) |
+| `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish, prefix commands (`prefix` feature: `noctis::prefix::PrefixPlugin`, `command_type`, `CommandInput::with_error`, `OptionError::Constraint`) |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, bot messages in any channel (`ctx.messages()`), webhooks |
 | `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`alt!`/`rgb!`; attachments: upload, keep-by-id edits, Upload Budget, rendered-image alt |

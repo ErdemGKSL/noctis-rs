@@ -67,10 +67,13 @@ pub(super) fn strip_install(command: &mut Value) {
     }
 }
 
-/// Whether `node` has a handler `keep` accepts (itself or below it).
+/// Whether `node` has a handler `keep` accepts (itself or below it); a
+/// prefix-only handler (`command_type = "prefix"`, AD-32) is never published.
 fn kept(node: &CommandNode, keep: &dyn Fn(&'static str) -> bool) -> bool {
     if node.children.is_empty() {
-        node.handler.as_ref().is_none_or(|entry| keep(entry.module))
+        node.handler
+            .as_ref()
+            .is_none_or(|entry| entry.handler.command_type().is_slash() && keep(entry.module))
     } else {
         node.children.iter().any(|child| kept(child, keep))
     }

@@ -51,8 +51,9 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
 - **Test kit and conformance suites.** The bot's App on local Discord fakes with
   simulated interactions, message and Template pixel snapshots and a memory check, and
   conformance suites that check your own Adapters.
-- **Prefix commands.** Opted-in slash Commands also run from messages such as
-  `!warn <@5> 3`.
+- **Prefix commands.** With `PrefixPlugin` installed, every slash Command also runs
+  from messages such as `!warn <@5> 3`, through the same handler and with no list;
+  `#[command(.., command_type = "slash" | "prefix" | "all")]` picks the transports.
 - **Voice.** Joining and leaving through Noctis's gateway, a bounded per-guild queue,
   typed track events, Opus passthrough and a recording driver for tests;
   `examples/music-bot` shows a whole music bot.

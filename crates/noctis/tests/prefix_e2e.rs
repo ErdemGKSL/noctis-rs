@@ -1,8 +1,9 @@
-//! Story 15.4: prefix commands end to end through `noctis::testkit::TestApp`.
-//! A gateway `MESSAGE_CREATE` reaches the real `PrefixPlugin`, which runs the
-//! same `#[handler]` as the slash Command and replies to the message; a bad
-//! argument is the slash decode's typed `OptionError`; GW-05 needs
-//! `MESSAGE_CONTENT`.
+//! Stories 15.4 and 19.1: prefix commands end to end through
+//! `noctis::testkit::TestApp`. A gateway `MESSAGE_CREATE` reaches the real
+//! `PrefixPlugin`, which runs the same `#[handler]` as the slash Command
+//! (every mounted Command, with no opt-in list) and replies to the message;
+//! a bad argument is the slash decode's typed `OptionError`; GW-05 needs
+//! `MESSAGE_CONTENT`; `command_type` picks the transports.
 
 #![cfg(all(feature = "prefix", feature = "testkit"))]
 #![allow(
@@ -74,7 +75,7 @@ fn builder(errors: &Arc<OptionErrors>) -> AppBuilder {
         .intents(Intents::MESSAGE_CONTENT)
         .error_sink(ErrorOrigin::Command, Arc::clone(errors))
         .module(Module::new("mod").add::<Warn>())
-        .plugin(PrefixPlugin::new("!").command::<Warn>());
+        .plugin(PrefixPlugin::new("!"));
     builder
 }
 
@@ -205,7 +206,7 @@ async fn gw_05_prefix_needs_message_content() {
     let mut builder = App::builder();
     builder
         .module(Module::new("mod").add::<Warn>())
-        .plugin(PrefixPlugin::new("!").command::<Warn>());
+        .plugin(PrefixPlugin::new("!"));
     let Err(TestError::Build(err)) = TestApp::build(&mut builder).await else {
         panic!("the build must fail");
     };
@@ -228,24 +229,13 @@ async fn gw_05_prefix_needs_message_content() {
     assert!(text.contains("MESSAGE_CONTENT"), "{text}");
 }
 
-/// P1 and P5 through the real derive: violations name the plugin.
+/// P1 through the real build: the violation names the plugin.
 #[tokio::test(flavor = "multi_thread")]
 async fn plugin_violations() {
-    #[derive(SlashCommand)]
-    #[command("ban", description = "Ban", permissions = BAN_MEMBERS)]
-    struct Ban;
-
-    impl Ban {
-        #[handler]
-        async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
-            ctx.reply_text("banned").await
-        }
-    }
-
     let err = App::builder()
         .intents(Intents::MESSAGE_CONTENT)
-        .module(Module::new("mod").add::<Ban>())
-        .plugin(PrefixPlugin::new("").command::<Ban>())
+        .module(Module::new("mod").add::<Warn>())
+        .plugin(PrefixPlugin::new(""))
         .build()
         .unwrap_err();
     let messages: Vec<String> = err
@@ -259,10 +249,68 @@ async fn plugin_violations() {
             _ => None,
         })
         .collect();
-    assert_eq!(messages.len(), 2, "{messages:?}");
+    assert_eq!(messages.len(), 1, "{messages:?}");
     assert!(messages[0].starts_with("prefix is empty"));
-    assert!(messages[1].contains("Ban` cannot be a prefix command"));
-    assert!(messages[1].contains("`permissions`"));
+}
+
+/// What the `command_type` handlers saw.
+static TYPED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+#[derive(SlashCommand)]
+#[command("slashonly", description = "Slash only", command_type = "slash")]
+struct SlashOnly;
+
+impl SlashOnly {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        TYPED.lock().unwrap().push("slash");
+        ctx.reply_text("slash").await
+    }
+}
+
+#[derive(SlashCommand)]
+#[command("prefixonly", description = "Prefix only", command_type = "prefix")]
+struct PrefixOnly;
+
+impl PrefixOnly {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        TYPED.lock().unwrap().push("prefix");
+        ctx.reply_text("prefix").await
+    }
+}
+
+/// Story 19.1: a `command_type = "slash"` Command ignores messages; a
+/// `command_type = "prefix"` one answers them (the core publish tests show
+/// it is never published).
+#[tokio::test(flavor = "multi_thread")]
+async fn command_type_picks_the_transports() {
+    let mut builder = App::builder();
+    builder
+        .intents(Intents::MESSAGE_CONTENT)
+        .module(
+            Module::new("mod")
+                .add::<SlashOnly>()
+                .add::<PrefixOnly>()
+                .add::<Here>(),
+        )
+        .plugin(PrefixPlugin::new("!"));
+    let app = TestApp::build(&mut builder).await.unwrap();
+    app.http_fake().route(
+        Method::POST,
+        CHANNEL,
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
+    );
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(20, "!slashonly", &person()));
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(21, "!prefixonly", &person()));
+    let sent = wait_sent(&app, 1).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(sent.len(), 1);
+    assert_eq!(body(&sent[0])["message_reference"]["message_id"], "21");
+    assert_eq!(*TYPED.lock().unwrap(), ["prefix"]);
+    app.stop().await.unwrap();
 }
 
 /// What the guild-only handler saw as `ctx.guild_id()`.
@@ -288,7 +336,7 @@ async fn prefix_contexts_and_guild_id() {
     builder
         .intents(Intents::MESSAGE_CONTENT | Intents::DIRECT_MESSAGES)
         .module(Module::new("mod").add::<Here>())
-        .plugin(PrefixPlugin::new("!").command::<Here>());
+        .plugin(PrefixPlugin::new("!"));
     let app = TestApp::build(&mut builder).await.unwrap();
     app.http_fake().route(
         Method::POST,

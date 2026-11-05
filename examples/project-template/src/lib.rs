@@ -73,8 +73,10 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         // its attribute (`module = "profile"`), in whatever file it lives. Adding a
         // feature is adding files; `Module::add::<T>()` stays the explicit alternative.
         .discover();
-    // Prefix commands (template feature `prefix`, off by default): `!profile @user` and
-    // `!badge gold` run the same handlers as `/profile` and `/badge`. Message text needs
+    // Prefix commands (template feature `prefix`, off by default): every Command also
+    // answers `!<path> <args>` (`!profile @user`, `!badge gold`) with the same handler;
+    // there is no list here and no separate prefix code. `command_type = "slash"` on a
+    // Command keeps it slash-only, `"prefix"` makes it prefix-only. Message text needs
     // the privileged MESSAGE_CONTENT intent (enable it in the Developer Portal too);
     // without `.intents(..)` the build fails with `[GW-05]` MissingIntent.
     // Voice channels (template feature `voice`, off by default; needs a C compiler and
@@ -88,10 +90,6 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     #[cfg(feature = "prefix")]
     builder
         .intents(noctis::twilight::model::gateway::Intents::MESSAGE_CONTENT)
-        .plugin(
-            noctis::prefix::PrefixPlugin::new("!")
-                .command::<modules::profile::Profile>()
-                .command::<modules::profile::Badge>(),
-        );
+        .plugin(noctis::prefix::PrefixPlugin::new("!"));
     builder
 }

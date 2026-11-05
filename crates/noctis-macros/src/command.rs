@@ -32,7 +32,7 @@ const CAP_LITERAL: &str =
     "`max_expansions` takes an integer literal, such as `max_expansions = 30`";
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `command_type`, `locales` or `default_locale`";
 
 /// The hidden flag of Noctis's own trybuild fixtures: `locales` is relative
 /// to the invoking source file.
@@ -43,6 +43,9 @@ const RESPONSE_UPDATE: &str = "[INT-04] a Command cannot `update` its message: w
 const RESPONSE_VALUE: &str = "`response` takes `public` or `ephemeral`";
 
 const AUTO_DEFER_VALUE: &str = "`auto_defer` takes `true` or `false`";
+
+/// The error of a `command_type` value that is not one of the three.
+const COMMAND_TYPE_VALUE: &str = "`command_type` takes \"slash\", \"prefix\" or \"all\" (the default): write `command_type = \"slash\"`";
 
 /// The parsed `#[command(..)]` arguments.
 struct Args {
@@ -60,6 +63,8 @@ struct Args {
     rate_limits: RateLimits,
     /// `module = ".."`: the Module a discovered Command joins (FR-81).
     module: Option<LitStr>,
+    /// `command_type = ".."` (AD-32): the `CommandType` variant name.
+    command_type: Option<&'static str>,
 }
 
 /// The handler arguments every Command macro shares: `response` and
@@ -227,6 +232,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         apps: Apps::default(),
         rate_limits: RateLimits::default(),
         module: None,
+        command_type: None,
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -273,6 +279,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             parsed.module = Some(crate::discover::parse(&segment, None, "#[command]")?);
             continue;
         }
+        if name == "command_type" {
+            parsed.command_type = Some(parse_command_type(&segment)?);
+            continue;
+        }
         if matches!(
             name.as_str(),
             "locales" | "default_locale" | FROM_SOURCE_FILE
@@ -297,12 +307,32 @@ fn check_arg_name(name: &str, span: Span) -> syn::Result<()> {
             ))
         }
         "description" | "max_expansions" | "response" | "auto_defer" | "locales"
-        | "default_locale" | "flags" | "apps" | "module" | FROM_SOURCE_FILE => Ok(()),
+        | "default_locale" | "flags" | "apps" | "module" | "command_type" | FROM_SOURCE_FILE => {
+            Ok(())
+        }
         other if meta::is_meta(other) => Ok(()),
         _ => Err(syn::Error::new(
             span,
             format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
         )),
+    }
+}
+
+/// Parses `command_type = "slash" | "prefix" | "all"`; the `CommandType`
+/// variant it names.
+fn parse_command_type(segment: &[TokenTree]) -> syn::Result<&'static str> {
+    let value = match segment {
+        [_, TokenTree::Punct(eq), TokenTree::Literal(lit)] if eq.as_char() == '=' => {
+            let tokens = TokenStream::from(TokenTree::Literal(lit.clone()));
+            syn::parse2::<LitStr>(tokens).ok().map(|lit| lit.value())
+        }
+        _ => None,
+    };
+    match value.as_deref() {
+        Some("slash") => Ok("Slash"),
+        Some("prefix") => Ok("Prefix"),
+        Some("all") => Ok("All"),
+        _ => Err(syn::Error::new(span_of(segment), COMMAND_TYPE_VALUE)),
     }
 }
 
@@ -821,6 +851,10 @@ fn expand(
         args.meta.tokens()
     };
     let ephemerality = args.handler.ephemerality();
+    let command_type = args.command_type.map(|variant| {
+        let variant = Ident::new(variant, Span::call_site());
+        quote!(const COMMAND_TYPE: #core::CommandType = #core::CommandType::#variant;)
+    });
     let rate_limits = args.rate_limits.const_item();
     let scaffolding = crate::kind::scaffolding_scoped(
         ident,
@@ -842,6 +876,7 @@ fn expand(
             const DESCRIPTIONS: &'static [&'static ::core::primitive::str] = &[#(#descriptions),*];
             const METADATA: #core::CommandMetadata = #metadata;
             const EPHEMERALITY: #core::Ephemerality = #ephemerality;
+            #command_type
             #rate_limits
         }
 
@@ -1202,7 +1237,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `command_type`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", ephemeral),
@@ -1226,7 +1261,7 @@ mod tests {
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `module`, `command_type`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1489,6 +1524,42 @@ mod tests {
                 item(PING)
             )
             .is_ok()
+        );
+    }
+
+    /// Story 19.1: `command_type` values (AD-32).
+    #[test]
+    fn command_type_values() {
+        for (value, variant) in [("slash", "Slash"), ("prefix", "Prefix"), ("all", "All")] {
+            let out = expand(
+                quote!("ping", description = "d", command_type = #value),
+                item(PING),
+            )
+            .unwrap()
+            .to_string();
+            assert!(
+                out.contains(&format!("COMMAND_TYPE : :: noctis :: __private :: core :: CommandType = :: noctis :: __private :: core :: CommandType :: {variant}")),
+                "{out}"
+            );
+        }
+        let out = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string();
+        assert!(!out.contains("COMMAND_TYPE"), "{out}");
+        for args in [
+            quote!("ping", command_type = slash),
+            quote!("ping", command_type = "both"),
+            quote!("ping", command_type = "Slash"),
+            quote!("ping", command_type),
+        ] {
+            assert_eq!(error(args, PING), COMMAND_TYPE_VALUE);
+        }
+        assert_eq!(
+            error(
+                quote!("ping", command_type = "all", command_type = "all"),
+                PING
+            ),
+            "duplicate `#[command]` argument `command_type`"
         );
     }
 

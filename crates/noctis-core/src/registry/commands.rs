@@ -108,6 +108,11 @@ impl ScopeCommands {
         self.paths.get(path)
     }
 
+    /// Every handler with its full Command Path, in no particular order.
+    pub(crate) fn commands(&self) -> impl Iterator<Item = (&'static str, &Arc<CommandEntry>)> {
+        self.paths.iter().map(|(path, entry)| (*path, entry))
+    }
+
     /// The context menu of `kind` named `name`, in O(1).
     pub(crate) fn menu(&self, kind: MenuKind, name: &str) -> Option<&Arc<MenuEntry>> {
         self.menus.get(&kind)?.get(name)

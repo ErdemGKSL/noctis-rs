@@ -279,7 +279,7 @@ pub use boot_flags::{BootFlagError, BootFlags};
 pub use channel_message::{
     ChannelMessage, DeleteMessage, EditMessage, MessageError, Messages, SendMessage,
 };
-pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
+pub use command::{CommandCtx, CommandHandler, CommandPath, CommandType, UnknownCommandPath};
 #[doc(hidden)]
 pub use component::{__Absent, __ExpiredHook, __HookCtx, __StaleHook};
 pub use component::{

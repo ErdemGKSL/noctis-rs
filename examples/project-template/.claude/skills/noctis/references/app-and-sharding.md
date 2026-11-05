@@ -1266,10 +1266,10 @@ let app = builder.build()?;
   and font registry (`FontRegistry`, frozen per font list) from the Runtime, decodes
   the App's static images and sets the takumi Renderer (`images.md` §6).
 - `noctis::prefix::PrefixPlugin` (`prefix` feature, P2):
-  `.plugin(PrefixPlugin::new("!").command::<Warn>())` checks its configuration (prefix,
-  opted-in Commands; `BuildViolation::Plugin`) and mounts a `MESSAGE_CREATE` handler
-  (Module `noctis-prefix`) that runs the opted-in slash Commands from `!warn <@5> 3`
-  messages through `ctx.dispatcher()`. It needs `.intents(Intents::MESSAGE_CONTENT)`
+  `.plugin(PrefixPlugin::new("!"))` checks its prefix (`BuildViolation::Plugin`) and
+  mounts a `MESSAGE_CREATE` handler (Module `noctis-prefix`) that runs the App's slash
+  Commands (all but `command_type = "slash"` ones) from `!warn <@5> 3` messages through
+  `ctx.dispatcher()`. It needs `.intents(Intents::MESSAGE_CONTENT)`
   (else `[GW-05]` `MissingIntent`); see `commands.md` §9.
 
 You rarely write a plugin yourself; a Module is the unit for bot features.

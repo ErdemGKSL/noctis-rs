@@ -1,4 +1,4 @@
-//! The pure half of the plugin: which messages are ignored, which opted-in
+//! The pure half of the plugin: which messages are ignored, which
 //! Command Path a message names ([`Table::find`]), and how its arguments
 //! bind to the Command's options ([`bind`]).
 //!
@@ -16,18 +16,16 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use noctis_core::__rules::command::{
-    Choice, ChoiceValue, InteractionContext, NumericValue, OptionDecl, OptionType,
+    Choice, ChoiceValue, InteractionContext, NumericValue, OptionDecl, OptionType, Scope,
 };
 use noctis_core::__rules::len::discord_len;
-use noctis_core::{CommandInput, OptionError, OptionValue};
+use noctis_core::{CommandInput, CommandMetadata, Ephemerality, OptionError, OptionValue};
 use twilight_model::application::interaction::InteractionDataResolved;
 use twilight_model::channel::message::{Mention, MessageType};
 use twilight_model::channel::{Attachment, Message};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{GenericMarker, UserMarker};
 use twilight_model::user::User;
-
-use crate::Opted;
 
 /// The largest INTEGER magnitude Discord accepts (2^53 − 1, OPT-03).
 const INTEGER_MAX: u64 = 9_007_199_254_740_991;
@@ -44,23 +42,45 @@ pub(crate) fn is_ignored(message: &Message) -> bool {
         || !matches!(message.kind, MessageType::Regular | MessageType::Reply)
 }
 
-/// The prefix and every opted-in Command Path, longest first.
+/// The prefix and every Command Path that answers prefix messages, longest
+/// first (a guild-scoped path before a global one of the same length).
 #[derive(Debug)]
 pub(crate) struct Table {
     prefix: String,
     entries: Vec<Entry>,
 }
 
-/// One opted-in Command Path.
+/// One Command Path that answers prefix messages.
 #[derive(Debug)]
 pub(crate) struct Entry {
+    scope: Scope,
     path: &'static str,
     words: Vec<&'static str>,
     options: &'static [OptionDecl<'static>],
-    contexts: Option<&'static [InteractionContext]>,
+    metadata: CommandMetadata,
+    ephemerality: Ephemerality,
 }
 
 impl Entry {
+    /// The entry of the Command Path `path` registered in `scope`, with its
+    /// options, resolved base metadata and declared `response`.
+    pub(crate) fn new(
+        scope: Scope,
+        path: &'static str,
+        options: &'static [OptionDecl<'static>],
+        metadata: CommandMetadata,
+        ephemerality: Ephemerality,
+    ) -> Self {
+        Self {
+            scope,
+            path,
+            words: path.split(' ').collect(),
+            options,
+            metadata,
+            ephemerality,
+        }
+    }
+
     /// The Command Path, words joined by one ASCII space.
     pub(crate) fn path(&self) -> &'static str {
         self.path
@@ -71,6 +91,16 @@ impl Entry {
         self.options
     }
 
+    /// The resolved base metadata Discord would enforce.
+    pub(crate) fn metadata(&self) -> &CommandMetadata {
+        &self.metadata
+    }
+
+    /// The declared `response`.
+    pub(crate) fn ephemerality(&self) -> Ephemerality {
+        self.ephemerality
+    }
+
     /// Whether the Command's `contexts` allow a guild message (`in_guild`)
     /// or a DM; no `contexts` allows both.
     pub(crate) fn allowed(&self, in_guild: bool) -> bool {
@@ -79,36 +109,44 @@ impl Entry {
         } else {
             InteractionContext::BotDm
         };
-        self.contexts
+        self.metadata
+            .contexts
             .is_none_or(|contexts| contexts.contains(&place))
+    }
+
+    /// Whether the entry answers a message in `guild` (a DM without one):
+    /// global entries everywhere, guild-scoped ones in their guild only.
+    fn serves(&self, guild: Option<u64>) -> bool {
+        match self.scope {
+            Scope::Global => true,
+            Scope::Guild(id) => guild == Some(id),
+        }
     }
 }
 
 impl Table {
-    pub(crate) fn new(prefix: &str, commands: &[Opted]) -> Self {
-        let mut entries: Vec<Entry> = commands
-            .iter()
-            .flat_map(|opted| {
-                opted.paths.iter().map(|&path| Entry {
-                    path,
-                    words: path.split(' ').collect(),
-                    options: opted.options,
-                    contexts: opted.metadata.contexts,
-                })
-            })
-            .collect();
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.words.len()));
+    pub(crate) fn new(prefix: &str, mut entries: Vec<Entry>) -> Self {
+        entries.sort_by_key(|entry| {
+            (
+                std::cmp::Reverse(entry.words.len()),
+                entry.scope == Scope::Global,
+            )
+        });
         Self {
             prefix: prefix.to_owned(),
             entries,
         }
     }
 
-    /// The entry `content` names and its argument text: the prefix, then
-    /// directly the path words (case-insensitive, any whitespace run
-    /// between them), then whitespace or the end. Allocates nothing for a
-    /// message without the prefix.
-    pub(crate) fn find<'c>(&self, content: &'c str) -> Option<(&Entry, &'c str)> {
+    /// The entry `content` names in `guild` (a DM without one) and its
+    /// argument text: the prefix, then directly the path words
+    /// (case-insensitive, any whitespace run between them), then whitespace
+    /// or the end. Allocates nothing for a message without the prefix.
+    pub(crate) fn find<'c>(
+        &self,
+        content: &'c str,
+        guild: Option<u64>,
+    ) -> Option<(&Entry, &'c str)> {
         if self.prefix.is_empty() {
             return None;
         }
@@ -118,6 +156,7 @@ impl Table {
         }
         self.entries
             .iter()
+            .filter(|entry| entry.serves(guild))
             .find_map(|entry| match_words(rest, &entry.words).map(|args| (entry, args)))
     }
 }

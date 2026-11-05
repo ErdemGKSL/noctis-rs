@@ -130,6 +130,8 @@ pub trait __SlashCommand:
     const METADATA: CommandMetadata;
     /// The declared `response`.
     const EPHEMERALITY: Ephemerality;
+    /// The declared `command_type` (AD-32).
+    const COMMAND_TYPE: crate::CommandType = crate::CommandType::All;
     /// The declared `rate_limit(..)`s, in declared order (INT-14).
     const RATE_LIMITS: &'static [RateLimit] = &[];
 }
@@ -164,6 +166,7 @@ fn slash<S: __SlashCommand>(handler: CommandHandler) -> CommandHandler {
         .__with_descriptions(S::DESCRIPTIONS)
         .__with_metadata(S::METADATA)
         .__with_ephemerality(S::EPHEMERALITY)
+        .__with_command_type(S::COMMAND_TYPE)
         .__with_rate_limits(S::RATE_LIMITS)
 }
 

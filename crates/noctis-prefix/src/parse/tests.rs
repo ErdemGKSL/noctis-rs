@@ -2,16 +2,15 @@
 
 #![allow(clippy::unwrap_used, reason = "tests panic with the failing case")]
 
-use std::any::TypeId;
-
-use noctis_core::__rules::command::{Choice, ChoiceValue, NumericValue, OptionDecl, OptionType};
+use noctis_core::__rules::command::{
+    Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, Scope,
+};
 use noctis_core::{CommandInput, CommandMetadata, InteractionContext, OptionError, OptionValue};
 use serde_json::{Value, json};
 use twilight_model::channel::Message;
 use twilight_model::id::Id;
 
-use super::{Table, bind, is_ignored};
-use crate::Opted;
+use super::{Entry, Table, bind, is_ignored};
 
 const AUTHOR: u64 = 42;
 
@@ -458,38 +457,30 @@ fn first_error_wins() {
     );
 }
 
-struct Warn;
-struct Cfg;
-struct Unlu;
-
-fn opted<T: 'static>(
-    paths: &'static [&'static str],
-    options: &'static [OptionDecl<'static>],
-) -> Opted {
-    Opted {
-        type_id: TypeId::of::<T>(),
-        name: "bot::T",
-        paths,
+fn entry(path: &'static str, options: &'static [OptionDecl<'static>]) -> Entry {
+    Entry::new(
+        Scope::Global,
+        path,
         options,
-        ephemerality: noctis_core::Ephemerality::Public,
-        metadata: CommandMetadata::new(),
-    }
+        CommandMetadata::new(),
+        noctis_core::Ephemerality::Public,
+    )
 }
 
 fn table(prefix: &str) -> Table {
     Table::new(
         prefix,
-        &[
-            opted::<Warn>(&["warn"], &WARN),
-            opted::<Cfg>(&["config set prefix"], &CFG),
-            opted::<Unlu>(&["ünlü"], &[]),
+        vec![
+            entry("warn", &WARN),
+            entry("config set prefix", &CFG),
+            entry("ünlü", &[]),
         ],
     )
 }
 
 fn found<'c>(table: &Table, content: &'c str) -> Option<(&'static str, &'c str)> {
     table
-        .find(content)
+        .find(content, Some(300))
         .map(|(entry, args)| (entry.path(), args))
 }
 
@@ -550,15 +541,40 @@ fn r38_ignored_messages() {
 /// R39: contexts.
 #[test]
 fn r39_contexts() {
-    let mut guild_only = opted::<Warn>(&["warn"], &WARN);
+    let mut guild_only = entry("warn", &WARN);
     guild_only.metadata = CommandMetadata::new().contexts(&[InteractionContext::Guild]);
-    let mut dm_only = opted::<Cfg>(&["dm"], &[]);
+    let mut dm_only = entry("dm", &[]);
     dm_only.metadata = CommandMetadata::new().contexts(&[InteractionContext::BotDm]);
-    let t = Table::new("!", &[guild_only, dm_only, opted::<Unlu>(&["any"], &[])]);
-    let allowed = |content: &str, in_guild: bool| t.find(content).unwrap().0.allowed(in_guild);
+    let t = Table::new("!", vec![guild_only, dm_only, entry("any", &[])]);
+    let allowed =
+        |content: &str, in_guild: bool| t.find(content, None).unwrap().0.allowed(in_guild);
     assert!(allowed("!warn", true));
     assert!(!allowed("!warn", false));
     assert!(allowed("!dm", false));
     assert!(!allowed("!dm", true));
     assert!(allowed("!any", true) && allowed("!any", false));
+}
+
+/// Story 19.1: a guild-scoped path answers only in its guild and wins over
+/// a global path of the same length there.
+#[test]
+fn guild_scope_first() {
+    let mut guild = entry("warn", &[]);
+    guild.scope = Scope::Guild(300);
+    let t = Table::new("!", vec![entry("warn", &WARN), guild, entry("x", &[])]);
+    let scope = |guild: Option<u64>| t.find("!warn", guild).map(|(e, _)| e.scope);
+    assert_eq!(scope(Some(300)), Some(Scope::Guild(300)));
+    assert_eq!(scope(Some(301)), Some(Scope::Global));
+    assert_eq!(scope(None), Some(Scope::Global));
+    let only = Table::new(
+        "!",
+        vec![{
+            let mut e = entry("cfg", &[]);
+            e.scope = Scope::Guild(300);
+            e
+        }],
+    );
+    assert!(only.find("!cfg", Some(1)).is_none());
+    assert!(only.find("!cfg", None).is_none());
+    assert!(only.find("!cfg", Some(300)).is_some());
 }

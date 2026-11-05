@@ -480,6 +480,45 @@ where
     Box::pin(fut.map(|result| result.map(<R as IntoResponse<Command>>::__into_response)))
 }
 
+/// Where a slash Command answers (FR-14, AD-32): the
+/// `#[command(.., command_type = "..")]` argument.
+///
+/// With the prefix plugin installed, every Command is also a prefix command
+/// (the same struct and handler, run from a message) unless it is
+/// [`Slash`](Self::Slash); a [`Prefix`](Self::Prefix) Command is never
+/// published to Discord.
+///
+/// ```
+/// use noctis_core::CommandType;
+///
+/// assert_eq!(CommandType::default(), CommandType::All);
+/// assert!(CommandType::All.is_slash() && CommandType::All.is_prefix());
+/// assert!(!CommandType::Prefix.is_slash());
+/// assert!(!CommandType::Slash.is_prefix());
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CommandType {
+    /// `command_type = "slash"`: published and run as a slash Command only.
+    Slash,
+    /// `command_type = "prefix"`: run from messages only, never published.
+    Prefix,
+    /// `command_type = "all"` (the default): both.
+    #[default]
+    All,
+}
+
+impl CommandType {
+    /// Whether the Command is published and answers interactions.
+    pub const fn is_slash(self) -> bool {
+        matches!(self, Self::Slash | Self::All)
+    }
+
+    /// Whether the Command answers prefix messages.
+    pub const fn is_prefix(self) -> bool {
+        matches!(self, Self::Prefix | Self::All)
+    }
+}
+
 /// One slash Command handler, as `#[command]` builds it; add it to a
 /// [`Module`](crate::Module).
 ///
@@ -498,6 +537,7 @@ pub struct CommandHandler {
     options: &'static [OptionDecl<'static>],
     metadata: CommandMetadata,
     ephemerality: Ephemerality,
+    command_type: CommandType,
     auto_defer: bool,
     call: Arc<ErasedCommand>,
     /// The autocomplete handler linked to an option, by option name.
@@ -532,6 +572,7 @@ impl CommandHandler {
             options,
             metadata: CommandMetadata::new(),
             ephemerality: Ephemerality::Public,
+            command_type: CommandType::All,
             auto_defer: D::AUTO_DEFER,
             call,
             autocomplete: |_| None,
@@ -740,6 +781,12 @@ impl CommandHandler {
         self.ephemerality
     }
 
+    /// Where the Command answers: `#[command(.., command_type = "..")]`,
+    /// [`CommandType::All`] by default.
+    pub fn command_type(&self) -> CommandType {
+        self.command_type
+    }
+
     /// Whether the pipeline auto-defers the Command (INT-01): `false` when
     /// it is declared `#[command(.., auto_defer = false)]`, whose handler
     /// takes `CommandResponder<Manual>`, may open a modal as its first
@@ -762,6 +809,17 @@ impl CommandHandler {
     pub fn __with_ephemerality(self, ephemerality: Ephemerality) -> Self {
         Self {
             ephemerality,
+            ..self
+        }
+    }
+
+    /// Replaces the command type; what `#[command(.., command_type = ..)]`
+    /// appends.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_command_type(self, command_type: CommandType) -> Self {
+        Self {
+            command_type,
             ..self
         }
     }

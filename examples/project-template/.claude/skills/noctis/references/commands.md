@@ -100,9 +100,11 @@ The first argument is the path or pattern, a string literal (raw strings work). 
 `description`, `max_expansions`, `response`, `auto_defer` and the metadata arguments
 `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds` and `rate_limit(..)`, plus `flags`
 (Boot Flags, `modules-middleware-ratelimits.md` §2), `apps` (App restriction,
-`app-and-sharding.md` §10) and `locales`/`default_locale`. An unknown argument lists the landed names (`` unknown `#[command]`
-argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`,
-`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `apps`, `locales` or
+`app-and-sharding.md` §10), `module` (discovery, `modules-middleware-ratelimits.md` §1b),
+`command_type` (prefix emulation, §9) and `locales`/`default_locale`. An unknown argument
+lists the landed names (`` unknown `#[command]` argument `foo`: expected `description`,
+`max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`,
+`nsfw`, `guilds`, `flags`, `apps`, `module`, `command_type`, `locales` or
 `default_locale` ``), and each argument
 may appear once (`` duplicate `#[command]` argument `nsfw` ``). The withdrawn bare flags
 are unknown arguments naming their replacement: `` unknown `#[command]` argument
@@ -117,6 +119,7 @@ are unknown arguments naming their replacement: `` unknown `#[command]` argument
 | `default_locale = "<code>"` | `i18n` feature: the default locale file to read (default `"en-US"`; a bad code is the `[LOC-01]` message). Both need the feature (``` needs the `i18n` feature of `noctis` ```) |
 | `response = public \| ephemeral` | how the command answers (default public), an ident. Fixed at registration (INT-10); `reply`, `defer_reply()`, a returned message and the auto-defer use it (`reply_as`/`defer_reply_as` override one call); `CommandHandler::ephemerality()` reads it. `response = update` is ``[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral` ``; any other value (`"ephemeral"`, a bare `response`, `loud`) is `` `response` takes `public` or `ephemeral` `` |
 | `auto_defer = true \| false` | a bool literal, default `true` (anything else is `` `auto_defer` takes `true` or `false` ``). `false` disables the auto-defer and is required to open a modal: the handler must take `r: CommandResponder<Manual>` and may call `r.show_modal(m)`; a mismatch is a compile error citing `[INT-05]` (`responder.md` §2b): `false` with a plain `CommandResponder` (`` [INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>` ``), `CommandResponder<Manual>` without it (`` [INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false` ``), or `false` without a responder parameter (`` [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>` ``). `CommandHandler::auto_defer()` reads it. See `responder.md` §4 |
+| `command_type = "all" \| "slash" \| "prefix"` | where the Command answers (default `"all"`, a string literal): with `PrefixPlugin` installed (§9) an `"all"` Command also runs from `!<path>` messages, `"slash"` never does, `"prefix"` answers only messages and is never published. `CommandHandler::command_type()` reads it (`noctis::CommandType`). Any other value is `` `command_type` takes "slash", "prefix" or "all" (the default): write `command_type = "slash"` `` |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
 | `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
@@ -924,9 +927,11 @@ user)`, and read the upload limit from `ctx.limits().attachment_bytes`.
 
 ## 9. Prefix commands (`prefix` feature, P2)
 
-`noctis::prefix::PrefixPlugin` (Noctis feature `prefix`, off by default) runs opted-in
-slash Commands from messages such as `!warn <@5> 3 rude`, through the **same**
-`#[handler]`. With the feature off, `noctis::prefix` does not exist and no intent changes.
+`noctis::prefix::PrefixPlugin` (Noctis feature `prefix`, off by default) makes every
+slash Command the App mounts answer messages such as `!warn <@5> 3 rude` too, through
+the **same** `#[handler]`. Prefix commands are never coded separately and never listed:
+a prefix command is the emulated slash Command (FR-14, AD-32). With the feature off,
+`noctis::prefix` does not exist and no intent changes.
 
 ```rust
 use noctis::prefix::PrefixPlugin;
@@ -935,14 +940,20 @@ use noctis::twilight::model::gateway::Intents;
 let mut builder = App::builder();
 builder
     .intents(Intents::MESSAGE_CONTENT)           // privileged: enable it in the Portal too
-    .module(Module::new("mod").add::<Warn>())    // still mounted as a slash Command
-    .plugin(PrefixPlugin::new("!").command::<Warn>());
+    .module(Module::new("mod").add::<Warn>())    // or `.discover()`
+    .plugin(PrefixPlugin::new("!"));             // `!warn …` now runs Warn's handler
 ```
 
-- **Opt-in by type.** `PrefixPlugin::new(prefix)` then `.command::<T>()` per
-  `#[derive(SlashCommand)]` struct (every path of its Pattern; the same type twice is a
-  no-op). `T` must also be mounted in a Module: a Command not registered in the
-  message's guild scope or globally is ignored (`debug` log).
+- **Every Command, chosen per Command with `command_type`.**
+  `#[command("warn", command_type = "all")]` is the default (slash and prefix);
+  `command_type = "slash"` keeps a Command slash-only (a message never runs it);
+  `command_type = "prefix"` makes it prefix-only (never published to Discord, and an
+  interaction for it is an unknown Command). Any other value is a compile error. Read it
+  with `CommandHandler::command_type() -> noctis::CommandType` (`Slash`, `Prefix`,
+  `All`; `is_slash()`, `is_prefix()`). Without the plugin, `"prefix"` Commands never run.
+- **Scopes.** The table is built from the App's Registry on the first message: a
+  global Command answers everywhere, a guild-scoped one (`guilds = [..]`) only in its
+  guild, and there it wins over a global Command with the same path.
 - **Intent (GW-05).** The plugin mounts a `MESSAGE_CREATE` handler (Module
   `noctis-prefix`) that needs `MESSAGE_CONTENT`; without `.intents(Intents::MESSAGE_CONTENT)`
   the build fails with `[GW-05]` `MissingIntent` naming `MESSAGE_CREATE` and
@@ -952,7 +963,7 @@ builder
   case-sensitively, and is followed directly by the Command Path; path words match
   case-insensitively (`!WARN` runs `warn`) and are separated by any whitespace run
   (`!config  set prefix ?`). `! warn`, `!!warn`, `!warn5` and a partial path
-  (`!config set` when only `config set prefix` is opted in) are ignored.
+  (`!config set` when only `config set prefix` exists) are ignored.
 - **Arguments.** Positional, in option declaration order, separated by whitespace; no
   named arguments and no skipping: a missing argument leaves every later option absent.
   `"two words"` is one argument (`\"` and `\\` escape; any other backslash is literal;
@@ -965,12 +976,15 @@ builder
   (`!pick red extra` → `UnknownChoice { value: "red extra" }`, not `Malformed`).
 - **Ignored messages** (no request, nothing above `debug`): bot authors, webhook
   messages, system messages (only `Regular` and `Reply` kinds run), text without the
-  prefix or an opted-in path, and Commands whose `contexts` exclude the place (a guild
+  prefix or a known path, and Commands whose `contexts` exclude the place (a guild
   message needs `Guild`, a DM `BotDm`; no `contexts` allows both). Edited messages are
   not handled.
 - **The answer** is the Dispatcher's message transport (`responder.md` §4.1): a public
-  reply to the invoking message. A Command declared `response = ephemeral` is refused at
-  build (below), because a message reply cannot be ephemeral.
+  reply to the invoking message.
+- **Not yet emulated:** a Command whose base declares
+  `permissions` or `nsfw = true`, that declares `response = ephemeral`, or that has a
+  CHANNEL option with `channel_types` is left out of the prefix table (one `debug` line
+  on `noctis_prefix` per Command when the table is built) and stays slash-only.
 
 | Option type | Accepted argument |
 | --- | --- |
@@ -1003,14 +1017,11 @@ reply, and the Command Error Sink gets the error.
 | `!warn 5 "3` / `!flag "true"x` | `Malformed { reason: "unclosed quote in the arguments" }` / ``Malformed { reason: "unexpected `x` after closing quote" }`` |
 | `!flag true 1.5 extra`, `!ping x` (unit Command) | ``Malformed { reason: "unexpected argument `extra`" }`` |
 
-**Refused at build** (`BuildViolation::Plugin` naming `PrefixPlugin`), because a message
-cannot enforce them: a Command declaring `permissions`, `nsfw = true`,
-`response = ephemeral`, or a CHANNEL option with `channel_types`; also an empty prefix, a prefix with whitespace or
-over 32 characters, no `.command::<T>()`, and two opted-in types sharing a Command Path
-(see `troubleshooting.md`).
+**Refused at build** (`BuildViolation::Plugin` naming `PrefixPlugin`): an empty
+prefix, a prefix with whitespace, or one over 32 characters (see `troubleshooting.md`).
 
 **Limits.** Only users (mentioned, or the author) and attachments are resolved: a
 `ResolvedRole`, `ResolvedChannel` or member-only field decodes as `Unresolved` over a
 prefix command, and `ResolvedUser.member` is `None`; take ids (`Id<RoleMarker>`,
-`Id<ChannelMarker>`) in Commands you opt in. No per-guild prefix, no mention as prefix,
+`Id<ChannelMarker>`) in Commands that answer prefixes. No per-guild prefix, no mention as prefix,
 no named arguments, no help command, no autocomplete.

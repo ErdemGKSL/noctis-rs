@@ -135,6 +135,32 @@ async fn json_tree() {
     );
 }
 
+/// Story 19.1: a `command_type = "prefix"` handler is never published; a
+/// base left without a published handler is dropped.
+#[tokio::test]
+async fn json_skips_prefix_only_commands() {
+    let prefix =
+        |handler: crate::CommandHandler| handler.__with_command_type(crate::CommandType::Prefix);
+    let app = app(vec![
+        Module::new("m")
+            .__add(prefix(command("m::a", &["hidden"], "Hidden")))
+            .__add(prefix(command("m::b", &["tools secret"], "Secret")))
+            .__add(command("m::c", &["tools open"], "Open"))
+            .__add(
+                command("m::d", &["ping"], "Pong").__with_command_type(crate::CommandType::Slash),
+            ),
+    ]);
+    assert_eq!(
+        local_of(&app, Scope::Global),
+        [
+            json!({"type": 1, "name": "tools", "description": "Open", "options": [
+                {"type": 1, "name": "open", "description": "Open", "options": []},
+            ]}),
+            json!({"type": 1, "name": "ping", "description": "Pong", "options": []}),
+        ]
+    );
+}
+
 /// Matrix 4.
 #[tokio::test]
 async fn json_option_fields() {

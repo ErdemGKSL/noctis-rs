@@ -226,10 +226,9 @@ mod tests {
 
     #[test]
     fn rejects_bad_values() {
-        let err = |tokens: TokenStream| {
-            parse(&segment(tokens), None, "#[event]")
-                .unwrap_err()
-                .to_string()
+        let err = |tokens: TokenStream| match parse(&segment(tokens), None, "#[event]") {
+            Ok(_) => panic!("an error"),
+            Err(error) => error.to_string(),
         };
         assert_eq!(err(quote!(module = profile)), NOT_A_STRING);
         assert_eq!(err(quote!(module)), NOT_A_STRING);
@@ -244,7 +243,9 @@ mod tests {
     #[test]
     fn rejects_a_second_module() {
         let first = LitStr::new("a", proc_macro2::Span::call_site());
-        let err = parse(&segment(quote!(module = "b")), Some(&first), "#[hook]").unwrap_err();
+        let Err(err) = parse(&segment(quote!(module = "b")), Some(&first), "#[hook]") else {
+            panic!("an error");
+        };
         assert_eq!(err.to_string(), "duplicate `#[hook]` argument `module`");
     }
 

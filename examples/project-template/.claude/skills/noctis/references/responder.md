@@ -143,8 +143,7 @@ What each sends, by the interaction's state:
   `Debug` hides the text).
 - **Over the Dispatcher** (a prefix Command): `respond` replies to the invoking
   message, and `reply_text` is always public. A Command declaring
-  `response = ephemeral` cannot be opted into prefix mode: `PrefixPlugin::install`
-  refuses it when the App is built.
+  `response = ephemeral` is not served by `PrefixPlugin` yet (`commands.md` §9).
 - **Errors** come back as a `HandlerError` wrapping the `ResponderError`: find it with
   `err.as_error().downcast_ref::<ResponderError>()`. Propagate them with `?`; the
   user gets the usual error notice (§5).

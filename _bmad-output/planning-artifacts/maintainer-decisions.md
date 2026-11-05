@@ -505,3 +505,12 @@ to `all`. This amends FR-14 and becomes AD-32 and Epic 19.
   author's DM; if Discord refuses the DM (50007) it is a channel reply deleted after a
   short TTL.
 - (decision) `command_type` takes a string literal, as the maintainer wrote it.
+- (decision) The prefix table is built from the built App's Registry on the first
+  message (`Dispatcher::__prefix_commands`), not at install: plugins install before the
+  fold. A guild-scoped Command answers only in its guild and wins over a global one with
+  the same path there.
+- (decision) Until Stories 19.2 and 19.3 land, a Command that needs guard or ephemeral
+  emulation is left out of the prefix table (a `debug` line) instead of failing the
+  build, so no App that builds today stops building.
+- (decision) Story 19.3 lands before 19.2: a guard denial is an ephemeral answer, so it
+  needs the DM transport first.

@@ -1,28 +1,29 @@
-//! Opt-in prefix commands (P2, FR-14): [`PrefixPlugin`].
+//! Prefix commands emulated from slash Commands (P2, FR-14, AD-32):
+//! [`PrefixPlugin`].
 //!
-//! A bot opts slash Commands in by type; a message `<prefix><Command Path>
-//! <arguments>` then runs the same `#[handler]` through
-//! `Dispatcher::run_command`, and every argument failure is the same typed
-//! `OptionError` a failed slash decode produces.
+//! Every slash Command whose `command_type` is not `"slash"` also runs from
+//! a message `<prefix><Command Path> <arguments>`: the same `#[handler]`,
+//! through `Dispatcher::run_command`, and every argument failure is the
+//! same typed `OptionError` a failed slash decode produces. Prefix commands
+//! are never coded separately.
 //!
 //! This crate is internal; use `noctis` (feature `prefix`) instead. Its API is
 //! not stable and may change in any release.
 
 mod parse;
 
-use std::any::TypeId;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use noctis_core::__rules::command::{OptionDecl, OptionType};
+use noctis_core::__rules::command::OptionType;
 use noctis_core::events::{EventCtx, MessageCreate};
 use noctis_core::{
-    __SlashCommand, AppBuilder, BuildViolation, CommandInvocation, CommandMetadata, DispatchError,
-    Ephemerality, EventHandler, HandlerResult, Module, Plugin,
+    AppBuilder, BuildViolation, CommandInvocation, DispatchError, Dispatcher, Ephemerality,
+    EventHandler, HandlerResult, Module, Plugin,
 };
 use twilight_model::channel::Message;
 use twilight_model::gateway::Intents;
 
-use crate::parse::Table;
+use crate::parse::{Entry, Table};
 
 /// The longest prefix, in Unicode scalar values.
 const MAX_PREFIX_CHARS: usize = 32;
@@ -30,12 +31,13 @@ const MAX_PREFIX_CHARS: usize = 32;
 /// The Module the plugin mounts its `MESSAGE_CREATE` handler in.
 const MODULE: &str = "noctis-prefix";
 
-/// Runs opted-in slash Commands from messages such as `!warn <@5> 3 rude`.
+/// Runs the App's slash Commands from messages such as `!warn <@5> 3 rude`.
 ///
 /// `PrefixPlugin::new("!")` takes the prefix (1 to 32 Unicode scalars, no
-/// whitespace, case-sensitive); [`command`](Self::command) opts a
-/// `#[derive(SlashCommand)]` struct in by type. The struct must also be
-/// mounted in a Module, and the App must request `MESSAGE_CONTENT`
+/// whitespace, case-sensitive). Every Command the App mounts answers it,
+/// unless it is declared `#[command(.., command_type = "slash")]`; a
+/// `command_type = "prefix"` Command answers only it and is never
+/// published. The App must request `MESSAGE_CONTENT`
 /// (`.intents(Intents::MESSAGE_CONTENT)`), or the build fails with GW-05
 /// `MissingIntent`.
 ///
@@ -44,81 +46,37 @@ const MODULE: &str = "noctis-prefix";
 /// the last non-ATTACHMENT option, when it is a STRING, takes the rest of
 /// the line verbatim. ATTACHMENT options take the message's attachments in
 /// order. A bad argument answers like a failed slash decode: a public
-/// validation notice, a Command Error Sink report, and no handler run.
+/// validation notice, a Command Error Sink report, and no handler run. A
+/// guild-scoped Command answers only in its guild.
 ///
 /// Messages from bots or webhooks, system messages, and messages that do
-/// not name an opted-in Command Path are ignored without a request.
+/// not name a Command Path are ignored without a request.
 ///
 /// ```no_run
 /// use noctis_core::App;
 /// use noctis_prefix::PrefixPlugin;
 /// use twilight_model::gateway::Intents;
-/// # use noctis_core::__SlashCommand;
-/// # fn run<Warn: __SlashCommand>() {
 ///
 /// let mut builder = App::builder();
 /// builder
 ///     .intents(Intents::MESSAGE_CONTENT)
-///     .plugin(PrefixPlugin::new("!").command::<Warn>());
-/// # }
+///     .plugin(PrefixPlugin::new("!"));
 /// ```
 #[derive(Clone, Debug)]
 pub struct PrefixPlugin {
     prefix: String,
-    commands: Vec<Opted>,
-}
-
-/// One opted-in Command: what [`PrefixPlugin::command`] reads from its type.
-#[derive(Clone, Copy, Debug)]
-struct Opted {
-    type_id: TypeId,
-    /// `__Kind::NAME`: the struct's path.
-    name: &'static str,
-    paths: &'static [&'static str],
-    options: &'static [OptionDecl<'static>],
-    metadata: CommandMetadata,
-    /// The declared `response`.
-    ephemerality: Ephemerality,
 }
 
 impl PrefixPlugin {
-    /// A plugin answering messages that start with `prefix`; opt Commands
-    /// in with [`command`](Self::command).
+    /// A plugin answering messages that start with `prefix` with the App's
+    /// Commands.
     pub fn new(prefix: impl Into<String>) -> Self {
         Self {
             prefix: prefix.into(),
-            commands: Vec::new(),
         }
     }
 
-    /// Opts the slash Command `T` in: each of its Command Paths can be
-    /// typed after the prefix. Opting the same type in twice is a no-op.
-    ///
-    /// A Command that declares `permissions`, `nsfw = true`,
-    /// `response = ephemeral` or a CHANNEL option with `channel_types`
-    /// cannot be opted in (a build violation), because a message cannot
-    /// enforce them.
-    #[must_use]
-    pub fn command<T: __SlashCommand>(self) -> Self {
-        self.opt(Opted {
-            type_id: TypeId::of::<T>(),
-            name: T::NAME,
-            paths: T::PATHS,
-            options: T::OPTIONS,
-            metadata: T::METADATA,
-            ephemerality: T::EPHEMERALITY,
-        })
-    }
-
-    fn opt(mut self, opted: Opted) -> Self {
-        if self.commands.iter().all(|c| c.type_id != opted.type_id) {
-            self.commands.push(opted);
-        }
-        self
-    }
-
-    /// What is wrong with the configuration (P1-P6), one message per
-    /// violation.
+    /// What is wrong with the prefix (P1-P3), one message per violation.
     fn violations(&self) -> Vec<String> {
         let mut out = Vec::new();
         if self.prefix.is_empty() {
@@ -135,45 +93,56 @@ impl PrefixPlugin {
                 self.prefix
             ));
         }
-        if self.commands.is_empty() {
-            out.push("no Command is opted in: add `.command::<T>()`".to_owned());
-        }
-        for opted in &self.commands {
-            let refuse = |what: String| {
-                format!(
-                    "`{}` cannot be a prefix command: {what}, which a message cannot enforce",
-                    opted.name
-                )
-            };
-            if opted.metadata.default_member_permissions.is_some() {
-                out.push(refuse("it declares `permissions`".to_owned()));
-            }
-            if opted.metadata.nsfw == Some(true) {
-                out.push(refuse("it declares `nsfw = true`".to_owned()));
-            }
-            if opted.ephemerality == Ephemerality::Ephemeral {
-                out.push(refuse("it declares `response = ephemeral`".to_owned()));
-            }
-            for option in opted.options {
-                if option.kind == OptionType::Channel && !option.channel_types.is_empty() {
-                    out.push(refuse(format!(
-                        "its option `{}` declares `channel_types`",
-                        option.name
-                    )));
-                }
-            }
-        }
-        for (index, opted) in self.commands.iter().enumerate() {
-            for other in &self.commands[..index] {
-                for path in opted.paths.iter().filter(|p| other.paths.contains(p)) {
-                    out.push(format!(
-                        "Command Path `{path}` is opted in by both `{}` and `{}`: opt in only one",
-                        other.name, opted.name
-                    ));
-                }
-            }
-        }
         out
+    }
+}
+
+/// The table of every Command Path the built App serves from messages.
+fn table(prefix: &str, dispatcher: &Dispatcher) -> Table {
+    let entries = dispatcher
+        .__prefix_commands()
+        .into_iter()
+        .filter_map(|(scope, path, handler, metadata)| {
+            let entry = Entry::new(
+                scope,
+                path,
+                handler.options(),
+                metadata,
+                handler.ephemerality(),
+            );
+            match unenforced(&entry) {
+                Some(what) => {
+                    tracing::debug!(
+                        path,
+                        command = handler.name(),
+                        "not a prefix command: it declares {what}, which a message does not \
+                         enforce yet"
+                    );
+                    None
+                }
+                None => Some(entry),
+            }
+        })
+        .collect();
+    Table::new(prefix, entries)
+}
+
+/// What `entry` declares that a message does not enforce yet, if anything.
+fn unenforced(entry: &Entry) -> Option<&'static str> {
+    if entry.metadata().default_member_permissions.is_some() {
+        Some("`permissions`")
+    } else if entry.metadata().nsfw == Some(true) {
+        Some("`nsfw = true`")
+    } else if entry.ephemerality() == Ephemerality::Ephemeral {
+        Some("`response = ephemeral`")
+    } else if entry
+        .options()
+        .iter()
+        .any(|o| o.kind == OptionType::Channel && !o.channel_types.is_empty())
+    {
+        Some("`channel_types`")
+    } else {
+        None
     }
 }
 
@@ -182,10 +151,15 @@ impl Plugin for PrefixPlugin {
         for message in self.violations() {
             app.report(BuildViolation::plugin::<Self>(message));
         }
-        let table = Arc::new(Table::new(&self.prefix, &self.commands));
+        let prefix: Arc<str> = Arc::from(self.prefix.as_str());
+        let table = Arc::new(OnceLock::new());
         let handler = move |ctx: EventCtx, event: MessageCreate| {
             let table = Arc::clone(&table);
-            async move { on_message(&table, &ctx, event.0).await }
+            let prefix = Arc::clone(&prefix);
+            async move {
+                let table = table.get_or_init(|| self::table(&prefix, ctx.dispatcher()));
+                on_message(table, &ctx, event.0).await
+            }
         };
         app.module(
             Module::new(MODULE).__add(
@@ -206,7 +180,8 @@ async fn on_message(table: &Table, ctx: &EventCtx, message: Message) -> HandlerR
     if parse::is_ignored(&message) {
         return Ok(());
     }
-    let Some((entry, args)) = table.find(&message.content) else {
+    let guild = message.guild_id.map(twilight_model::id::Id::get);
+    let Some((entry, args)) = table.find(&message.content, guild) else {
         return Ok(());
     };
     if !entry.allowed(message.guild_id.is_some()) {
@@ -234,27 +209,13 @@ async fn on_message(table: &Table, ctx: &EventCtx, message: Message) -> HandlerR
 
 #[cfg(test)]
 mod tests {
-    use noctis_core::__rules::command::OptionDecl;
-    use noctis_core::{CommandMetadata, InteractionContext, Permissions};
+    use noctis_core::__rules::command::{OptionDecl, Scope};
+    use noctis_core::{CommandMetadata, Permissions};
 
     use super::*;
 
-    struct A;
-    struct B;
-
-    fn opted<T: 'static>(name: &'static str, paths: &'static [&'static str]) -> Opted {
-        Opted {
-            type_id: TypeId::of::<T>(),
-            name,
-            paths,
-            options: &[],
-            metadata: CommandMetadata::new(),
-            ephemerality: Ephemerality::Public,
-        }
-    }
-
     fn plugin(prefix: &str) -> PrefixPlugin {
-        PrefixPlugin::new(prefix).opt(opted::<A>("bot::A", &["warn"]))
+        PrefixPlugin::new(prefix)
     }
 
     fn only(plugin: &PrefixPlugin) -> String {
@@ -292,68 +253,34 @@ mod tests {
         );
     }
 
-    /// P4.
+    /// Until guards and ephemeral answers are emulated, a Command that
+    /// declares them is left out of the table.
     #[test]
-    fn p4_no_commands() {
-        assert_eq!(
-            only(&PrefixPlugin::new("!")),
-            "no Command is opted in: add `.command::<T>()`"
-        );
-    }
-
-    /// P5: one violation per unenforceable piece of metadata.
-    #[test]
-    fn p5_unenforceable_metadata() {
+    fn unenforced_metadata_is_left_out() {
         static CHANNEL: [OptionDecl<'static>; 1] =
             [OptionDecl::new("where", OptionType::Channel, "d").channel_types(&[0])];
         static PLAIN_CHANNEL: [OptionDecl<'static>; 1] =
             [OptionDecl::new("where", OptionType::Channel, "d")];
-        let mut perms = opted::<A>("bot::Ban", &["ban"]);
-        perms.metadata =
-            CommandMetadata::new().default_member_permissions(Permissions::BAN_MEMBERS);
-        let mut nsfw = opted::<B>("bot::Lewd", &["lewd"]);
-        nsfw.metadata = CommandMetadata::new().nsfw(true);
-        let mut channel = opted::<u8>("bot::Move", &["move"]);
-        channel.options = &CHANNEL;
-        let mut ephemeral = opted::<u16>("bot::Secret", &["secret"]);
-        ephemeral.ephemerality = Ephemerality::Ephemeral;
-        let violations = PrefixPlugin::new("!")
-            .opt(perms)
-            .opt(nsfw)
-            .opt(channel)
-            .opt(ephemeral)
-            .violations();
-        assert_eq!(violations.len(), 4, "{violations:?}");
-        assert!(violations[0].starts_with("`bot::Ban` cannot be a prefix command"));
-        assert!(violations[0].contains("`permissions`"));
-        assert!(violations[1].starts_with("`bot::Lewd`") && violations[1].contains("nsfw"));
-        assert!(violations[2].starts_with("`bot::Move`"));
-        assert!(violations[2].contains("`where` declares `channel_types`"));
-        assert!(violations[3].starts_with("`bot::Secret` cannot be a prefix command"));
-        assert!(violations[3].contains("`response = ephemeral`"));
-
-        let mut fine = opted::<A>("bot::Fine", &["fine"]);
-        fine.metadata = CommandMetadata::new()
-            .nsfw(false)
-            .contexts(&[InteractionContext::Guild]);
-        fine.options = &PLAIN_CHANNEL;
-        assert!(PrefixPlugin::new("!").opt(fine).violations().is_empty());
-    }
-
-    /// P6: a shared path between two types; one type twice is deduplicated.
-    #[test]
-    fn p6_path_clash() {
-        let message = only(
-            &PrefixPlugin::new("!")
-                .opt(opted::<A>("bot::A", &["config set", "warn"]))
-                .opt(opted::<B>("bot::B", &["warn"])),
+        let entry = |options, metadata, ephemerality| {
+            Entry::new(Scope::Global, "p", options, metadata, ephemerality)
+        };
+        let public = Ephemerality::Public;
+        let perms = CommandMetadata::new().default_member_permissions(Permissions::BAN_MEMBERS);
+        assert_eq!(
+            unenforced(&entry(&[], perms, public)),
+            Some("`permissions`")
         );
-        assert!(message.starts_with("Command Path `warn`"), "{message}");
-        assert!(message.contains("`bot::A`") && message.contains("`bot::B`"));
-        let twice = PrefixPlugin::new("!")
-            .opt(opted::<A>("bot::A", &["warn"]))
-            .opt(opted::<A>("bot::A", &["warn"]));
-        assert_eq!(twice.commands.len(), 1);
-        assert!(twice.violations().is_empty());
+        let nsfw = CommandMetadata::new().nsfw(true);
+        assert_eq!(unenforced(&entry(&[], nsfw, public)), Some("`nsfw = true`"));
+        assert_eq!(
+            unenforced(&entry(&CHANNEL, CommandMetadata::new(), public)),
+            Some("`channel_types`")
+        );
+        assert_eq!(
+            unenforced(&entry(&[], CommandMetadata::new(), Ephemerality::Ephemeral)),
+            Some("`response = ephemeral`")
+        );
+        let fine = CommandMetadata::new().nsfw(false);
+        assert_eq!(unenforced(&entry(&PLAIN_CHANNEL, fine, public)), None);
     }
 }

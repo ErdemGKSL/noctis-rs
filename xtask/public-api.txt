@@ -580,6 +580,7 @@ pub fn noctis::CommandCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 pub struct noctis::CommandHandler
 impl noctis::CommandHandler
 pub fn noctis::CommandHandler::auto_defer(&self) -> bool
+pub fn noctis::CommandHandler::command_type(&self) -> noctis::CommandType
 pub fn noctis::CommandHandler::description(&self) -> &'static str
 pub fn noctis::CommandHandler::descriptions(&self) -> &[&'static str]
 pub fn noctis::CommandHandler::ephemerality(&self) -> noctis::Ephemerality
@@ -688,6 +689,26 @@ pub const noctis::CommandPath::PATHS: &'static [&'static str]
 pub fn noctis::CommandPath::as_str(self) -> &'static str
 pub fn noctis::CommandPath::from_path(&str) -> core::option::Option<Self>
 pub type noctis::CommandResponder<D> = noctis::Responder<noctis::Command, noctis::Pending, D>
+pub enum noctis::CommandType
+pub noctis::CommandType::All
+pub noctis::CommandType::Prefix
+pub noctis::CommandType::Slash
+impl noctis::CommandType
+pub const fn noctis::CommandType::is_prefix(self) -> bool
+pub const fn noctis::CommandType::is_slash(self) -> bool
+impl core::clone::Clone for noctis::CommandType
+pub fn noctis::CommandType::clone(&self) -> Self
+impl core::cmp::Eq for noctis::CommandType
+impl core::cmp::PartialEq for noctis::CommandType
+pub fn noctis::CommandType::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::CommandType
+pub fn noctis::CommandType::default() -> Self
+impl core::fmt::Debug for noctis::CommandType
+pub fn noctis::CommandType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::CommandType
+pub fn noctis::CommandType::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::CommandType
+impl core::marker::StructuralPartialEq for noctis::CommandType
 pub enum noctis::Component
 impl core::clone::Clone for noctis::Component
 pub fn noctis::Component::clone(&self) -> Self
@@ -5081,7 +5102,6 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 pub mod noctis::prefix
 pub struct noctis::prefix::PrefixPlugin
 impl noctis::prefix::PrefixPlugin
-pub fn noctis::prefix::PrefixPlugin::command<T: noctis::__private::core::__SlashCommand>(self) -> Self
 pub fn noctis::prefix::PrefixPlugin::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for noctis::prefix::PrefixPlugin
 pub fn noctis::prefix::PrefixPlugin::clone(&self) -> Self

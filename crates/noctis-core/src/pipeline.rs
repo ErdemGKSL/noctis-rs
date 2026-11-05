@@ -374,8 +374,18 @@ fn command_path(data: &CommandData) -> String {
 
 /// The chat-input entry registered at `path` in `scope`, with its
 /// `'static` path.
-fn command_at(scope: Option<&ScopeCommands>, path: &str) -> Option<Resolved> {
+/// The Command at `path` in `scope` when it answers `transport` (AD-32): a
+/// `command_type = "slash"` Command never runs from a message, a
+/// `command_type = "prefix"` one never from an interaction.
+fn command_at(
+    scope: Option<&ScopeCommands>,
+    path: &str,
+    transport: fn(crate::CommandType) -> bool,
+) -> Option<Resolved> {
     let entry = scope?.command(path)?;
+    if !transport(entry.handler.command_type()) {
+        return None;
+    }
     let path = entry.handler.paths().iter().find(|p| **p == path)?;
     Some(Resolved::Command {
         entry: Arc::clone(entry),
@@ -407,7 +417,7 @@ fn resolve(registry: &Registry, data: &CommandData) -> Result<Resolved, String> 
             scopes
                 .into_iter()
                 .flatten()
-                .find_map(|c| command_at(Some(c), &path))
+                .find_map(|c| command_at(Some(c), &path, crate::CommandType::is_slash))
                 .ok_or(path)
         }
         CommandType::User => menu(MenuKind::User),
@@ -1956,6 +1966,37 @@ impl Dispatcher {
         shared
     }
 
+    /// Every Command Path that answers prefix messages (`command_type`
+    /// other than `"slash"`, AD-32): its scope, handler and resolved base
+    /// metadata (what Discord would enforce for it). What the prefix plugin
+    /// builds its table from, once the App is built.
+    #[doc(hidden)]
+    pub fn __prefix_commands(
+        &self,
+    ) -> Vec<(
+        Scope,
+        &'static str,
+        &crate::CommandHandler,
+        crate::CommandMetadata,
+    )> {
+        let mut out = Vec::new();
+        for scope in self.registry.commands().scopes() {
+            for (path, entry) in scope.commands() {
+                if !entry.handler.command_type().is_prefix() {
+                    continue;
+                }
+                let base = path.split(' ').next().unwrap_or(path);
+                let metadata = scope
+                    .bases
+                    .iter()
+                    .find(|node| node.word == base)
+                    .map_or(*entry.handler.metadata(), |node| node.metadata);
+                out.push((scope.scope, path, &entry.handler, metadata));
+            }
+        }
+        out
+    }
+
     /// Runs the Command registered at the invocation's path, in span
     /// `noctis.dispatch`; its response is a reply to the invoking message.
     ///
@@ -1988,10 +2029,12 @@ impl Dispatcher {
             path = Empty,
         );
         let commands = self.registry.commands();
-        let in_guild = guild_id
-            .and_then(|id| command_at(commands.scope(Scope::Guild(id.get())), input.path()));
+        let prefix = crate::CommandType::is_prefix;
+        let in_guild = guild_id.and_then(|id| {
+            command_at(commands.scope(Scope::Guild(id.get())), input.path(), prefix)
+        });
         let Some(resolved) =
-            in_guild.or_else(|| command_at(commands.scope(Scope::Global), input.path()))
+            in_guild.or_else(|| command_at(commands.scope(Scope::Global), input.path(), prefix))
         else {
             return Err(DispatchError::UnknownCommand {
                 path: input.path().into(),

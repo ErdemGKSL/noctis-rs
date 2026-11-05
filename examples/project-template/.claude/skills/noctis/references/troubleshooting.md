@@ -149,9 +149,6 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | handler needs intent `GUILD_MEMBERS` | add `.intents(Intents::GUILD_MEMBERS)` and enable it in the portal |
 | ``[GW-05] event handler `noctis_prefix::PrefixPlugin` (Module `noctis-prefix`) handles MESSAGE_CREATE, which needs the privileged intent MESSAGE_CONTENT …`` | `PrefixPlugin` reads message text: add `.intents(Intents::MESSAGE_CONTENT)` and enable Message Content in the Developer Portal (`commands.md` §9) |
 | `` plugin `noctis_prefix::PrefixPlugin`: prefix is empty `` / `prefix contains whitespace` / `prefix is longer than 32 characters` | a prefix of 1 to 32 Unicode scalars without whitespace (`"!"`, `"?"`, `"ş>"`) |
-| `` plugin `noctis_prefix::PrefixPlugin`: no Command is opted in: add `.command::<T>()` `` | opt at least one `#[derive(SlashCommand)]` struct in |
-| `` `bot::Ban` cannot be a prefix command: it declares `permissions` `` (or `nsfw = true`, or ``its option `x` declares `channel_types` ``), `which a message cannot enforce` | do not opt that Command in; prefix commands cannot check member permissions, age gates or channel types |
-| `` `bot::Secret` cannot be a prefix command: it declares `response = ephemeral`, which a message cannot enforce `` | drop `response = ephemeral` or do not opt that Command in; a prefix command answers with a public message reply |
 | ``Command Path `warn` is opted in by both `a::Warn` and `b::Warn` `` | opt in only one of the two types |
 | ``[GW-05] Discord cache resource MEMBER needs the privileged intent GUILD_MEMBERS: add `.intents(Intents::GUILD_MEMBERS)` and enable it in the Discord Developer Portal, or remove MEMBER from `.discord_cache(..)` `` | `BuildViolation::MissingCacheIntent`: request the intent (and enable it in the portal), or drop `MEMBER` from `.discord_cache(..)` (`adapters.md` §1.2) |
 | no font registered | enable `default-font` or `ImageConfig::font(..)` |
