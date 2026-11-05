@@ -399,7 +399,8 @@ async fn defer_then_follow_up() {
 
 /// Matrix 45 and 49 and the Dispatcher AC: a `MESSAGE_CREATE` handler runs
 /// a Command whose message is posted as a reply; an unknown path sends
-/// nothing; a declared ephemeral Command cannot answer there.
+/// nothing; a declared ephemeral Command answers in the author's DM
+/// (Story 19.3).
 #[tokio::test(flavor = "multi_thread")]
 async fn dispatcher_replies_to_the_message() {
     let running = Running::start(
@@ -427,15 +428,22 @@ async fn dispatcher_replies_to_the_message() {
         reply["message_reference"],
         json!({ "message_id": "6", "fail_if_not_exists": false })
     );
+    running.http.route(
+        Method::POST,
+        "/users/@me/channels",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "40", "type": 1 })),
+    );
+    running.http.route(
+        Method::POST,
+        "/channels/40/messages",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "88" })),
+    );
     assert_eq!(running.gw.dispatch("MESSAGE_CREATE", message("!secret")), 1);
-    let reports = running.wait_report().await;
-    assert!(reports[0].contains("Secret"), "{reports:?}");
-    assert!(reports[0].contains("cannot be ephemeral"), "{reports:?}");
-    // Story 6.8: the failure is a public notice replying to the message.
-    let sent = running.sent();
-    assert_eq!(sent.len(), 2, "{sent:?}");
-    assert_eq!(sent[1].route_path(), Some(CHANNEL));
-    assert_eq!(body(&sent[1])["components"][0]["content"], GENERIC);
+    let sent = running.wait_sent(3).await;
+    assert_eq!(sent[1].route_path(), Some("/users/@me/channels"));
+    assert_eq!(sent[2].route_path(), Some("/channels/40/messages"));
+    assert_eq!(body(&sent[2])["components"][0]["content"], "psst");
+    assert!(running.reports.0.lock().unwrap().is_empty());
     running.run.abort();
 }
 

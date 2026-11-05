@@ -51,7 +51,7 @@ impl Warn {
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
         let line = format!("{}:{:?}:{:?}", self.user, self.days, self.reason);
         SEEN.lock().unwrap().push(line.clone());
-        ctx.reply_text(format!("warned {line}")).await
+        ctx.reply_text(format!("warned {line}")).public().await
     }
 }
 
@@ -276,7 +276,7 @@ impl PrefixOnly {
     #[handler]
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
         TYPED.lock().unwrap().push("prefix");
-        ctx.reply_text("prefix").await
+        ctx.reply_text("prefix").public().await
     }
 }
 
@@ -324,7 +324,7 @@ impl Here {
     #[handler]
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
         GUILD_SEEN.lock().unwrap().push(ctx.guild_id().map(Id::get));
-        ctx.reply_text("here").await
+        ctx.reply_text("here").public().await
     }
 }
 
@@ -360,5 +360,121 @@ async fn prefix_contexts_and_guild_id() {
             .iter()
             .all(|r| r.route_path() != Some("/channels/8/messages"))
     );
+    app.stop().await.unwrap();
+}
+
+#[derive(SlashCommand)]
+#[command("secret", description = "Answer privately", response = ephemeral)]
+struct Secret;
+
+impl Secret {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.reply_text("psst").await
+    }
+}
+
+/// An App serving `Secret` by prefix, whose fallback replies live `ttl`.
+async fn secret_app(ttl: Duration) -> TestApp {
+    let mut builder = App::builder();
+    builder
+        .intents(Intents::MESSAGE_CONTENT)
+        .module(Module::new("mod").add::<Secret>())
+        .plugin(PrefixPlugin::new("!").ephemeral_ttl(ttl));
+    let app = TestApp::build(&mut builder).await.unwrap();
+    app.http_fake().route(
+        Method::POST,
+        "/users/@me/channels",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "40", "type": 1 })),
+    );
+    app.http_fake().route(
+        Method::POST,
+        CHANNEL,
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
+    );
+    app
+}
+
+/// The requests to `path` (relative to `/api/v10`), once there are `n`.
+async fn wait_for(app: &TestApp, method: Method, path: &str, n: usize) -> Vec<RecordedRequest> {
+    let start = Instant::now();
+    loop {
+        let seen: Vec<RecordedRequest> = app
+            .http_fake()
+            .requests()
+            .into_iter()
+            .filter(|r| r.method == method && r.route_path() == Some(path))
+            .collect();
+        if seen.len() >= n {
+            return seen;
+        }
+        assert!(
+            start.elapsed() < WAIT,
+            "{} of {n} {path}: {:?}",
+            seen.len(),
+            app.http_fake()
+                .requests()
+                .iter()
+                .map(|r| (r.method.clone(), r.path.clone()))
+                .collect::<Vec<_>>()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Story 19.3: a `response = ephemeral` Command run by prefix answers in
+/// the author's DM, not in the channel.
+#[tokio::test(flavor = "multi_thread")]
+async fn ephemeral_answers_go_to_the_dm() {
+    let app = secret_app(Duration::from_secs(10)).await;
+    app.http_fake().route(
+        Method::POST,
+        "/channels/40/messages",
+        FakeResponse::json(StatusCode::OK, &json!({ "id": "88" })),
+    );
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(30, "!secret", &person()));
+    let dm = wait_for(&app, Method::POST, "/channels/40/messages", 1).await;
+    let answer = body(&dm[0]);
+    assert_eq!(answer["components"][0]["content"], "psst");
+    assert!(answer.get("message_reference").is_none());
+    let open = wait_for(&app, Method::POST, "/users/@me/channels", 1).await;
+    assert_eq!(body(&open[0]), json!({ "recipient_id": "3" }));
+    assert!(
+        app.http_fake()
+            .requests()
+            .iter()
+            .all(|r| r.route_path() != Some(CHANNEL))
+    );
+    app.stop().await.unwrap();
+}
+
+/// Story 19.3: when Discord refuses the DM (50007) the answer is a reply in
+/// the channel, deleted after the plugin's `ephemeral_ttl`.
+#[tokio::test(flavor = "multi_thread")]
+async fn closed_dms_get_a_short_lived_reply() {
+    let app = secret_app(Duration::from_secs(1)).await;
+    app.http_fake().route(
+        Method::POST,
+        "/channels/40/messages",
+        FakeResponse::json(
+            StatusCode::FORBIDDEN,
+            &json!({ "code": 50007, "message": "Cannot send messages to this user" }),
+        ),
+    );
+    app.http_fake().route(
+        Method::DELETE,
+        "/channels/5/messages/77",
+        FakeResponse::empty(StatusCode::NO_CONTENT),
+    );
+    app.gateway_fake()
+        .dispatch("MESSAGE_CREATE", message(31, "!secret", &person()));
+    let sent = wait_sent(&app, 1).await;
+    let reply = body(&sent[0]);
+    assert_eq!(reply["components"][0]["content"], "psst");
+    assert_eq!(reply["message_reference"]["message_id"], "31");
+    let posted = Instant::now();
+    wait_for(&app, Method::DELETE, "/channels/5/messages/77", 1).await;
+    assert!(posted.elapsed() >= Duration::from_millis(900));
     app.stop().await.unwrap();
 }

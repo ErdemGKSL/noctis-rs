@@ -202,6 +202,6 @@ development_status:
 
   epic-19: in-progress
   19-1-command-type-and-the-automatic-prefix-table: done
-  19-2-guard-emulation-for-prefix-runs: backlog
-  19-3-ephemeral-emulation-for-prefix-runs: in-progress
+  19-2-guard-emulation-for-prefix-runs: in-progress
+  19-3-ephemeral-emulation-for-prefix-runs: done
   epic-19-retrospective: optional

@@ -164,11 +164,12 @@ impl Fixture {
 
     /// A message transport (channel 5, message 6).
     fn message(&self, ephemerality: Ephemerality) -> Arc<Shared> {
-        let transport = Transport::Message(MessageTarget {
-            app: Arc::clone(self.app.shared()),
-            channel_id: Id::new(5),
-            message_id: Id::new(6),
-        });
+        let transport = Transport::Message(MessageTarget::new(
+            Arc::clone(self.app.shared()),
+            (Id::new(5), Id::new(6)),
+            Id::new(3),
+            Duration::from_millis(50),
+        ));
         Shared::new(transport, ephemerality, self.app.limits().clone())
     }
 
@@ -669,34 +670,8 @@ async fn message_transport() {
     let _ = acked.done();
     assert!(fx.requests().is_empty());
 
-    // Ephemeral is unsupported, before any request.
-    let shared = fx.message(Ephemerality::Ephemeral);
-    let err = responder(&shared).reply(v2("a")).await.unwrap_err();
-    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
-    let shared = fx.message(Ephemerality::Public);
-    let err = responder(&shared)
-        .defer_reply_as(Ephemerality::Ephemeral)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
-    let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
-    let err = acked
-        .follow_up(v2("a"), Visibility::Ephemeral)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
-    let _ = acked.done();
-    assert!(fx.requests().is_empty());
-
-    // `reply_as` decides per call: Ephemeral fails before any request,
-    // Public posts even on a declared-ephemeral Command.
-    let shared = fx.message(Ephemerality::Public);
-    let err = responder(&shared)
-        .reply_as(v2("a"), Ephemerality::Ephemeral)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
-    assert!(fx.requests().is_empty());
+    // `reply_as` decides per call: Public posts even on a
+    // declared-ephemeral Command.
     let shared = fx.message(Ephemerality::Ephemeral);
     let _ = responder(&shared)
         .reply_as(v2("a"), Ephemerality::Public)
@@ -709,6 +684,117 @@ async fn message_transport() {
         (requests[0].0.clone(), requests[0].1.as_str()),
         (Method::POST, "/api/v10/channels/5/messages")
     );
+}
+
+/// Story 19.3: an ephemeral answer over the message transport goes to the
+/// author's DM (opened once), with its edits, follow-ups and deletes; no
+/// typing for an ephemeral defer.
+#[tokio::test]
+async fn message_transport_ephemeral_goes_to_the_dm() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.message(Ephemerality::Ephemeral);
+    let _ = responder(&shared).defer_reply().await.unwrap().done();
+    assert!(fx.requests().is_empty(), "{:?}", fx.requests());
+    shared.finish(v2("a").into()).await.unwrap();
+    let requests = fx.requests();
+    assert_eq!(
+        (requests[0].0.clone(), requests[0].1.as_str()),
+        (Method::POST, "/api/v10/users/@me/channels")
+    );
+    assert_eq!(requests[0].2, json!({ "recipient_id": "3" }));
+    // The DM channel is the answer's id 55; no reply reference there.
+    assert_eq!(requests[1].1, "/api/v10/channels/55/messages");
+    assert!(requests[1].2.get("message_reference").is_none());
+    let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
+    acked.edit_reply(v2("b")).await.unwrap();
+    let handle = acked
+        .follow_up(v2("c"), Visibility::Ephemeral)
+        .await
+        .unwrap();
+    handle.delete().await.unwrap();
+    let _ = acked.follow_up(v2("d"), Visibility::Public).await.unwrap();
+    let _ = acked.done();
+    let paths: Vec<(Method, String)> = fx
+        .requests()
+        .into_iter()
+        .skip(2)
+        .map(|(m, p, _)| (m, p))
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            (Method::PATCH, "/api/v10/channels/55/messages/55".to_owned()),
+            (Method::POST, "/api/v10/channels/55/messages".to_owned()),
+            (
+                Method::DELETE,
+                "/api/v10/channels/55/messages/55".to_owned()
+            ),
+            (Method::POST, "/api/v10/channels/5/messages".to_owned()),
+        ]
+    );
+}
+
+/// Story 19.3: when Discord refuses the DM (50007) the ephemeral answer is
+/// a reply in the channel, deleted after the TTL; the DM is not retried.
+#[tokio::test]
+async fn message_transport_ephemeral_falls_back_to_a_short_lived_reply() {
+    let answer: Answer = Arc::new(|seen: &Seen| {
+        if seen.path == "/api/v10/channels/55/messages" {
+            (
+                StatusCode::FORBIDDEN,
+                Bytes::from_static(
+                    br#"{"code":50007,"message":"Cannot send messages to this user"}"#,
+                ),
+            )
+        } else if seen.method == Method::DELETE {
+            (StatusCode::NO_CONTENT, Bytes::new())
+        } else if seen.method == Method::POST {
+            (StatusCode::OK, Bytes::from_static(br#"{"id":"55"}"#))
+        } else {
+            (StatusCode::OK, Bytes::from_static(b"{}"))
+        }
+    });
+    let fx = Fixture::start(answer).await;
+    let shared = fx.message(Ephemerality::Ephemeral);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    let _ = acked
+        .follow_up(v2("b"), Visibility::Ephemeral)
+        .await
+        .unwrap();
+    let _ = acked.done();
+    let requests = fx.requests();
+    let paths: Vec<&str> = requests.iter().map(|r| r.1.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/api/v10/users/@me/channels",
+            "/api/v10/channels/55/messages",
+            "/api/v10/channels/5/messages",
+            "/api/v10/channels/5/messages",
+        ]
+    );
+    assert_eq!(
+        requests[2].2["message_reference"],
+        json!({ "message_id": "6", "fail_if_not_exists": false })
+    );
+    assert_eq!(requests[3].2["message_reference"]["message_id"], "6");
+    // Both short-lived replies are deleted after the 50 ms TTL.
+    let start = Instant::now();
+    loop {
+        let deletes = fx
+            .requests()
+            .into_iter()
+            .filter(|r| r.0 == Method::DELETE && r.1 == "/api/v10/channels/5/messages/55")
+            .count();
+        if deletes == 2 {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "{deletes} deletes"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 /// Matrix 48-50: a declared-ephemeral Command deferred publicly on the

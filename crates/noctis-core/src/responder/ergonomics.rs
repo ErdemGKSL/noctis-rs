@@ -114,8 +114,8 @@ impl ReplyText {
     }
 
     /// Makes the notice visible to everyone in the channel. Over a
-    /// [`Dispatcher`](crate::Dispatcher) message transport a notice is
-    /// always public.
+    /// [`Dispatcher`](crate::Dispatcher) message transport an ephemeral
+    /// notice goes to the author's DM (AD-32).
     pub fn public(mut self) -> Self {
         self.ephemerality = Ephemerality::Public;
         self
@@ -137,7 +137,7 @@ impl IntoFuture for ReplyText {
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             let shared = bound(&self.ctx)?;
-            let visibility = shared.notice_visibility(self.ephemerality);
+            let visibility = self.ephemerality;
             let text = resolve(&self.ctx, self.text, visibility);
             shared
                 .ctx_reply_text(text, visibility)
@@ -211,16 +211,6 @@ impl Shared {
             Err(ResponderError::AlreadyResponded)
         } else {
             Ok(())
-        }
-    }
-
-    /// The visibility a notice of `requested` gets: always public over a
-    /// message transport (an ephemeral message reply does not exist).
-    fn notice_visibility(&self, requested: Ephemerality) -> Ephemerality {
-        if self.transport.is_message() {
-            Ephemerality::Public
-        } else {
-            requested
         }
     }
 
@@ -407,8 +397,7 @@ macro_rules! ctx_methods {
             /// `err.as_error().downcast_ref::<ResponderError>()`):
             /// `Invalid` for a message over a Limit (Strict mode, no
             /// request), `AlreadyResponded` after a modal or a stop,
-            /// `EphemeralUnsupported` for an ephemeral reply over a
-            /// Dispatcher, `FollowupCap` or `TokenExpired` for a follow-up,
+            /// `FollowupCap` or `TokenExpired` for a follow-up,
             /// or Discord's rejection.
             pub fn respond(
                 &self,

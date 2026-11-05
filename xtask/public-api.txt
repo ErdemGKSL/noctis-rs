@@ -610,6 +610,7 @@ impl core::fmt::Debug for noctis::CommandInput
 pub fn noctis::CommandInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::CommandInvocation
 impl noctis::CommandInvocation
+pub fn noctis::CommandInvocation::ephemeral_ttl(self, core::time::Duration) -> Self
 pub fn noctis::CommandInvocation::guild_id(self, core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>) -> Self
 pub fn noctis::CommandInvocation::input(&self) -> &noctis::CommandInput
 pub fn noctis::CommandInvocation::locale(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -1955,7 +1956,6 @@ pub noctis::ResponderError::AckDeadlineMissed(noctis::AckDeadlineMissed)
 pub noctis::ResponderError::AlreadyResponded
 pub noctis::ResponderError::Encode
 pub noctis::ResponderError::Encode::reason: alloc::string::String
-pub noctis::ResponderError::EphemeralUnsupported
 pub noctis::ResponderError::FollowupCap
 pub noctis::ResponderError::Invalid(noctis::ui::UiError)
 pub noctis::ResponderError::InvalidToken
@@ -5102,6 +5102,7 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 pub mod noctis::prefix
 pub struct noctis::prefix::PrefixPlugin
 impl noctis::prefix::PrefixPlugin
+pub fn noctis::prefix::PrefixPlugin::ephemeral_ttl(self, core::time::Duration) -> Self
 pub fn noctis::prefix::PrefixPlugin::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for noctis::prefix::PrefixPlugin
 pub fn noctis::prefix::PrefixPlugin::clone(&self) -> Self

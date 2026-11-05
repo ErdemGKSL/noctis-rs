@@ -1074,7 +1074,7 @@ async fn dispatcher_ctx_methods() {
         "d",
         |ctx: CommandCtx, _: CommandResponder| async move {
             let _ = ctx.respond(v2("a")).await?;
-            ctx.reply_text("b").await
+            ctx.reply_text("b").public().await
         },
     ));
     let p = Pipeline::start(module).await;

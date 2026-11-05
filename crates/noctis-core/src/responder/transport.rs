@@ -4,8 +4,9 @@
 //! the [`Dispatcher`](crate::Dispatcher), or nowhere (the `__testing`
 //! seams).
 
+use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -18,10 +19,11 @@ use twilight_http::routing::Route;
 use twilight_model::channel::Message;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{
-    ApplicationMarker, ChannelMarker, InteractionMarker, MessageMarker,
+    ApplicationMarker, ChannelMarker, InteractionMarker, MessageMarker, UserMarker,
 };
 
 use super::ResponderError;
+use super::files::Body;
 use super::files::{KnownFiles, Payload};
 use crate::edge::callback::{CallbackBody, CallbackError, CallbackRequest, valid_token};
 use crate::handler::AppShared;
@@ -85,7 +87,30 @@ pub(crate) struct MessageTarget {
     pub(crate) app: Arc<AppShared>,
     pub(crate) channel_id: Id<ChannelMarker>,
     pub(crate) message_id: Id<MessageMarker>,
+    /// The invoking message's author, who gets the ephemeral answers
+    /// (AD-32).
+    author: Id<UserMarker>,
+    /// How long an ephemeral answer posted in the channel (the DM was
+    /// refused) stays before it is deleted.
+    ephemeral_ttl: Duration,
+    /// Where this run's ephemeral answers go, once the first was sent.
+    private: tokio::sync::Mutex<Option<Private>>,
+    /// The channel of every message this run sent outside `channel_id`.
+    placed: Mutex<HashMap<Id<MessageMarker>, Id<ChannelMarker>>>, // keyed-map: one run's own DM messages, dropped with its responder
 }
+
+/// Where a message run's ephemeral answers go.
+#[derive(Clone, Copy, Debug)]
+enum Private {
+    /// The author's DM channel.
+    Dm(Id<ChannelMarker>),
+    /// Discord refused the DM: short-lived replies in the invoking channel.
+    Channel,
+}
+
+/// Discord's "Cannot send messages to this user" (the author's DMs are
+/// closed to the bot).
+const CANNOT_DM: u32 = 50007;
 
 impl fmt::Debug for Transport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -155,7 +180,7 @@ impl Transport {
                 message(&send(&t.app, &route, None, false).await?)
             }
             Self::Message(t) => match message_id {
-                Some(id) => channel_fetch(&t.app, t.channel_id, id).await,
+                Some(id) => channel_fetch(&t.app, t.channel_of(id), id).await,
                 None => Err(ResponderError::NoReply),
             },
             Self::Detached | Self::Webhook(_) => Err(ResponderError::NoReply),
@@ -341,6 +366,138 @@ impl InteractionTarget {
 }
 
 impl MessageTarget {
+    /// A reply target for the message `message_id` in `channel_id` by
+    /// `author`; ephemeral answers that fall back to the channel are
+    /// deleted after `ephemeral_ttl`.
+    pub(crate) fn new(
+        app: Arc<AppShared>,
+        (channel_id, message_id): (Id<ChannelMarker>, Id<MessageMarker>),
+        author: Id<UserMarker>,
+        ephemeral_ttl: Duration,
+    ) -> Self {
+        Self {
+            app,
+            channel_id,
+            message_id,
+            author,
+            ephemeral_ttl,
+            private: tokio::sync::Mutex::new(None),
+            placed: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Posts a new message of the run; its id and attachments.
+    ///
+    /// Public: in the invoking channel, as a reply when `reply`. Ephemeral
+    /// (AD-32): in the author's DM; when Discord refuses it (the DM cannot
+    /// be opened, or `50007`), as a reply in the invoking channel deleted
+    /// after the ephemeral TTL. `build(reference)` builds the Create
+    /// Message body, with the reply reference when `reference`.
+    pub(crate) async fn post(
+        &self,
+        ephemeral: bool,
+        reply: bool,
+        build: impl Fn(bool) -> Result<Body, ResponderError>,
+    ) -> Result<(Id<MessageMarker>, KnownFiles), ResponderError> {
+        if !ephemeral {
+            return self.create(self.channel_id, build(reply)?).await;
+        }
+        let mut private = self.private.lock().await;
+        if private.is_none() {
+            *private = Some(self.open_dm().await);
+        }
+        if let Some(Private::Dm(dm)) = *private {
+            match self.create(dm, build(false)?).await {
+                Ok((id, files)) => {
+                    self.placed
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(id, dm);
+                    return Ok((id, files));
+                }
+                Err(ResponderError::Rejected {
+                    code: Some(CANNOT_DM),
+                    ..
+                }) => {
+                    tracing::debug!(
+                        target: "noctis::responder",
+                        "the author's DMs are closed: ephemeral answers go to the channel"
+                    );
+                    *private = Some(Private::Channel);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        drop(private);
+        let (id, files) = self.create(self.channel_id, build(true)?).await?;
+        let app = Arc::clone(&self.app);
+        let (channel, ttl) = (self.channel_id, self.ephemeral_ttl);
+        tokio::spawn(async move {
+            tokio::time::sleep(ttl).await;
+            if let Err(error) = channel_delete(&app, channel, id).await {
+                tracing::debug!(
+                    target: "noctis::responder",
+                    %error,
+                    "the short-lived ephemeral answer was not deleted"
+                );
+            }
+        });
+        Ok((id, files))
+    }
+
+    /// Opens the author's DM channel; [`Private::Channel`] when that fails.
+    async fn open_dm(&self) -> Private {
+        let body = serde_json::json!({ "recipient_id": self.author.to_string() });
+        let bytes = serde_json::to_vec(&body).unwrap_or_default();
+        let opened = send(
+            &self.app,
+            &Route::CreatePrivateChannel,
+            Some(Payload::Json(bytes)),
+            true,
+        )
+        .await;
+        let channel = opened.ok().and_then(|body| {
+            let value: Value = serde_json::from_slice(&body).ok()?;
+            snowflake::<ChannelMarker>(value.get("id"))
+        });
+        channel.map_or_else(
+            || {
+                tracing::debug!(
+                    target: "noctis::responder",
+                    "the author's DM could not be opened: ephemeral answers go to the channel"
+                );
+                Private::Channel
+            },
+            Private::Dm,
+        )
+    }
+
+    /// Sends the Create Message `body` in `channel`.
+    async fn create(
+        &self,
+        channel: Id<ChannelMarker>,
+        body: Body,
+    ) -> Result<(Id<MessageMarker>, KnownFiles), ResponderError> {
+        let route = Route::CreateMessage {
+            channel_id: channel.get(),
+        };
+        let response = send(&self.app, &route, Some(body.payload), true).await?;
+        Ok((
+            message_id(&response)?,
+            posted(&response).files.unwrap_or(body.kept),
+        ))
+    }
+
+    /// The channel the run's message `id` lives in.
+    fn channel_of(&self, id: Id<MessageMarker>) -> Id<ChannelMarker> {
+        self.placed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&id)
+            .copied()
+            .unwrap_or(self.channel_id)
+    }
+
     /// Makes the Create Message `body` a reply to the message.
     pub(crate) fn reference(&self, body: &mut Value) {
         if let Value::Object(map) = body {
@@ -354,19 +511,6 @@ impl MessageTarget {
         }
     }
 
-    /// Posts `body` (built with [`reference`](Self::reference)) as a reply
-    /// to the message; the reply's id and attachments.
-    pub(crate) async fn reply(
-        &self,
-        body: Payload,
-    ) -> Result<(Id<MessageMarker>, Option<KnownFiles>), ResponderError> {
-        let route = Route::CreateMessage {
-            channel_id: self.channel_id.get(),
-        };
-        let response = send(&self.app, &route, Some(body), true).await?;
-        Ok((message_id(&response)?, posted(&response).files))
-    }
-
     /// Starts the typing indicator.
     pub(crate) async fn typing(&self) -> Result<(), ResponderError> {
         let route = Route::CreateTypingTrigger {
@@ -376,11 +520,11 @@ impl MessageTarget {
     }
 
     async fn edit(&self, id: Id<MessageMarker>, body: Payload) -> Result<Posted, ResponderError> {
-        channel_edit(&self.app, self.channel_id, id, body).await
+        channel_edit(&self.app, self.channel_of(id), id, body).await
     }
 
     async fn delete(&self, id: Id<MessageMarker>) -> Result<(), ResponderError> {
-        channel_delete(&self.app, self.channel_id, id).await
+        channel_delete(&self.app, self.channel_of(id), id).await
     }
 }
 

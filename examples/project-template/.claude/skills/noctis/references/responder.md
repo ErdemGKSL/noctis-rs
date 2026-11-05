@@ -142,8 +142,8 @@ What each sends, by the interaction's state:
   `NoticeText` is the conversion target, `ReplyText` the awaitable builder (its
   `Debug` hides the text).
 - **Over the Dispatcher** (a prefix Command): `respond` replies to the invoking
-  message, and `reply_text` is always public. A Command declaring
-  `response = ephemeral` is not served by `PrefixPlugin` yet (`commands.md` §9).
+  message; anything ephemeral (`reply_text` without `.public()`, a
+  `response = ephemeral` Command) goes to the author's DM (§4.1).
 - **Errors** come back as a `HandlerError` wrapping the `ResponderError`: find it with
   `err.as_error().downcast_ref::<ResponderError>()`. Propagate them with `?`; the
   user gets the usual error notice (§5).
@@ -493,7 +493,6 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `Encode { reason }` | a Route `custom_id` cannot be resolved (a `signed` Route without a payload key on a detached responder, a select nonce or Ref that could not be drawn, or a `custom_id` that fails to encode or finish); `reason` names the Route |
 | `RefStore(PortError)` | the `RefStore` failed while storing a Ref record of the message |
 | `RefCollision` | three freshly minted Refs in a row already existed in the `RefStore` |
-| `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
 | `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01), or the callback exceeded `.http_timeout(..)` |
 | `RateLimited(RateLimited)` | Discord rate limited a follow-up, edit or fetch (RL-04): `scope`, `retry_after`, `discord_code`; never retried, wait before trying again |
@@ -653,9 +652,15 @@ impl Prefix {
   shows the typing indicator (the later message is then posted as the reply), edits,
   `fetch_reply` (bot token) and deletes target that reply (`fetch_reply` before it is
   `ResponderError::NoReply`), follow-ups are plain channel messages. Anything ephemeral
-  (a `response = ephemeral` Command, `reply_as(.., Ephemeral)`, `defer_reply_as(Ephemeral)`, `follow_up(.., Ephemeral)`) is
-  `ResponderError::EphemeralUnsupported`, never a silent public post; `show_modal(m)` is
-  `ResponderError::ModalUnavailable`. No auto-defer runs.
+  (a `response = ephemeral` Command, `reply_text` without `.public()`,
+  `reply_as(.., Ephemeral)`, `defer_reply_as(Ephemeral)`, `follow_up(.., Ephemeral)`)
+  emulates an ephemeral answer (AD-32): it is sent to the author's DM (opened once per
+  run with the bot token; an ephemeral defer shows no typing), and its edits, fetches
+  and deletes go there too. When Discord refuses the DM (`50007`, or the DM cannot be
+  opened) it is a reply to the invoking message deleted after
+  `CommandInvocation::ephemeral_ttl(..)` (1-60 s, default 10 s; `PrefixPlugin` passes
+  its own `ephemeral_ttl`). Validation, error and disabled-Module notices stay public
+  replies. `show_modal(m)` is `ResponderError::ModalUnavailable`. No auto-defer runs.
 - Span `noctis.dispatch{app, guild_id, module, path}`.
 
 ## 5. Errors shown to users (FR-22)

@@ -377,10 +377,6 @@ pub enum ResponderError {
     /// `RefStore`; nothing was sent.
     #[error("could not mint a unique Ref after 3 attempts")]
     RefCollision,
-    /// An ephemeral response over a transport that has none (a
-    /// [`Dispatcher`](crate::Dispatcher) message reply); nothing was sent.
-    #[error("this response cannot be ephemeral: a message reply is always public")]
-    EphemeralUnsupported,
     /// The interaction token is not 1-512 characters of `[A-Za-z0-9._-]`;
     /// nothing was sent.
     #[error("the interaction token is not 1-512 characters of [A-Za-z0-9._-]")]
@@ -781,8 +777,8 @@ impl<K: ResponderKind, D: DeferMode> Responder<K, Pending, D> {
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`]; [`ResponderError::EphemeralUnsupported`] for
-    /// an ephemeral reply over a [`Dispatcher`](crate::Dispatcher).
+    /// A [`ResponderError`]. Over a [`Dispatcher`](crate::Dispatcher) an
+    /// ephemeral reply goes to the author's DM (AD-32).
     pub async fn reply_as(
         self,
         msg: impl Into<OutgoingMessage>,
@@ -1027,9 +1023,7 @@ impl<K: ResponderKind, D: DeferMode> Responder<K, Acked, D> {
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`]; [`ResponderError::EphemeralUnsupported`] for
-    /// an ephemeral follow-up over a [`Dispatcher`](crate::Dispatcher);
-    /// [`ResponderError::TokenExpired`] after 15 minutes;
+    /// A [`ResponderError`]; [`ResponderError::TokenExpired`] after 15 minutes;
     /// [`ResponderError::FollowupCap`] for the sixth follow-up of a
     /// user-installed app (INT-11).
     pub async fn follow_up(
@@ -1638,6 +1632,21 @@ impl Shared {
         files.finish(&payload, self.file_limit(), &self.limits)
     }
 
+    /// The Create Message body of `msg` over the message transport
+    /// `target`, a reply to the invoking message when `reference`.
+    fn message_body(
+        &self,
+        target: &MessageTarget,
+        msg: &OutgoingMessage,
+        reference: bool,
+    ) -> Result<Body, ResponderError> {
+        let mut json = create(msg)?;
+        if reference {
+            target.reference(&mut json);
+        }
+        self.body(msg, json, None, None)
+    }
+
     /// The App's payload key ring, the signer of `signed` Routes; never
     /// handed anywhere else (AD-29).
     fn signer(&self) -> Option<&dyn Sign> {
@@ -1883,16 +1892,15 @@ impl Shared {
         ephemerality: Ephemerality,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
-        if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
-            return Err(ResponderError::EphemeralUnsupported);
-        }
         let mut ack_body = None;
         let (message_id, files) = if let Transport::Message(target) = &self.transport {
-            let mut json = create(msg)?;
-            target.reference(&mut json);
-            let body = self.body(msg, json, None, None)?;
-            let (id, files) = target.reply(body.payload).await?;
-            (Some(id), files.unwrap_or(body.kept))
+            let ephemeral = ephemerality == Ephemerality::Ephemeral;
+            let (id, files) = target
+                .post(ephemeral, true, |reference| {
+                    self.message_body(target, msg, reference)
+                })
+                .await?;
+            (Some(id), files)
         } else {
             // Encoded (and budget-checked) even when detached, so the seams
             // catch encode and Limits errors.
@@ -1927,9 +1935,6 @@ impl Shared {
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         self.refuse_answered()?;
-        if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
-            return Err(ResponderError::EphemeralUnsupported);
-        }
         let _gate = self.gate.lock().await;
         self.refuse_answered()?;
         if self.state() != PENDING {
@@ -1960,8 +1965,12 @@ impl Shared {
                 };
                 ack = Some(target.callback_json(&body, with_response).await?);
             }
-            Transport::Message(target) => target.typing().await?,
-            Transport::Detached | Transport::Webhook(_) => {}
+            // An ephemeral answer goes to the author's DM: no typing in
+            // the channel (AD-32).
+            Transport::Message(target) if ephemerality == Ephemerality::Public => {
+                target.typing().await?;
+            }
+            Transport::Message(_) | Transport::Detached | Transport::Webhook(_) => {}
         }
         self.state.store(DEFERRED, Ordering::Release);
         self.set_original(Original {
@@ -2147,16 +2156,14 @@ impl Shared {
         let mut channel_id = original.channel_id;
         let (message_id, files) = match (&self.transport, original.message_id) {
             (Transport::Message(target), None) => {
-                // A deferred message reply has no message yet: post it,
-                // unless the reply is ephemeral.
-                if original.ephemerality == Ephemerality::Ephemeral {
-                    return Err(ResponderError::EphemeralUnsupported);
-                }
-                let mut json = create(&msg)?;
-                target.reference(&mut json);
-                let body = self.body(&msg, json, None, None)?;
-                let (id, files) = target.reply(body.payload).await?;
-                (Some(id), files.unwrap_or(body.kept))
+                // A deferred message reply has no message yet: post it.
+                let ephemeral = original.ephemerality == Ephemerality::Ephemeral;
+                let (id, files) = target
+                    .post(ephemeral, true, |reference| {
+                        self.message_body(target, &msg, reference)
+                    })
+                    .await?;
+                (Some(id), files)
             }
             (transport, message_id) => {
                 let json = edit_body(&msg, format)?;
@@ -2216,9 +2223,6 @@ impl Shared {
         mut msg: OutgoingMessage,
         visibility: Visibility,
     ) -> Result<FollowupHandle, ResponderError> {
-        if self.transport.is_message() && visibility == Ephemerality::Ephemeral {
-            return Err(ResponderError::EphemeralUnsupported);
-        }
         self.prepare(&mut msg, visibility).await?;
         self.send_follow_up(msg, visibility).await
     }
@@ -2229,13 +2233,23 @@ impl Shared {
         msg: OutgoingMessage,
         visibility: Visibility,
     ) -> Result<FollowupHandle, ResponderError> {
-        if self.transport.is_message() && visibility == Ephemerality::Ephemeral {
-            return Err(ResponderError::EphemeralUnsupported);
+        if let Transport::Message(target) = &self.transport {
+            let ephemeral = visibility == Ephemerality::Ephemeral;
+            let (id, files) = target
+                .post(ephemeral, false, |reference| {
+                    self.message_body(target, &msg, reference)
+                })
+                .await?;
+            return Ok(FollowupHandle {
+                shared: Arc::clone(self),
+                message_id: id,
+                channel_id: None,
+                visibility,
+                format: Mutex::new(msg.format()),
+                files: Mutex::new(files),
+            });
         }
-        let json = match &self.transport {
-            Transport::Message(_) => create(&msg)?,
-            _ => callback_data(&msg, visibility.callback_flags())?,
-        };
+        let json = callback_data(&msg, visibility.callback_flags())?;
         let body = self.body(&msg, json, None, None)?;
         if let Transport::Interaction(target) = &self.transport
             && target.expired()
@@ -2310,12 +2324,14 @@ impl Shared {
                         let ack = target.callback(body.payload, false).await?;
                         transport::callback_posted(&ack).message_id
                     }
-                    Transport::Message(target) => {
-                        let mut json = create(&msg)?;
-                        target.reference(&mut json);
-                        let body = self.body(&msg, json, None, None)?;
-                        Some(target.reply(body.payload).await?.0)
-                    }
+                    Transport::Message(target) => Some(
+                        target
+                            .post(false, true, |reference| {
+                                self.message_body(target, &msg, reference)
+                            })
+                            .await?
+                            .0,
+                    ),
                     Transport::Detached | Transport::Webhook(_) => None,
                 };
                 self.state.store(REPLIED, Ordering::Release);

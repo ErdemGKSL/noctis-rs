@@ -120,7 +120,7 @@ use std::any::Any;
 use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use noctis_gateway::{Inbound, InboundKind};
@@ -452,7 +452,7 @@ pub(crate) struct Report<'a> {
 pub(crate) struct Restore {
     pub(crate) r: noctis_codec::Ref,
     pub(crate) record: bytes::Bytes,
-    pub(crate) ttl: std::time::Duration,
+    pub(crate) ttl: Duration,
 }
 
 /// Puts the taken record of `restore` back under its Ref after the Guard
@@ -1774,11 +1774,13 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
 ///
 /// It resolves the path in the guild's scope, then globally, and runs the
 /// pipeline from stage 3 on (FR-21). The handler answers with a reply to
-/// the invoking message: `defer` shows the typing indicator, and an
-/// ephemeral response is [`ResponderError::EphemeralUnsupported`](crate::ResponderError::EphemeralUnsupported).
-/// Handler errors and panics send a public notice (a message has no
-/// ephemeral form), then go to the Command Error Sink, not into the
-/// result.
+/// the invoking message: a public `defer` shows the typing indicator. An
+/// ephemeral answer (`response = ephemeral`, `reply_as`, an ephemeral
+/// follow-up) goes to the author's DM, with its edits and follow-ups; when
+/// Discord refuses the DM it is a reply deleted after
+/// [`CommandInvocation::ephemeral_ttl`] (AD-32). Handler errors and panics
+/// send a public notice reply, then go to the Command Error Sink, not into
+/// the result.
 ///
 /// It enforces none of the Command's `default_member_permissions`,
 /// `contexts` or `nsfw` metadata (Discord enforces those only for real
@@ -1888,7 +1890,11 @@ pub struct CommandInvocation {
     guild_id: Option<Id<GuildMarker>>,
     shard: u32,
     locale: Option<String>,
+    ephemeral_ttl: Duration,
 }
+
+/// How long an ephemeral answer posted in the channel stays by default.
+const EPHEMERAL_TTL: Duration = Duration::from_secs(10);
 
 impl CommandInvocation {
     /// An invocation of `input` from the message `message_id` in
@@ -1907,6 +1913,7 @@ impl CommandInvocation {
             guild_id: None,
             shard: 0,
             locale: None,
+            ephemeral_ttl: EPHEMERAL_TTL,
         }
     }
 
@@ -1934,6 +1941,15 @@ impl CommandInvocation {
         self
     }
 
+    /// How long an ephemeral answer stays when Discord refuses the author's
+    /// DM and it is posted in the invoking channel instead (AD-32):
+    /// clamped to 1-60 s, 10 s by default.
+    #[must_use]
+    pub fn ephemeral_ttl(mut self, ttl: Duration) -> Self {
+        self.ephemeral_ttl = ttl.clamp(Duration::from_secs(1), Duration::from_mins(1));
+        self
+    }
+
     /// The input.
     pub fn input(&self) -> &CommandInput {
         &self.input
@@ -1952,15 +1968,17 @@ impl Dispatcher {
     /// message), whose locale keys resolve in the run's `locales`.
     fn message_shared(
         &self,
-        (channel_id, message_id): (Id<ChannelMarker>, Id<MessageMarker>),
+        target: (Id<ChannelMarker>, Id<MessageMarker>),
+        (author, ephemeral_ttl): (Id<UserMarker>, Duration),
         ephemerality: Ephemerality,
         locales: Arc<LocaleCell>,
     ) -> Arc<Shared> {
-        let transport = Transport::Message(MessageTarget {
-            app: Arc::clone(&self.app),
-            channel_id,
-            message_id,
-        });
+        let transport = Transport::Message(MessageTarget::new(
+            Arc::clone(&self.app),
+            target,
+            author,
+            ephemeral_ttl,
+        ));
         let shared = Shared::new(transport, ephemerality, self.app.limits.clone());
         shared.set_i18n(Arc::clone(&self.app.strings), locales);
         shared
@@ -2020,6 +2038,7 @@ impl Dispatcher {
             guild_id,
             shard,
             locale,
+            ephemeral_ttl,
         } = invocation;
         let span = tracing::info_span!(
             "noctis.dispatch",
@@ -2060,7 +2079,12 @@ impl Dispatcher {
                 self.app.locales.guild(guild_id),
             ));
             let user = builtin.get().user;
-            let shared = self.message_shared((channel_id, message_id), ephemerality, builtin);
+            let shared = self.message_shared(
+                (channel_id, message_id),
+                (user_id, ephemeral_ttl),
+                ephemerality,
+                builtin,
+            );
             disabled_notice(&self.app, &span, &shared, user).await;
             return Ok(());
         }
@@ -2122,7 +2146,12 @@ impl Dispatcher {
             rate: Some(Arc::clone(&rate)),
         };
         let target = (channel_id, message_id);
-        let shared = self.message_shared(target, ephemerality, Arc::clone(&locales));
+        let shared = self.message_shared(
+            target,
+            (user_id, ephemeral_ttl),
+            ephemerality,
+            Arc::clone(&locales),
+        );
         let report = Report {
             app: &self.app,
             origin: ErrorOrigin::Command,

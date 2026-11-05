@@ -13,12 +13,13 @@
 mod parse;
 
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use noctis_core::__rules::command::OptionType;
 use noctis_core::events::{EventCtx, MessageCreate};
 use noctis_core::{
-    AppBuilder, BuildViolation, CommandInvocation, DispatchError, Dispatcher, Ephemerality,
-    EventHandler, HandlerResult, Module, Plugin,
+    AppBuilder, BuildViolation, CommandInvocation, DispatchError, Dispatcher, EventHandler,
+    HandlerResult, Module, Plugin,
 };
 use twilight_model::channel::Message;
 use twilight_model::gateway::Intents;
@@ -27,6 +28,11 @@ use crate::parse::{Entry, Table};
 
 /// The longest prefix, in Unicode scalar values.
 const MAX_PREFIX_CHARS: usize = 32;
+
+/// The default and the bounds of [`PrefixPlugin::ephemeral_ttl`].
+const EPHEMERAL_TTL: Duration = Duration::from_secs(10);
+const MIN_EPHEMERAL_TTL: Duration = Duration::from_secs(1);
+const MAX_EPHEMERAL_TTL: Duration = Duration::from_mins(1);
 
 /// The Module the plugin mounts its `MESSAGE_CREATE` handler in.
 const MODULE: &str = "noctis-prefix";
@@ -49,6 +55,11 @@ const MODULE: &str = "noctis-prefix";
 /// validation notice, a Command Error Sink report, and no handler run. A
 /// guild-scoped Command answers only in its guild.
 ///
+/// An ephemeral answer (`response = ephemeral`, `reply_as(.., Ephemeral)`,
+/// an ephemeral follow-up) goes to the author's DM, with its edits and
+/// follow-ups. When Discord refuses the DM (`50007`), it is a reply in the
+/// channel deleted after [`ephemeral_ttl`](Self::ephemeral_ttl).
+///
 /// Messages from bots or webhooks, system messages, and messages that do
 /// not name a Command Path are ignored without a request.
 ///
@@ -65,6 +76,7 @@ const MODULE: &str = "noctis-prefix";
 #[derive(Clone, Debug)]
 pub struct PrefixPlugin {
     prefix: String,
+    ephemeral_ttl: Duration,
 }
 
 impl PrefixPlugin {
@@ -73,10 +85,21 @@ impl PrefixPlugin {
     pub fn new(prefix: impl Into<String>) -> Self {
         Self {
             prefix: prefix.into(),
+            ephemeral_ttl: EPHEMERAL_TTL,
         }
     }
 
-    /// What is wrong with the prefix (P1-P3), one message per violation.
+    /// How long an ephemeral answer stays in the channel when Discord
+    /// refuses the author's DM: 1 to 60 seconds (another value fails the
+    /// build), 10 seconds by default.
+    #[must_use]
+    pub fn ephemeral_ttl(mut self, ttl: Duration) -> Self {
+        self.ephemeral_ttl = ttl;
+        self
+    }
+
+    /// What is wrong with the configuration (P1-P4), one message per
+    /// violation.
     fn violations(&self) -> Vec<String> {
         let mut out = Vec::new();
         if self.prefix.is_empty() {
@@ -93,6 +116,12 @@ impl PrefixPlugin {
                 self.prefix
             ));
         }
+        if !(MIN_EPHEMERAL_TTL..=MAX_EPHEMERAL_TTL).contains(&self.ephemeral_ttl) {
+            out.push(format!(
+                "ephemeral_ttl is {:?}: pass 1 to 60 seconds",
+                self.ephemeral_ttl
+            ));
+        }
         out
     }
 }
@@ -103,13 +132,7 @@ fn table(prefix: &str, dispatcher: &Dispatcher) -> Table {
         .__prefix_commands()
         .into_iter()
         .filter_map(|(scope, path, handler, metadata)| {
-            let entry = Entry::new(
-                scope,
-                path,
-                handler.options(),
-                metadata,
-                handler.ephemerality(),
-            );
+            let entry = Entry::new(scope, path, handler.options(), metadata);
             match unenforced(&entry) {
                 Some(what) => {
                     tracing::debug!(
@@ -133,8 +156,6 @@ fn unenforced(entry: &Entry) -> Option<&'static str> {
         Some("`permissions`")
     } else if entry.metadata().nsfw == Some(true) {
         Some("`nsfw = true`")
-    } else if entry.ephemerality() == Ephemerality::Ephemeral {
-        Some("`response = ephemeral`")
     } else if entry
         .options()
         .iter()
@@ -152,13 +173,14 @@ impl Plugin for PrefixPlugin {
             app.report(BuildViolation::plugin::<Self>(message));
         }
         let prefix: Arc<str> = Arc::from(self.prefix.as_str());
+        let ttl = self.ephemeral_ttl;
         let table = Arc::new(OnceLock::new());
         let handler = move |ctx: EventCtx, event: MessageCreate| {
             let table = Arc::clone(&table);
             let prefix = Arc::clone(&prefix);
             async move {
                 let table = table.get_or_init(|| self::table(&prefix, ctx.dispatcher()));
-                on_message(table, &ctx, event.0).await
+                on_message(table, ttl, &ctx, event.0).await
             }
         };
         app.module(
@@ -176,7 +198,12 @@ impl Plugin for PrefixPlugin {
 }
 
 /// Runs the Command a message names, if any.
-async fn on_message(table: &Table, ctx: &EventCtx, message: Message) -> HandlerResult<()> {
+async fn on_message(
+    table: &Table,
+    ephemeral_ttl: Duration,
+    ctx: &EventCtx,
+    message: Message,
+) -> HandlerResult<()> {
     if parse::is_ignored(&message) {
         return Ok(());
     }
@@ -195,7 +222,8 @@ async fn on_message(table: &Table, ctx: &EventCtx, message: Message) -> HandlerR
     let invocation =
         CommandInvocation::new(input, message.channel_id, message.id, message.author.id)
             .guild_id(message.guild_id)
-            .shard(ctx.shard());
+            .shard(ctx.shard())
+            .ephemeral_ttl(ephemeral_ttl);
     if let Err(err) = ctx.dispatcher().run_command(invocation).await {
         match err {
             DispatchError::UnknownCommand { path } => {
@@ -253,7 +281,24 @@ mod tests {
         );
     }
 
-    /// Until guards and ephemeral answers are emulated, a Command that
+    /// P4.
+    #[test]
+    fn p4_ephemeral_ttl() {
+        for secs in [1, 10, 60] {
+            let plugin = plugin("!").ephemeral_ttl(Duration::from_secs(secs));
+            assert!(plugin.violations().is_empty(), "{secs}");
+        }
+        for ttl in [
+            Duration::ZERO,
+            Duration::from_millis(999),
+            Duration::from_secs(61),
+        ] {
+            let message = only(&plugin("!").ephemeral_ttl(ttl));
+            assert!(message.starts_with("ephemeral_ttl is"), "{message}");
+        }
+    }
+
+    /// Until guards are emulated, a Command that
     /// declares them is left out of the table.
     #[test]
     fn unenforced_metadata_is_left_out() {
@@ -261,26 +306,16 @@ mod tests {
             [OptionDecl::new("where", OptionType::Channel, "d").channel_types(&[0])];
         static PLAIN_CHANNEL: [OptionDecl<'static>; 1] =
             [OptionDecl::new("where", OptionType::Channel, "d")];
-        let entry = |options, metadata, ephemerality| {
-            Entry::new(Scope::Global, "p", options, metadata, ephemerality)
-        };
-        let public = Ephemerality::Public;
+        let entry = |options, metadata| Entry::new(Scope::Global, "p", options, metadata);
         let perms = CommandMetadata::new().default_member_permissions(Permissions::BAN_MEMBERS);
-        assert_eq!(
-            unenforced(&entry(&[], perms, public)),
-            Some("`permissions`")
-        );
+        assert_eq!(unenforced(&entry(&[], perms)), Some("`permissions`"));
         let nsfw = CommandMetadata::new().nsfw(true);
-        assert_eq!(unenforced(&entry(&[], nsfw, public)), Some("`nsfw = true`"));
+        assert_eq!(unenforced(&entry(&[], nsfw)), Some("`nsfw = true`"));
         assert_eq!(
-            unenforced(&entry(&CHANNEL, CommandMetadata::new(), public)),
+            unenforced(&entry(&CHANNEL, CommandMetadata::new())),
             Some("`channel_types`")
         );
-        assert_eq!(
-            unenforced(&entry(&[], CommandMetadata::new(), Ephemerality::Ephemeral)),
-            Some("`response = ephemeral`")
-        );
         let fine = CommandMetadata::new().nsfw(false);
-        assert_eq!(unenforced(&entry(&PLAIN_CHANNEL, fine, public)), None);
+        assert_eq!(unenforced(&entry(&PLAIN_CHANNEL, fine)), None);
     }
 }

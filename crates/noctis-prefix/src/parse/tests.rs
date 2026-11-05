@@ -458,13 +458,7 @@ fn first_error_wins() {
 }
 
 fn entry(path: &'static str, options: &'static [OptionDecl<'static>]) -> Entry {
-    Entry::new(
-        Scope::Global,
-        path,
-        options,
-        CommandMetadata::new(),
-        noctis_core::Ephemerality::Public,
-    )
+    Entry::new(Scope::Global, path, options, CommandMetadata::new())
 }
 
 fn table(prefix: &str) -> Table {

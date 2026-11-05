@@ -514,3 +514,10 @@ to `all`. This amends FR-14 and becomes AD-32 and Epic 19.
   build, so no App that builds today stops building.
 - (decision) Story 19.3 lands before 19.2: a guard denial is an ephemeral answer, so it
   needs the DM transport first.
+- (decision) Ephemeral emulation lives in the core message transport, so every
+  `Dispatcher::run_command` caller gets it: `CommandInvocation::ephemeral_ttl`
+  (clamped to 1-60 s) and `PrefixPlugin::ephemeral_ttl` (outside 1-60 s fails the
+  build). `ResponderError::EphemeralUnsupported` is removed; `reply_text` over a
+  message now keeps its default ephemeral visibility (DM), as over an interaction.
+  Validation, error and disabled-Module notices stay public channel replies: a typo
+  should be answered where it was typed.

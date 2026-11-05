@@ -19,7 +19,7 @@ use noctis_core::__rules::command::{
     Choice, ChoiceValue, InteractionContext, NumericValue, OptionDecl, OptionType, Scope,
 };
 use noctis_core::__rules::len::discord_len;
-use noctis_core::{CommandInput, CommandMetadata, Ephemerality, OptionError, OptionValue};
+use noctis_core::{CommandInput, CommandMetadata, OptionError, OptionValue};
 use twilight_model::application::interaction::InteractionDataResolved;
 use twilight_model::channel::message::{Mention, MessageType};
 use twilight_model::channel::{Attachment, Message};
@@ -58,18 +58,16 @@ pub(crate) struct Entry {
     words: Vec<&'static str>,
     options: &'static [OptionDecl<'static>],
     metadata: CommandMetadata,
-    ephemerality: Ephemerality,
 }
 
 impl Entry {
     /// The entry of the Command Path `path` registered in `scope`, with its
-    /// options, resolved base metadata and declared `response`.
+    /// options and resolved base metadata.
     pub(crate) fn new(
         scope: Scope,
         path: &'static str,
         options: &'static [OptionDecl<'static>],
         metadata: CommandMetadata,
-        ephemerality: Ephemerality,
     ) -> Self {
         Self {
             scope,
@@ -77,7 +75,6 @@ impl Entry {
             words: path.split(' ').collect(),
             options,
             metadata,
-            ephemerality,
         }
     }
 
@@ -94,11 +91,6 @@ impl Entry {
     /// The resolved base metadata Discord would enforce.
     pub(crate) fn metadata(&self) -> &CommandMetadata {
         &self.metadata
-    }
-
-    /// The declared `response`.
-    pub(crate) fn ephemerality(&self) -> Ephemerality {
-        self.ephemerality
     }
 
     /// Whether the Command's `contexts` allow a guild message (`in_guild`)

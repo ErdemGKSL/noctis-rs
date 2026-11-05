@@ -54,6 +54,8 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
 - **Prefix commands.** With `PrefixPlugin` installed, every slash Command also runs
   from messages such as `!warn <@5> 3`, through the same handler and with no list;
   `#[command(.., command_type = "slash" | "prefix" | "all")]` picks the transports.
+  An ephemeral answer goes to the author's DM, or is a short-lived channel reply when
+  their DMs are closed.
 - **Voice.** Joining and leaving through Noctis's gateway, a bounded per-guild queue,
   typed track events, Opus passthrough and a recording driver for tests;
   `examples/music-bot` shows a whole music bot.

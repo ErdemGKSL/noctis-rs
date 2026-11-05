@@ -980,10 +980,15 @@ builder
   message needs `Guild`, a DM `BotDm`; no `contexts` allows both). Edited messages are
   not handled.
 - **The answer** is the Dispatcher's message transport (`responder.md` §4.1): a public
-  reply to the invoking message.
+  reply to the invoking message. An ephemeral answer (`response = ephemeral`,
+  `reply_text` without `.public()`, an ephemeral follow-up) is emulated: an ephemeral answer goes to the author's DM, with its edits and follow-ups; when
+  Discord refuses the DM (`50007`, DMs closed) it is a reply in the channel deleted after
+  `PrefixPlugin::ephemeral_ttl` (default 10 s, 1-60 s).
+  `PrefixPlugin::new("!").ephemeral_ttl(Duration::from_secs(5))` sets it; outside 1-60 s
+  the build fails (`ephemeral_ttl is …: pass 1 to 60 seconds`).
 - **Not yet emulated:** a Command whose base declares
-  `permissions` or `nsfw = true`, that declares `response = ephemeral`, or that has a
-  CHANNEL option with `channel_types` is left out of the prefix table (one `debug` line
+  `permissions` or `nsfw = true`, or that has a
+  CHANNEL option with `channel_types`, is left out of the prefix table (one `debug` line
   on `noctis_prefix` per Command when the table is built) and stays slash-only.
 
 | Option type | Accepted argument |
@@ -1018,7 +1023,8 @@ reply, and the Command Error Sink gets the error.
 | `!flag true 1.5 extra`, `!ping x` (unit Command) | ``Malformed { reason: "unexpected argument `extra`" }`` |
 
 **Refused at build** (`BuildViolation::Plugin` naming `PrefixPlugin`): an empty
-prefix, a prefix with whitespace, or one over 32 characters (see `troubleshooting.md`).
+prefix, a prefix with whitespace, one over 32 characters, or an `ephemeral_ttl`
+outside 1-60 s (see `troubleshooting.md`).
 
 **Limits.** Only users (mentioned, or the author) and attachments are resolved: a
 `ResolvedRole`, `ResolvedChannel` or member-only field decodes as `Unresolved` over a

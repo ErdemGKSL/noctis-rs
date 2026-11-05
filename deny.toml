@@ -27,6 +27,7 @@ ignore = [
     { id = "RUSTSEC-2026-0293", reason = "ringbuf 0.4 in songbird 0.6.1's driver; needs an element Drop that panics, which Songbird's buffers never hold; the fix is 0.5.2, outside songbird's range" },
     { id = "RUSTSEC-2024-0388", reason = "derivative (unmaintained) is a songbird 0.6.1 dependency" },
     { id = "RUSTSEC-2024-0384", reason = "instant (unmaintained) via parking_lot 0.11 / fluvio-wasm-timer in openmls (davey)" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils (unmaintained) via fluvio-wasm-timer in openmls (davey, songbird 0.6.1); no safe upgrade exists" },
 ]
 
 [licenses]

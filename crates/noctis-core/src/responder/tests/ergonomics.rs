@@ -389,7 +389,7 @@ async fn ctx_methods_after_a_modal_or_a_stop() {
 }
 
 /// Row 10: over the Dispatcher a message reply, or the post of a deferred
-/// reply; an ephemeral declared visibility is unsupported.
+/// reply; an ephemeral declared visibility goes to the author's DM.
 #[tokio::test]
 async fn respond_over_the_dispatcher() {
     let fx = Fixture::start(discord()).await;
@@ -409,11 +409,15 @@ async fn respond_over_the_dispatcher() {
     );
     clear(&fx);
     let ephemeral = fx.message(Ephemerality::Ephemeral);
-    assert_responder_err!(
-        cmd(&ephemeral).respond(v2("a")).await,
-        ResponderError::EphemeralUnsupported
+    let _ = cmd(&ephemeral).respond(v2("a")).await.unwrap();
+    let routes: Vec<_> = fx.requests().into_iter().map(|(_, p, _)| p).collect();
+    assert_eq!(
+        routes,
+        [
+            "/api/v10/users/@me/channels",
+            "/api/v10/channels/55/messages"
+        ]
     );
-    assert!(fx.requests().is_empty());
 }
 
 /// Rows 11-13 and 36: Strict rejects (no request, not answered), Lenient
@@ -823,22 +827,26 @@ async fn reply_text_after_type_6_or_answered() {
     assert_eq!(requests[2], follow_up("b", 32768));
 }
 
-/// Row 31: over the Dispatcher the text is always public.
+/// Row 31 (amended by Story 19.3): over the Dispatcher an ephemeral text
+/// goes to the author's DM, a public one to the channel.
 #[tokio::test]
-async fn reply_text_over_the_dispatcher_is_public() {
+async fn reply_text_over_the_dispatcher() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.message(Ephemerality::Public);
-    let _ = cmd(&shared).reply_text("a").await.unwrap();
+    let _ = cmd(&shared).reply_text("a").public().await.unwrap();
     let _ = cmd(&shared).reply_text("b").await.unwrap();
     let requests = fx.requests();
-    assert_eq!(requests.len(), 2);
-    for (method, path, body) in requests {
-        assert_eq!(
-            (method, path.as_str()),
-            (Method::POST, "/api/v10/channels/5/messages")
-        );
-        assert_eq!(body["flags"], 32768);
-    }
+    let paths: Vec<&str> = requests.iter().map(|r| r.1.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/api/v10/channels/5/messages",
+            "/api/v10/users/@me/channels",
+            "/api/v10/channels/55/messages",
+        ]
+    );
+    assert_eq!(requests[0].2["flags"], 32768);
+    assert_eq!(requests[2].2["flags"], 32768);
 }
 
 /// A catalog with `shop.saved` in every locale, as the locale's code.

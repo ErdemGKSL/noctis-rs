@@ -2867,10 +2867,14 @@ pub mod prefix {
     //! - **Ignored.** Messages from bots or webhooks, system messages, text
     //!   without the prefix or a known path, and Commands whose
     //!   `contexts` exclude the place get no answer.
+    //! - **Ephemeral.** An ephemeral answer goes to the author's DM, with
+    //!   its edits and follow-ups; when Discord refuses the DM (`50007`) it
+    //!   is a reply deleted after [`PrefixPlugin::ephemeral_ttl`] (default
+    //!   10 s, 1-60 s).
     //! - **Not yet emulated.** A Command whose base declares `permissions`
-    //!   or `nsfw = true`, that declares `response = ephemeral`, or that has
-    //!   a CHANNEL option with `channel_types` stays slash-only for now (a
-    //!   `debug` line when the table is built).
+    //!   or `nsfw = true`, or that has a CHANNEL option with
+    //!   `channel_types`, stays slash-only for now (a `debug` line when the
+    //!   table is built).
     //! - **Limits.** Only users
     //!   (mentioned or the author) and attachments are resolved:
     //!   `ResolvedRole`, `ResolvedChannel` and member data are not, so such
