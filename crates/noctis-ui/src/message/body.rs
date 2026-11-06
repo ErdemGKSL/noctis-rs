@@ -44,12 +44,10 @@ enum Inner<'a> {
 pub(super) enum Clear {
     /// None: a send, or an edit of a V2 message.
     Nothing,
-    /// `content`, `embeds`, `poll` and `sticker_ids`: an edit of a legacy
-    /// message (CV2-02).
+    /// `content`, `embeds` and `poll`: an edit of a message that may be
+    /// legacy (CV2-02, WH-03). Never `sticker_ids`: stickers cannot be
+    /// edited, and Edit Message rejects the key with 50080 even when empty.
     Legacy,
-    /// `content`, `embeds` and `poll`: Edit Webhook Message, which has no
-    /// `sticker_ids` parameter (WH-03).
-    Webhook,
 }
 
 impl<'a> MessageBody<'a> {
@@ -75,13 +73,10 @@ impl Serialize for MessageBody<'_> {
         match &self.0 {
             Inner::V2 { msg, flags, clear } => {
                 map.serialize_entry("flags", flags)?;
-                if *clear != Clear::Nothing {
+                if *clear == Clear::Legacy {
                     map.serialize_entry("content", &())?;
                     map.serialize_entry("embeds", &NO_ITEMS)?;
                     map.serialize_entry("poll", &())?;
-                }
-                if *clear == Clear::Legacy {
-                    map.serialize_entry("sticker_ids", &NO_ITEMS)?;
                 }
                 map.serialize_entry("components", msg.components())?;
                 map.serialize_entry("allowed_mentions", msg.allowed_mentions())?;

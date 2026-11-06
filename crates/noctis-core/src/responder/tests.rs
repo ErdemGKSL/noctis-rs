@@ -321,7 +321,7 @@ async fn edit_formats() {
     assert_eq!(
         *edit,
         json!({
-            "flags": 32768, "content": null, "embeds": [], "poll": null, "sticker_ids": [],
+            "flags": 32768, "content": null, "embeds": [], "poll": null,
             "components": v2_components("b"), "allowed_mentions": { "parse": [] }, "attachments": []
         })
     );

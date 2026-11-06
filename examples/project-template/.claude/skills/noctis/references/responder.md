@@ -757,8 +757,8 @@ Notices from the "disabled here" (`noctis.module.disabled`) and rate-limit
 `LegacyMessage::new("…")` for plain notices or prefix commands; the 2000-character limit
 (MSG-01) is checked by the runtime validator (`noctis::ui::validate`) and, for a
 literal, at `cargo check` by `content!("…")`; see `components-v2.md` §12. Up to 5 legacy Action Rows (CV2-15). Never for
-dashboards. Editing a legacy message into a View is supported (content/embeds/poll/sticker_ids
-are cleared in the same request);
+dashboards. Editing a legacy message into a View is supported (content/embeds/poll
+are cleared in the same request; a message with stickers cannot be converted);
 V2 → legacy is a typed error (CV2-01).
 
 ## 6b. Bot messages in any channel (`ctx.messages()`)
@@ -809,8 +809,9 @@ ctx.messages().delete(channel, message).await?;
   is no ephemeral channel message. Edit Message changes only `SUPPRESS_EMBEDS` (set or
   unset) and `IS_COMPONENTS_V2` (set only, CV2-01), and the sent flags replace the old
   ones: pass `EditFlags::SUPPRESS_EMBEDS` on every edit that should keep it.
-- **Edits.** Discord requires `content: null`, `embeds: []`, `poll: null` and
-  `sticker_ids: []` when an edit sets `IS_COMPONENTS_V2` on a message that used them.
+- **Edits.** Discord requires `content: null`, `embeds: []` and `poll: null` when an
+  edit sets `IS_COMPONENTS_V2` on a message that used them; Noctis never sends
+  `sticker_ids` (any such key on an edit is 50080), so stickered messages stay legacy.
   `ChannelMessage::edit` knows its message is V2 and sends none of them;
   `Messages::edit(channel, id, msg)` does not know the target's format and always sends
   all four, so a legacy bot message becomes V2 (CV2-02). In API v10 an edit's

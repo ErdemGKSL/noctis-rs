@@ -7,7 +7,6 @@ expression: body
   "content": null,
   "embeds": [],
   "poll": null,
-  "sticker_ids": [],
   "components": [
     {
       "type": 10,

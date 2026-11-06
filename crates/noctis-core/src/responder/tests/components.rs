@@ -113,7 +113,7 @@ async fn update_is_one_type_7_callback() {
     assert_eq!(
         fx.requests()[0].2,
         json!({ "type": 7, "data": {
-            "flags": 32768, "content": null, "embeds": [], "poll": null, "sticker_ids": [],
+            "flags": 32768, "content": null, "embeds": [], "poll": null,
             "components": v2_components("a"), "allowed_mentions": { "parse": [] }, "attachments": [],
         } })
     );
@@ -148,7 +148,7 @@ async fn cv2_02_modal_submit_update_of_a_legacy_source_clears_it() {
             Method::POST,
             UPDATE_CB.to_owned(),
             json!({ "type": 7, "data": {
-                "flags": 32768, "content": null, "embeds": [], "poll": null, "sticker_ids": [],
+                "flags": 32768, "content": null, "embeds": [], "poll": null,
                 "components": v2_components("a"), "allowed_mentions": { "parse": [] },
                 "attachments": [],
             } })

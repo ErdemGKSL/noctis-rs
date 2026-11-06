@@ -681,7 +681,9 @@ for the endpoint and adds the `attachments` entries and `files[n]` parts (§6). 
 
 - `V2Message::edit_body(MessageFormat::Legacy, ..)` turns a legacy message into V2 and
   clears its legacy fields in the same request:
-  `{"flags":32768,"content":null,"embeds":[],"poll":null,"sticker_ids":[],"components":[..],"allowed_mentions":{..}}`.
+  `{"flags":32768,"content":null,"embeds":[],"poll":null,"components":[..],"allowed_mentions":{..}}`.
+  `sticker_ids` is never sent (Discord rejects it on an edit with 50080), so a legacy
+  message with stickers cannot become V2.
 - `LegacyMessage::edit_body(MessageFormat::V2, ..)` returns `Err(UiError::V2ToLegacy)`
   ("a Components V2 message cannot be edited back into a legacy message (CV2-01: the
   IS_COMPONENTS_V2 flag cannot be removed)"); with `MessageFormat::Legacy` it is `Ok`.

@@ -111,7 +111,7 @@
 //! let msg = V2Message::new(Components::new().push(TextDisplay::new("hi")));
 //! let json = serde_json::to_value(msg.edit_body(MessageFormat::Legacy, EditFlags::empty())).unwrap();
 //! assert_eq!(json["flags"], 32768);
-//! assert_eq!(json["sticker_ids"], serde_json::json!([]));
+//! assert!(json.get("sticker_ids").is_none());
 //!
 //! let notice = LegacyMessage::new("plain text");
 //! assert!(matches!(notice.edit_body(MessageFormat::V2, EditFlags::empty()), Err(UiError::V2ToLegacy)));

@@ -78,9 +78,7 @@ fn cv2_02_legacy_to_v2_edit() {
     let json = serde_json::to_string(&msg.edit_body(MessageFormat::Legacy, EditFlags::empty()))
         .expect("serializes");
     assert!(
-        json.starts_with(
-            r#"{"flags":32768,"content":null,"embeds":[],"poll":null,"sticker_ids":[],"components":["#
-        ),
+        json.starts_with(r#"{"flags":32768,"content":null,"embeds":[],"poll":null,"components":["#),
         "{json}"
     );
     assert!(

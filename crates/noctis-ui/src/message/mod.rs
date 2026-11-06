@@ -179,8 +179,10 @@ impl V2Message {
     /// in `format`.
     ///
     /// Editing a legacy message also sends `content: null, embeds: [],
-    /// poll: null, sticker_ids: []`, which Discord needs before it accepts the
-    /// V2 flag (CV2-02).
+    /// poll: null`, which Discord needs before it accepts the V2 flag
+    /// (CV2-02). `sticker_ids` is never sent: Discord answers any
+    /// `sticker_ids` key on an edit with 50080 (stickers cannot be edited),
+    /// so a legacy message with stickers cannot become V2.
     ///
     /// ```
     /// use noctis_ui::{Components, EditFlags, MessageFormat, TextDisplay, V2Message};
@@ -225,7 +227,7 @@ impl V2Message {
     /// );
     /// ```
     pub fn webhook_edit_body(&self, flags: EditFlags) -> MessageBody<'_> {
-        MessageBody::v2(self, flags.bits(), Clear::Webhook)
+        MessageBody::v2(self, flags.bits(), Clear::Legacy)
     }
 }
 

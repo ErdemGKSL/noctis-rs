@@ -175,8 +175,8 @@ impl Messages {
     /// Edits the bot message `id` in `channel` into `msg`. The target's
     /// format is unknown, so the legacy fields are reset as Discord requires
     /// when `IS_COMPONENTS_V2` is set (`content: null`, `embeds: []`,
-    /// `poll: null`, `sticker_ids: []`): a legacy message becomes V2
-    /// (CV2-02). The `attachments` array lists every file the message keeps
+    /// `poll: null`; never `sticker_ids`, which Discord rejects on an edit
+    /// with 50080): a legacy message becomes V2 (CV2-02). The `attachments` array lists every file the message keeps
     /// (API v10), and this edit knows none, so the message keeps only the
     /// files `msg` uploads; [`ChannelMessage::edit`] keeps the ones it holds.
     pub fn edit(

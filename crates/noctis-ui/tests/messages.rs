@@ -189,10 +189,12 @@ fn cv2_02_legacy_to_v2_edit_clears_fields() {
     let msg = V2Message::new(c1());
     let body = msg.edit_body(MessageFormat::Legacy, EditFlags::empty());
     insta::assert_json_snapshot!("v2_edit_legacy", body);
+    // Discord rejects any `sticker_ids` key on an edit (50080).
+    assert!(to_json(&body).get("sticker_ids").is_none());
     let json = serde_json::to_string(&body).expect("serializes");
     assert_eq!(
         json,
-        r#"{"flags":32768,"content":null,"embeds":[],"poll":null,"sticker_ids":[],"components":[{"type":10,"id":1,"content":"hi"}],"allowed_mentions":{"parse":[]}}"#
+        r#"{"flags":32768,"content":null,"embeds":[],"poll":null,"components":[{"type":10,"id":1,"content":"hi"}],"allowed_mentions":{"parse":[]}}"#
     );
 }
 
