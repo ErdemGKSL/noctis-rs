@@ -410,7 +410,7 @@ fn img_03_asset_fields_emit_template_assets() {
         "impl :: noctis :: __private :: image :: TemplateAssets for S",
         "const DECLARES : bool = true ;",
         "< RemoteImage as :: noctis :: __private :: image :: AssetField > :: declare (& self . a , \"a\" , false , out) ;",
-        "< Option < RemoteImage > as :: noctis :: __private :: image :: AssetField > :: declare (& self . b , \"b\" , true , out) ;",
+        "< Option < RemoteImage > as :: noctis :: __private :: image :: RequiredAssetField > :: declare_required (& self . b , \"b\" , out) ;",
         "declare (& self . r#type , \"type\" , false , out) ;",
     ] {
         assert!(out.contains(needle), "{needle} not in {out}");
@@ -427,6 +427,102 @@ fn img_03_asset_fields_emit_template_assets() {
         "{plain}"
     );
     assert!(!plain.contains("DECLARES"), "{plain}");
+}
+
+/// The `#[derive(Assets)]` expansion of `item`, or its error messages.
+fn assets(item: TokenStream) -> Result<String, Vec<String>> {
+    let input: DeriveInput = syn::parse2(item).unwrap();
+    assets::expand(&input)
+        .map(|out| out.to_string())
+        .map_err(|err| err.into_iter().map(|e| e.to_string()).collect())
+}
+
+#[test]
+fn img_03_derive_assets_declares_each_field_under_its_path() {
+    let out = assets(quote! {
+        struct Row {
+            name: String,
+            #[asset] avatar: RemoteImage,
+            #[asset(required)] banner: Option<RemoteImage>,
+            #[asset] r#badges: Vec<Badge>,
+        }
+    })
+    .unwrap();
+    for needle in [
+        "impl :: noctis :: __private :: image :: Assets for Row",
+        "impl :: noctis :: __private :: image :: AssetField for Row",
+        "fn declare_assets (& self , path : & str , out : & mut :: noctis :: __private :: image :: DeclaredImages)",
+        "< RemoteImage as :: noctis :: __private :: image :: AssetField > :: declare (& self . avatar , & :: noctis :: __private :: image :: asset_path (path , \"avatar\") , false , out) ;",
+        "< Option < RemoteImage > as :: noctis :: __private :: image :: RequiredAssetField > :: declare_required (& self . banner , & :: noctis :: __private :: image :: asset_path (path , \"banner\") , out) ;",
+        "asset_path (path , \"badges\")",
+    ] {
+        assert!(out.contains(needle), "{needle} not in {out}");
+    }
+    assert!(!out.contains("self . name"), "{out}");
+    assert!(!out.contains("let _ ="), "{out}");
+    let tuple = assets(quote!(
+        struct T(u8, #[asset] RemoteImage);
+    ))
+    .unwrap();
+    assert!(
+        tuple.contains(
+            "& self . 1 , & :: noctis :: __private :: image :: asset_path (path , \"1\")"
+        ),
+        "{tuple}"
+    );
+    let plain = assets(quote!(
+        struct P {
+            name: String,
+        }
+    ))
+    .unwrap();
+    assert!(plain.contains("let _ = (path , out) ;"), "{plain}");
+}
+
+#[test]
+fn img_03_derive_assets_errors() {
+    let needs = "[IMG-03] `#[derive(Assets)]` needs a struct";
+    assert_eq!(
+        assets(quote!(
+            enum E {
+                A,
+            }
+        ))
+        .unwrap_err(),
+        [needs]
+    );
+    assert_eq!(assets(quote!(union U { a: u8 })).unwrap_err(), [needs]);
+    let generic = assets(quote!(
+        struct G<T> {
+            #[asset]
+            a: T,
+        }
+    ))
+    .unwrap_err();
+    assert!(
+        generic[0].contains("without generic or lifetime parameters"),
+        "{generic:?}"
+    );
+    assert_eq!(
+        assets(quote!(
+            struct S {
+                #[asset(optional)]
+                a: RemoteImage,
+            }
+        ))
+        .unwrap_err(),
+        ["[IMG-03] `#[asset]` takes no argument or `required`: `#[asset(required)]`"]
+    );
+    let hash = assets(quote!(
+        struct S {
+            a: HashMap<String, u8>,
+        }
+    ))
+    .unwrap_err();
+    assert!(
+        hash[0].starts_with("Template data must serialize deterministically"),
+        "{hash:?}"
+    );
 }
 
 #[test]

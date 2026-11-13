@@ -1,0 +1,21 @@
+error: [IMG-03] `#[derive(Assets)]` needs a struct
+  --> tests/ui-image/img/IMG-03_assets_field_type.rs:13:1
+   |
+13 | enum Kind {
+   | ^^^^
+
+error[E0277]: [IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>`, or a `#[derive(Assets)]` struct `T` as `T`, `Option<T>` or `Vec<T>`
+ --> tests/ui-image/img/IMG-03_assets_field_type.rs:9:13
+  |
+9 |     avatar: String,
+  |             ^^^^^^ not a remote image field
+  |
+  = help: the trait `noctis::__private::noctis_image::remote::declare::AssetField` is not implemented for `std::string::String`
+  = note: declare remote images as `#[asset] avatar: RemoteImage` (`#[asset(required)]` fails the render instead of drawing the fallback); a struct that holds them derives `noctis::image::Assets`
+  = help: the following other types implement trait `noctis::__private::noctis_image::remote::declare::AssetField`:
+            Row
+            Vec<T>
+            Vec<noctis::image::RemoteImage>
+            noctis::image::RemoteImage
+            std::option::Option<T>
+            std::option::Option<noctis::image::RemoteImage>

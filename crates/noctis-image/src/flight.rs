@@ -180,9 +180,15 @@ pub(crate) fn share_error(err: &RenderError) -> RenderError {
             id: id.clone(),
             image: image.clone(),
         },
-        RenderError::RemoteImage { id, image, reason } => RenderError::RemoteImage {
+        RenderError::RemoteImage {
+            id,
+            image,
+            field,
+            reason,
+        } => RenderError::RemoteImage {
             id: id.clone(),
             image: image.clone(),
+            field: field.clone(),
             reason: reason.clone(),
         },
         RenderError::UndeclaredImage { id, image } => RenderError::UndeclaredImage {

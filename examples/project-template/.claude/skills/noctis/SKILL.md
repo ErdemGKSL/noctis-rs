@@ -20,7 +20,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `2cab66f73ed4502f42cfd5ec5cf7317f4115a37e69a378ccb5ec8fc70a5642fd` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `1ae77ab055b883c038dea3dbb74d6c094b2c1c943b4ff9d8d4f6944a6c004368` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -288,6 +288,8 @@ impl TemplateView for ProfileCard {
 // remote images: `#[asset] avatar: RemoteImage` (or `#[asset(required)]`), built with
 // `RemoteImage::avatar(&user, 256)`, drawn with `<img src={&self.avatar} />`; fetched from
 // the Discord CDN allow-list before the render ([IMG-03], `references/images-engine.md` §7).
+// A row that holds its own avatar: #[derive(Assets)] on the row, #[asset] on its image field
+// and `#[asset] rows: Vec<Row>` on the Template (never a parallel Vec<RemoteImage>).
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);

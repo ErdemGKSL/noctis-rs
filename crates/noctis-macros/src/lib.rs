@@ -313,13 +313,26 @@ pub fn on_rate_limited(args: TokenStream, item: TokenStream) -> TokenStream {
 /// animated `format` defaults to `Webp { quality: 80 }`, and `Gif`/`Apng`
 /// compile only with the `image-gif` feature. Generic structs and
 /// `HashMap`/`HashSet` fields are errors. `#[asset]` / `#[asset(required)]`
-/// fields (`RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>`)
-/// declare remote images, resolved before the render (IMG-03).
+/// fields (`RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>`, or
+/// an `Assets` struct `T` as `T`, `Option<T>` or `Vec<T>`) declare remote
+/// images, resolved before the render (IMG-03).
 #[cfg(feature = "image")]
 #[proc_macro_derive(Template, attributes(template, asset))]
 pub fn derive_template(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     template::derive(&input).into()
+}
+
+/// `#[derive(Assets)]` on a plain data struct: implements
+/// `noctis::image::Assets`, so a Template's `#[asset]` field of that type
+/// (as `T`, `Option<T>` or `Vec<T>`) declares the remote images in the
+/// struct's own `#[asset]` / `#[asset(required)]` fields, named by path
+/// (`rows[3].avatar`) (IMG-03).
+#[cfg(feature = "image")]
+#[proc_macro_derive(Assets, attributes(asset))]
+pub fn derive_assets(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    template::assets::derive(&input).into()
 }
 
 /// `view! { <div tw="..">..</div> }`: one root element lowered to the

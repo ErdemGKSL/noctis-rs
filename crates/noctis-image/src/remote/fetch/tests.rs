@@ -278,12 +278,23 @@ async fn img_03_resolve_draws_the_fallback_or_fails_required() {
         .resolve(None, "card", vec![declared("b", true, missing)], false)
         .await
         .unwrap_err();
-    let RenderError::RemoteImage { id, image, reason } = error else {
+    let RenderError::RemoteImage {
+        id,
+        image,
+        field,
+        reason,
+    } = error
+    else {
         panic!("expected RemoteImage, got {error:?}");
     };
     assert_eq!(
-        (id.as_str(), image, reason.as_str()),
-        ("card", format!("{}/missing", server.origin()), "HTTP 404")
+        (id.as_str(), image, field.as_str(), reason.as_str()),
+        (
+            "card",
+            format!("{}/missing", server.origin()),
+            "b",
+            "HTTP 404"
+        )
     );
 }
 
@@ -355,7 +366,8 @@ async fn img_03_plan_dedupes_and_caps_the_count() {
             ],
         )
         .unwrap();
-    assert_eq!(plan, [declared("a", true, a)]);
+    // Required by `b`, so named by `b` in a `RenderError::RemoteImage`.
+    assert_eq!(plan, [declared("b", true, a)]);
     let many: Vec<Declared> = (0..17)
         .map(|i| declared("v", false, image(&server, &format!("/{i}"))))
         .collect();

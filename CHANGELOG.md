@@ -70,6 +70,12 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   (`tabular-nums`, `proportional-nums`, `lining-nums`, `oldstyle-nums`,
   `slashed-zero`, `normal-nums`), which Noctis lowers to inline CSS so a `Style`
   value still wins; a breakpoint variant or `!` on them is `[TW-01]`.
+- Template data can nest its remote images: `#[derive(Assets)]` on a row struct with
+  its own `#[asset]` / `#[asset(required)]` fields, held by the Template (or another
+  `Assets` struct) in an `#[asset]` field as `T`, `Option<T>` or `Vec<T>`. Logs and
+  `RenderError::RemoteImage` (which gained a `field`) name the path (`rows[3].avatar`),
+  an image in many rows is fetched once and counted once, and `#[asset(required)]` on
+  the holding field is a compile error (`[IMG-03]`).
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

@@ -186,6 +186,7 @@ fn fr_36_share_error_copies_every_variant() {
         RenderError::RemoteImage {
             id: "t".into(),
             image: "a".into(),
+            field: "rows[0].avatar".into(),
             reason: "HTTP 404".into(),
         },
         RenderError::UndeclaredImage {

@@ -462,17 +462,52 @@ let card = ProfileCard {
 ```
 
 - **Field types.** An `#[asset]` field is `RemoteImage`, `Option<RemoteImage>` or
-  `Vec<RemoteImage>` (tuple-struct fields work too); anything else is the compile
-  error ``[IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or
-  `Vec<RemoteImage>` ``. `#[asset(optional)]`, `#[asset = ..]` and
+  `Vec<RemoteImage>`, or a `#[derive(Assets)]` struct `T` (below) as `T`, `Option<T>`
+  or `Vec<T>` (tuple-struct fields work too); anything else is the compile error
+  ``[IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or
+  `Vec<RemoteImage>`, or a `#[derive(Assets)]` struct `T` as `T`, `Option<T>` or
+  `Vec<T>` ``. `#[asset(optional)]`, `#[asset = ..]` and
   `#[asset(required, required)]` are ``[IMG-03] `#[asset]` takes no argument or
   `required` ``; two `#[asset]` on one field are an error too.
+- **Images inside nested data.** A row, entry or member struct holds its own avatar:
+  derive `Assets` on it, mark its image fields `#[asset]` / `#[asset(required)]`, and
+  mark the Template field that holds it `#[asset]`. Nesting goes as deep as you like
+  (an `Assets` struct can hold another one the same way).
+
+  ```rust
+  use noctis::image::{Assets, RemoteImage, Template};
+
+  #[derive(Assets, Serialize, Deserialize, Debug, Clone)]
+  pub struct BoardRow {
+      pub name: String,
+      #[asset]
+      pub avatar: RemoteImage,          // declared as `rows[3].avatar`
+  }
+
+  #[derive(Template, Serialize, Deserialize, Debug)]
+  #[template(id = "ui.board", version = 1, size = (900, 600), format = Png)]
+  pub struct Leaderboard {
+      #[asset]                          // T, Option<T> or Vec<T>
+      pub rows: Vec<BoardRow>,
+  }
+  ```
+
+  The inner fields decide `required`: `#[asset(required)]` on the field that holds an
+  `Assets` struct is the compile error ``[IMG-03] `#[asset(required)]` fields are
+  `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>` ``. Logs and
+  `RenderError::RemoteImage` name the path (`rows[3].avatar`). The same image in many
+  rows is fetched once and counts once against `max_per_job`, across all levels.
+  `#[derive(Assets)]` takes a struct without generic or lifetime parameters
+  (``[IMG-03] `#[derive(Assets)]` needs a struct``). A `RemoteImage` in a nested struct
+  without `#[asset]`, or an `Assets` struct in a field without `#[asset]`, is not
+  declared: drawing it is `RenderError::UndeclaredImage`.
 - **Drawing.** `<img src={&self.avatar} />` (or `img(&self.avatar, classes)`;
   `img`/`Node::image` take `impl Into<ImageSrc>`: a `StaticImage` or a `RemoteImage`, by
   value or by reference). Drawing a remote image that no `#[asset]` field holds fails
   with `RenderError::UndeclaredImage { id, image }`
   (``[IMG-03] template `<id>` draws remote image `<image>`, which no `#[asset]` field
-  declares``).
+  declares; a struct in the Template data that holds it needs `#[derive(Assets)]` and
+  `#[asset]` on its image field and on the field that holds the struct``).
 - **Constructors.**
   - `RemoteImage::avatar(&user, size)`: `<cdn>/avatars/<id>/<hash>.webp?size=<size>`, or
     the default avatar `<cdn>/embed/avatars/<i>.png` when the user has none (`(id >> 22) % 6`
@@ -542,9 +577,10 @@ let card = ProfileCard {
   decodable, I/O error) logs one warning (target `noctis::image`, fields `template`,
   `field`, `image`, `reason`; the image is shown without its URL query) and draws the
   fallback. In an `#[asset(required)]` field it fails the render with
-  `RenderError::RemoteImage { id, image, reason }`
-  (``[IMG-03] template `<id>` requires remote image `<image>`, which could not be used:
-  HTTP 404``), reported to the Render Error Sink like any render failure.
+  `RenderError::RemoteImage { id, image, field, reason }`
+  (``[IMG-03] template `<id>` requires remote image `<image>` (field `<path>`), which
+  could not be used: HTTP 404``; when an image is declared by several fields, `field`
+  is the first required one), reported to the Render Error Sink like any render failure.
 - **Caching.** Fetched bytes go to the App's namespaced `AssetStore` (`App::builder()
   .asset_store(..)`; the bounded in-memory default otherwise) with TTL `cache_ttl`,
   under `img:v1:avatar:<user>:<hash>:<size>:<a|s>`, `img:v1:icon:<guild>:<hash>:<size>:<a|s>`,

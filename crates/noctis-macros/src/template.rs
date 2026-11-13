@@ -9,7 +9,7 @@
 //!
 //! `#[asset]` / `#[asset(required)]` fields declare remote images (IMG-03):
 //! the derive always emits the hidden `TemplateAssets` impl, which collects
-//! them through the sealed `AssetField` trait, so a field of another type is
+//! them through the hidden `AssetField` trait, so a field of another type is
 //! an `[IMG-03]` compile error at its type.
 
 use proc_macro2::{Literal, Span, TokenStream};
@@ -19,11 +19,13 @@ use syn::ext::IdentExt;
 use syn::parse::ParseStream;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, ExprStruct, GenericArgument, Ident, Index, Lit,
-    LitInt, LitStr, Member, Meta, PathArguments, Token, Type, parenthesized,
+    Attribute, Data, DeriveInput, Expr, ExprLit, ExprStruct, Fields, GenericArgument, Ident, Index,
+    Lit, LitInt, LitStr, Member, Meta, PathArguments, Token, Type, parenthesized,
 };
 
 use crate::common::combine;
+
+pub(crate) mod assets;
 
 /// The longest Template id.
 const MAX_ID_LEN: usize = 64;
@@ -141,26 +143,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     };
-    let mut assets = Vec::new();
-    for (index, field) in data.fields.iter().enumerate() {
-        match parse_asset(&field.attrs) {
-            Ok(Some(required)) => {
-                let (member, name) = match &field.ident {
-                    Some(ident) => (Member::Named(ident.clone()), ident.unraw().to_string()),
-                    None => (Member::Unnamed(Index::from(index)), index.to_string()),
-                };
-                assets.push(Asset {
-                    member,
-                    name,
-                    ty: field.ty.clone(),
-                    required,
-                });
-            }
-            Ok(None) => {}
-            Err(err) => errors.push(err),
-        }
-        scan_type(&field.ty, &mut errors);
-    }
+    let assets = collect_assets(&data.fields, &mut errors);
     combine(errors)?;
     let Some(settings) = settings else {
         return Err(syn::Error::new(Span::call_site(), "unreachable: settings"));
@@ -175,10 +158,10 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// One `#[asset]` field.
-struct Asset {
+pub(crate) struct Asset {
     member: Member,
     /// The field's name in logs (`avatar`, or `0` for a tuple field).
-    name: String,
+    pub(crate) name: String,
     ty: Type,
     required: bool,
 }
@@ -213,25 +196,65 @@ fn parse_asset(attrs: &[Attribute]) -> syn::Result<Option<bool>> {
     Ok(found)
 }
 
+/// The `#[asset]` fields of `fields`; malformed attributes and `HashMap` /
+/// `HashSet` field types go to `errors`.
+pub(crate) fn collect_assets(fields: &Fields, errors: &mut Vec<syn::Error>) -> Vec<Asset> {
+    let mut assets = Vec::new();
+    for (index, field) in fields.iter().enumerate() {
+        match parse_asset(&field.attrs) {
+            Ok(Some(required)) => {
+                let (member, name) = match &field.ident {
+                    Some(ident) => (Member::Named(ident.clone()), ident.unraw().to_string()),
+                    None => (Member::Unnamed(Index::from(index)), index.to_string()),
+                };
+                assets.push(Asset {
+                    member,
+                    name,
+                    ty: field.ty.clone(),
+                    required,
+                });
+            }
+            Ok(None) => {}
+            Err(err) => errors.push(err),
+        }
+        scan_type(&field.ty, errors);
+    }
+    assets
+}
+
+/// One declare call for `asset`, spanned on its type so a wrong type
+/// is an `[IMG-03]` error there: `AssetField::declare` for `#[asset]`,
+/// `RequiredAssetField::declare_required` for `#[asset(required)]` (which an
+/// `Assets` struct does not implement). `path` is a `&str` expression.
+pub(crate) fn declare_call(asset: &Asset, path: &TokenStream) -> TokenStream {
+    let image = quote!(::noctis::__private::image);
+    let Asset {
+        member,
+        ty,
+        required,
+        ..
+    } = asset;
+    if *required {
+        quote_spanned! {ty.span()=>
+            <#ty as #image::RequiredAssetField>::declare_required(&self.#member, #path, out);
+        }
+    } else {
+        quote_spanned! {ty.span()=>
+            <#ty as #image::AssetField>::declare(&self.#member, #path, false, out);
+        }
+    }
+}
+
 /// The hidden `TemplateAssets` impl: empty without `#[asset]` fields, else
-/// one sealed `AssetField::declare` call per field, spanned on its type so a
-/// wrong type is an `[IMG-03]` error there.
+/// one [`declare_call`] per field.
 fn emit_assets(ident: &Ident, assets: &[Asset]) -> TokenStream {
     let image = quote!(::noctis::__private::image);
     if assets.is_empty() {
         return quote!(impl #image::TemplateAssets for #ident {});
     }
     let calls = assets.iter().map(|asset| {
-        let Asset {
-            member,
-            name,
-            ty,
-            required,
-        } = asset;
-        let name = LitStr::new(name, Span::call_site());
-        quote_spanned! {ty.span()=>
-            <#ty as #image::AssetField>::declare(&self.#member, #name, #required, out);
-        }
+        let name = LitStr::new(&asset.name, Span::call_site());
+        declare_call(asset, &name.to_token_stream())
     });
     quote! {
         impl #image::TemplateAssets for #ident {

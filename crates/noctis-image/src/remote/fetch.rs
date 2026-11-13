@@ -173,8 +173,9 @@ impl AssetFetcher {
         &self.fallback
     }
 
-    /// `declared` deduplicated by image (a field is required when any of
-    /// its duplicates is), without placeholders, checked against
+    /// `declared` deduplicated by image (an image is required, and named by
+    /// its first required field, when any of its duplicates is), without
+    /// placeholders, checked against
     /// `max_per_job` before anything is fetched.
     ///
     /// # Errors
@@ -192,7 +193,11 @@ impl AssetFetcher {
                 continue;
             }
             if let Some(&at) = index.get(&item.image) {
-                unique[at].required |= item.required;
+                let kept = &mut unique[at];
+                if item.required && !kept.required {
+                    kept.required = true;
+                    kept.field = item.field;
+                }
                 continue;
             }
             index.insert(item.image.clone(), unique.len());
@@ -289,6 +294,7 @@ impl AssetFetcher {
                         failure.get_or_insert_with(|| RenderError::RemoteImage {
                             id: template.to_owned(),
                             image: item.image.to_string(),
+                            field: item.field.to_string(),
                             reason,
                         });
                         continue;

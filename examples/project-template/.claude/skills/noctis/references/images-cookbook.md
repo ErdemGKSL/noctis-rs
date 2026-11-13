@@ -12,7 +12,7 @@ charts (§6), banners and dividers (§7), boards (§8), steps and countdowns (§
 Every block assumes:
 
 ```rust
-use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, tw, view};
+use noctis::image::{Assets, Frame, Node, RemoteImage, Style, Template, TemplateView, tw, view};
 use serde::{Deserialize, Serialize};
 ```
 
@@ -522,21 +522,22 @@ children) still suit counts per day better than a line.
 ### 5.1 Leaderboard
 
 ```rust
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Assets, Serialize, Deserialize, Debug, Clone)]
 pub struct BoardRow {
     pub rank: u32,
     pub name: String,
     pub score_label: String,   // "9 000 XP", formatted for the locale by the handler
     pub share: f32,            // of the leader's score, 0.0..=1.0
+    #[asset]
+    pub avatar: RemoteImage,   // the row's own avatar: `rows[2].avatar` in logs
 }
 
 #[derive(Template, Serialize, Deserialize, Debug)]
 #[template(id = "ui.board", version = 1, size = (900, 600), format = Png)]
 pub struct Leaderboard {
     pub title: String,
-    pub rows: Vec<BoardRow>,          // at most 5 at this size: one page
     #[asset]
-    pub avatars: Vec<RemoteImage>,    // same order and length as `rows`
+    pub rows: Vec<BoardRow>,          // at most 5 at this size: one page
 }
 
 fn medal(rank: u32) -> u32 {
@@ -553,14 +554,14 @@ impl TemplateView for Leaderboard {
         view! {
             <div tw="flex flex-col gap-3 w-full h-full p-8 bg-surface rounded-3xl">
                 <span tw="text-4xl font-bold text-white">{&self.title}</span>
-                for (row, avatar) in self.rows.iter().zip(&self.avatars) {
+                for row in &self.rows {
                     <div tw="relative flex items-center gap-5 h-20 px-5 rounded-2xl bg-slate-900 overflow-hidden">
                         // the share, as the row's own background: painted first, so under the rest
                         <div tw="absolute left-0 top-0 h-full bg-brand/20"
                              style={Style::new().width_pct(row.share * 100.0)} />
                         <div tw="flex items-center justify-center w-12 h-12 rounded-full text-2xl font-black text-slate-900"
                              style={Style::new().bg_rgb(medal(row.rank))}>{row.rank}</div>
-                        <img src={avatar} tw="w-14 h-14 rounded-full" />
+                        <img src={&row.avatar} tw="w-14 h-14 rounded-full" />
                         <span tw="flex-1 text-3xl font-semibold text-white truncate">{&row.name}</span>
                         <span tw="text-3xl font-bold text-brand-soft">{&row.score_label}</span>
                     </div>
@@ -573,10 +574,11 @@ impl TemplateView for Leaderboard {
 
 - `truncate` on the `flex-1` name keeps a 32-character nickname from pushing the score
   out of the row.
-- Remote images live in `#[asset]` fields of the Template itself (`RemoteImage`,
-  `Option<RemoteImage>`, `Vec<RemoteImage>`), not inside nested structs: keep a parallel
-  `Vec<RemoteImage>` and `zip` it. At most 16 distinct remote images per render by
-  default (`RemoteConfig::max_per_job`).
+- Each row holds its own avatar: `#[derive(Assets)]` on the row, `#[asset]` on its
+  image field and on the Template's `rows` field (`images-engine.md` §7). Without both,
+  drawing the avatar is `RenderError::UndeclaredImage`. The same avatar in two rows is
+  fetched once; at most 16 distinct remote images per render by default
+  (`RemoteConfig::max_per_job`), counted across rows.
 - One page per image; page with buttons (`images-ui.md` §5). The viewer's own row,
   highlighted, is one more `tw!` branch on `row.rank == self.me`.
 - The alt text names the top entries: "Top members: 1. Deniz 9 000 XP, 2. …".

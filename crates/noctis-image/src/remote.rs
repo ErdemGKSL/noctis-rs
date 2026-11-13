@@ -33,7 +33,9 @@ use twilight_model::util::ImageHash;
 pub(crate) use config::Origin;
 pub use config::RemoteConfig;
 pub(crate) use declare::Declared;
-pub use declare::{AssetField, DeclaredImages, TemplateAssets};
+pub use declare::{
+    AssetField, Assets, DeclaredImages, RequiredAssetField, TemplateAssets, asset_path,
+};
 pub(crate) use fetch::{AssetFetcher, Resolved};
 
 /// The longest accepted URL, in bytes.

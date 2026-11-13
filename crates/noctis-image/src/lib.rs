@@ -86,7 +86,9 @@ pub use node::{Classes, ImageSrc, IntoNodes, Node, Style, Tag, div, img, shape, 
 #[cfg(feature = "render")]
 pub use plugin::{AppBuilderImageExt, ImageConfig, ImagePlugin};
 #[cfg(feature = "render")]
-pub use remote::{AssetField, DeclaredImages, TemplateAssets};
+pub use remote::{
+    AssetField, Assets, DeclaredImages, RequiredAssetField, TemplateAssets, asset_path,
+};
 #[cfg(feature = "render")]
 pub use remote::{RemoteConfig, RemoteImage, RemoteUrlError};
 #[cfg(feature = "render")]

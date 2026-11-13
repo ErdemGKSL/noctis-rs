@@ -826,3 +826,21 @@ Planning decisions (2026-11-13, Epic 20):
 - (decision, Story 20.10) The Project Template's profile card uses
   `from-brand to-brand-soft` and `tabular-nums` now (its pixel snapshot is
   regenerated), so the template shows the new classes before Story 20.12's sweep.
+- (decision, Story 20.11) `noctis::image::Assets` is a public trait (its one method
+  is hidden) next to the `#[derive(Assets)]` macro. `#[derive(Assets)]` implements
+  both `Assets` and the hidden `AssetField` for the struct itself, and `noctis-image`
+  has generic `AssetField` impls for `Option<T>` / `Vec<T>` of an `Assets` struct.
+  No blanket `impl<T: Assets> AssetField for T`: with it rustc reports a missing
+  `Assets` bound instead of the `[IMG-03]` message for a wrong field type, so
+  `AssetField` is no longer sealed (it stays `#[doc(hidden)]`).
+- (decision, Story 20.11) `#[asset(required)]` goes through a separate sealed
+  `RequiredAssetField`, implemented only for `RemoteImage`, `Option<RemoteImage>` and
+  `Vec<RemoteImage>`, so on a field holding an `Assets` struct it is the compile
+  error ``[IMG-03] `#[asset(required)]` fields are ...``.
+- (decision, Story 20.11) To make errors name the path, `RenderError::RemoteImage`
+  gained a `field: String` (`rows[3].avatar`), shown as `(field `<path>`)` in its
+  message; Noctis is unreleased (0.1.0 pending), so the variant change is acceptable.
+  When one image is declared by several fields, the plan keeps the first field and
+  switches to the first required one, so the error names a required field.
+- (decision, Story 20.11) `#[derive(Assets)]` rejects enums, unions and generic
+  structs, and applies the Template's `HashMap` / `HashSet` scan to its fields.

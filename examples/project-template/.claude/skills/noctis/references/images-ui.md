@@ -610,7 +610,7 @@ async fn stats_images_match_their_snapshots() -> anyhow::Result<()> {
 | text draws as boxes | no glyph: emoji without `image-emoji`, a script the fonts lack | enable the feature, or register a font (`images-engine.md` §6) |
 | `[IMG-01] no font is registered` at build | Templates but no font | the `default-font` feature or `ImageConfig::font` |
 | an avatar is a grey square | the fetch fell back (a warning on target `noctis::image` says why), or `RemoteImage::placeholder()` | check the origin allow-list and the URL; in tests this is expected |
-| `RenderError::UndeclaredImage` | the view draws a `RemoteImage` no `#[asset]` field holds (often one inside a nested struct) | move it into an `#[asset]` field of the Template |
+| `RenderError::UndeclaredImage` | the view draws a `RemoteImage` no `#[asset]` field holds (often one inside a nested struct) | move it into an `#[asset]` field of the Template, or `#[derive(Assets)]` on the nested struct with `#[asset]` on its image field and on the field that holds it |
 | a child is stretched or squashed | a flex parent stretches children without a size | give the `<img>` or box `w-*`/`h-*`, or put it in an `items-center` row |
 | the fill overflows its rounded track | no clipping | `overflow-hidden` on the track |
 | an overlay is hidden | painted before the thing it should cover | `z-10` on it (it must be `relative` or `absolute`), or move it later among its siblings |

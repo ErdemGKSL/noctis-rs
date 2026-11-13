@@ -659,14 +659,17 @@ pub enum RenderError {
     /// A remote image of an `#[asset(required)]` field could not be fetched,
     /// was blocked or could not be decoded (IMG-03).
     #[error(
-        "[IMG-03] template `{id}` requires remote image `{image}`, which could not be used: \
-         {reason}"
+        "[IMG-03] template `{id}` requires remote image `{image}` (field `{field}`), which \
+         could not be used: {reason}"
     )]
     RemoteImage {
         /// The Template id.
         id: String,
         /// The image's display form (never a URL query).
         image: String,
+        /// The path of the `#[asset(required)]` field in the Template data
+        /// (`avatar`, `frames[1]`, `rows[3].avatar`).
+        field: String,
         /// Why the image could not be used.
         reason: String,
     },
@@ -674,7 +677,8 @@ pub enum RenderError {
     /// (IMG-03); Noctis never fetches an undeclared image.
     #[error(
         "[IMG-03] template `{id}` draws remote image `{image}`, which no `#[asset]` field \
-         declares"
+         declares; a struct in the Template data that holds it needs `#[derive(Assets)]` and \
+         `#[asset]` on its image field and on the field that holds the struct"
     )]
     UndeclaredImage {
         /// The Template id.
@@ -1066,12 +1070,13 @@ mod tests {
         let err = RenderError::RemoteImage {
             id: "card".into(),
             image: "avatar/1/abc@256".into(),
+            field: "rows[3].avatar".into(),
             reason: "HTTP 404".into(),
         };
         assert_eq!(
             err.to_string(),
-            "[IMG-03] template `card` requires remote image `avatar/1/abc@256`, which could not \
-             be used: HTTP 404"
+            "[IMG-03] template `card` requires remote image `avatar/1/abc@256` (field \
+             `rows[3].avatar`), which could not be used: HTTP 404"
         );
         let err = RenderError::UndeclaredImage {
             id: "card".into(),
@@ -1080,7 +1085,8 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "[IMG-03] template `card` draws remote image `placeholder`, which no `#[asset]` field \
-             declares"
+             declares; a struct in the Template data that holds it needs `#[derive(Assets)]` and \
+             `#[asset]` on its image field and on the field that holds the struct"
         );
         assert_eq!(RenderCap::RemoteImages.as_str(), "remote_images");
         let err = RenderError::OverCap {

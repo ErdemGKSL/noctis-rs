@@ -3,7 +3,8 @@
 //! (`RemoteConfig::discord_cdn`): an avatar is fetched once and cached in
 //! the App's namespaced `AssetStore`, a URL that is not allow-listed draws
 //! the fallback without a request, and a required image that fails is
-//! `RenderError::RemoteImage`.
+//! `RenderError::RemoteImage`. Story 20.11: `#[derive(Assets)]` rows two
+//! levels below a Template declare their own avatars.
 
 #![cfg(feature = "image")]
 #![allow(
@@ -18,8 +19,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use noctis::image::unstable::RenderJob;
 use noctis::image::{
-    AppBuilderImageExt, Font, Frame, ImageConfig, Node, RemoteConfig, RemoteImage, RenderError,
-    Template, TemplateView, theme, view,
+    AppBuilderImageExt, Assets, Font, Frame, ImageConfig, Node, RemoteConfig, RemoteImage,
+    RenderError, Template, TemplateView, theme, view,
 };
 use noctis::ports::memory::MemoryAssetStore;
 use noctis::ports::{AssetStore, BoxFuture, PortError};
@@ -63,6 +64,41 @@ struct Strict {
 impl TemplateView for Strict {
     fn view(&self, _: Frame) -> Node {
         view! { <div tw="flex w-full h-full"><img tw="w-full h-full" src={&self.avatar} /></div> }
+    }
+}
+
+/// A leaderboard: groups of rows, each row with its own avatar (Story 20.11).
+#[derive(Template, Serialize, Deserialize)]
+#[template(id = "board", version = 1, size = (4, 4), format = Png)]
+struct Board {
+    #[asset]
+    groups: Vec<Group>,
+    #[asset]
+    pinned: Option<Group>,
+}
+
+#[derive(Assets, Serialize, Deserialize, Clone)]
+struct Group {
+    #[asset(required)]
+    banner: Option<RemoteImage>,
+    #[asset]
+    rows: Vec<Row>,
+}
+
+#[derive(Assets, Serialize, Deserialize, Clone)]
+struct Row {
+    name: String,
+    #[asset]
+    avatar: RemoteImage,
+    /// Not declared: drawing it is `RenderError::UndeclaredImage`.
+    badge: Option<RemoteImage>,
+}
+
+impl TemplateView for Board {
+    fn view(&self, _: Frame) -> Node {
+        let row = &self.groups[0].rows[0];
+        let src = row.badge.as_ref().unwrap_or(&row.avatar);
+        view! { <div tw="flex w-full h-full"><img tw="w-full h-full" src={src} /></div> }
     }
 }
 
@@ -172,7 +208,8 @@ fn app(origin: &str, store: Arc<Recording>) -> App {
         .module(
             Module::new("cards")
                 .template::<Avatar>()
-                .template::<Strict>(),
+                .template::<Strict>()
+                .template::<Board>(),
         );
     builder.build().unwrap()
 }
@@ -241,8 +278,8 @@ async fn img_03_a_required_image_that_fails_is_a_render_error() {
     assert_eq!(
         error.to_string(),
         format!(
-            "[IMG-03] template `strict` requires remote image `{origin}/missing.png`, which could \
-             not be used: HTTP 404"
+            "[IMG-03] template `strict` requires remote image `{origin}/missing.png` (field \
+             `avatar`), which could not be used: HTTP 404"
         )
     );
     assert_eq!(seen.lock().unwrap().len(), 1);
@@ -251,4 +288,96 @@ async fn img_03_a_required_image_that_fails_is_a_render_error() {
         avatar: RemoteImage::placeholder(),
     };
     assert_eq!(render(&app, &placeholder).await.unwrap(), SLATE);
+}
+
+fn row(avatar: &RemoteImage) -> Row {
+    Row {
+        name: "ada".to_owned(),
+        avatar: avatar.clone(),
+        badge: None,
+    }
+}
+
+#[tokio::test]
+async fn img_03_nested_assets_are_declared_and_fetched_once() {
+    let (origin, seen) = cdn().await;
+    let app = app(&origin, Arc::new(Recording::default()));
+    let avatar = RemoteImage::avatar(&user(Some(HASH)), 256);
+    let group = Group {
+        banner: None,
+        rows: vec![row(&avatar), row(&avatar)],
+    };
+    let board = Board {
+        groups: vec![group.clone(), group.clone()],
+        pinned: Some(group),
+    };
+    assert_eq!(render(&app, &board).await.unwrap(), RED);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [format!("/avatars/80351110224678912/{HASH}.webp?size=256")],
+        "one avatar in six rows on two levels is fetched once"
+    );
+}
+
+#[tokio::test]
+async fn img_03_a_nested_required_field_fails_with_its_path() {
+    let (origin, _seen) = cdn().await;
+    let app = app(&origin, Arc::new(Recording::default()));
+    let avatar = RemoteImage::avatar(&user(Some(HASH)), 256);
+    let missing = RemoteImage::url(&format!("{origin}/banner.png")).unwrap();
+    let board = Board {
+        groups: vec![
+            Group {
+                banner: None,
+                rows: vec![row(&avatar)],
+            },
+            Group {
+                banner: Some(missing),
+                rows: vec![],
+            },
+        ],
+        pinned: None,
+    };
+    let error = render(&app, &board).await.unwrap_err();
+    assert!(
+        matches!(&error, RenderError::RemoteImage { field, .. } if field == "groups[1].banner"),
+        "{error:?}"
+    );
+    // A nested avatar that fails is not required: the fallback is drawn.
+    let board = Board {
+        groups: vec![Group {
+            banner: None,
+            rows: vec![row(
+                &RemoteImage::url(&format!("{origin}/gone.png")).unwrap()
+            )],
+        }],
+        pinned: None,
+    };
+    assert_eq!(render(&app, &board).await.unwrap(), SLATE);
+}
+
+#[tokio::test]
+async fn img_03_an_image_in_a_nested_field_without_asset_is_undeclared() {
+    let (origin, seen) = cdn().await;
+    let app = app(&origin, Arc::new(Recording::default()));
+    let avatar = RemoteImage::avatar(&user(Some(HASH)), 256);
+    let mut first = row(&avatar);
+    first.badge = Some(RemoteImage::url(&format!("{origin}/avatars/1/badge.png")).unwrap());
+    let board = Board {
+        groups: vec![Group {
+            banner: None,
+            rows: vec![first],
+        }],
+        pinned: None,
+    };
+    let error = render(&app, &board).await.unwrap_err();
+    assert!(
+        matches!(&error, RenderError::UndeclaredImage { id, .. } if id == "board"),
+        "{error:?}"
+    );
+    assert!(error.to_string().contains("`#[derive(Assets)]`"), "{error}");
+    assert!(
+        seen.lock().unwrap().iter().all(|t| !t.contains("badge")),
+        "an undeclared image is never fetched"
+    );
 }

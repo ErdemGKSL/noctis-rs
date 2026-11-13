@@ -1,0 +1,13 @@
+error[E0277]: [IMG-03] `#[asset(required)]` fields are `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>`
+  --> tests/ui-image/img/IMG-03_asset_required_nested.rs:16:11
+   |
+16 |     rows: Vec<Row>,
+   |           ^^^^^^^^ not a remote image field
+   |
+   = help: the trait `noctis::__private::noctis_image::remote::declare::RequiredAssetField` is not implemented for `Vec<Row>`
+   = note: on a field that holds a `#[derive(Assets)]` struct write `#[asset]`: the struct's own `#[asset]` / `#[asset(required)]` fields decide
+help: the trait `noctis::__private::noctis_image::remote::declare::RequiredAssetField` is implemented for `Vec<noctis::image::RemoteImage>`
+  --> $WORKSPACE/crates/noctis-image/src/remote/declare.rs
+   |
+   | impl RequiredAssetField for Vec<RemoteImage> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

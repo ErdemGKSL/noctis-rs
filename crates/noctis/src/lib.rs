@@ -2577,7 +2577,10 @@ pub mod image {
     //! - Remote images (FR-67, `[IMG-03]`): a Template declares them in
     //!   `#[asset]` fields (`#[asset(required)]` to fail instead of drawing
     //!   the fallback) of type [`RemoteImage`], `Option<RemoteImage>` or
-    //!   `Vec<RemoteImage>`, built with `RemoteImage::avatar(&user, 256)`,
+    //!   `Vec<RemoteImage>`, or of a `#[derive(Assets)]` struct `T` (a row
+    //!   with its own `#[asset]` avatar) as `T`, `Option<T>` or `Vec<T>`,
+    //!   where the struct's fields decide `required` and logs name the path
+    //!   (`rows[3].avatar`); images are built with `RemoteImage::avatar(&user, 256)`,
     //!   `RemoteImage::guild_icon(&guild, 128)`, `RemoteImage::url(..)`
     //!   ([`RemoteUrlError`]) or `RemoteImage::placeholder()`, and draws them
     //!   with `<img src={&self.avatar} />` ([`ImageSrc`]). Before the job is
@@ -2652,6 +2655,12 @@ pub mod image {
     //! # let _ = module;
     //! ```
 
+    /// `#[derive(Assets)]` on a plain data struct (such as a leaderboard
+    /// row): implements [`Assets`], so the remote images in its own
+    /// `#[asset]` / `#[asset(required)]` fields are declared when a Template
+    /// (or another `Assets` struct) holds it in an `#[asset]` field as `T`,
+    /// `Option<T>` or `Vec<T>` (`[IMG-03]`).
+    pub use noctis_macros::Assets;
     /// `#[derive(Template)]`: implements [`Template`] from
     /// `#[template(id = "..", version = N, size = (w, h), format = ..[,
     /// animation(duration_ms = .., fps = ..[, format = ..][, plays = n]
@@ -2683,11 +2692,11 @@ pub mod image {
         UnknownClass,
     };
     pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin, RenderCaps};
+    pub use noctis_image::{Assets, ImageSrc, RemoteConfig, RemoteImage, RemoteUrlError};
     pub use noctis_image::{
         Classes, IntoNodes, Node, Style, Tag, TemplateView, div, img, span, text,
     };
     pub use noctis_image::{Font, StaticImage};
-    pub use noctis_image::{ImageSrc, RemoteConfig, RemoteImage, RemoteUrlError};
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, Plays,
         RenderCap, RenderError, Size, Template,

@@ -10,7 +10,10 @@ use noctis_ports::{AssetStore, RenderCap, RendererPorts};
 
 use super::*;
 use crate::remote::test_server::{Reply, Server, animated_webp, png};
-use crate::{AssetField, DeclaredImages, RemoteConfig, RemoteImage, TemplateAssets, img};
+use crate::{
+    AssetField, Assets, DeclaredImages, RemoteConfig, RemoteImage, RequiredAssetField,
+    TemplateAssets, asset_path, img,
+};
 
 const RED: [u8; 4] = [255, 0, 0, 255];
 const SLATE: [u8; 4] = [0x47, 0x55, 0x69, 0xFF];
@@ -123,6 +126,93 @@ impl TemplateView for Spin {
     }
 }
 
+/// A leaderboard two `Assets` levels deep (Story 20.11): what
+/// `#[derive(Template)]` and `#[derive(Assets)]` emit, written by hand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Board {
+    groups: Vec<Group>,
+    draw: Vec<RemoteImage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Group {
+    banner: Option<RemoteImage>,
+    rows: Vec<Row>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Row {
+    avatar: RemoteImage,
+}
+
+impl Template for Board {
+    const ID: &'static str = "board";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(4, 4);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl TemplateAssets for Board {
+    const DECLARES: bool = true;
+
+    fn declare(&self, out: &mut DeclaredImages) {
+        <Vec<Group> as AssetField>::declare(&self.groups, "groups", false, out);
+    }
+}
+
+impl Assets for Group {
+    fn declare_assets(&self, path: &str, out: &mut DeclaredImages) {
+        <Option<RemoteImage> as RequiredAssetField>::declare_required(
+            &self.banner,
+            &asset_path(path, "banner"),
+            out,
+        );
+        <Vec<Row> as AssetField>::declare(&self.rows, &asset_path(path, "rows"), false, out);
+    }
+}
+
+impl Assets for Row {
+    fn declare_assets(&self, path: &str, out: &mut DeclaredImages) {
+        <RemoteImage as AssetField>::declare(&self.avatar, &asset_path(path, "avatar"), false, out);
+    }
+}
+
+impl AssetField for Row {
+    fn declare(&self, field: &str, _required: bool, out: &mut DeclaredImages) {
+        self.declare_assets(field, out);
+    }
+}
+
+impl AssetField for Group {
+    fn declare(&self, field: &str, _required: bool, out: &mut DeclaredImages) {
+        self.declare_assets(field, out);
+    }
+}
+
+impl TemplateView for Board {
+    fn view(&self, _: Frame) -> Node {
+        draw_all(&self.draw)
+    }
+}
+
+fn board(groups: Vec<Group>, draw: Vec<RemoteImage>) -> RenderJob {
+    RenderJob::of(&Board { groups, draw }).unwrap()
+}
+
+fn rows(avatars: &[&RemoteImage]) -> Vec<Row> {
+    avatars
+        .iter()
+        .map(|&avatar| Row {
+            avatar: avatar.clone(),
+        })
+        .collect()
+}
+
 /// A renderer whose remote images resolve with `config`.
 fn remote_renderer(config: &RemoteConfig) -> TakumiRenderer {
     let pool = Runtime::for_test()
@@ -151,6 +241,7 @@ fn remote_renderer(config: &RemoteConfig) -> TakumiRenderer {
             TemplateDescriptor::of::<Sneaky>(),
             TemplateDescriptor::of::<Spin>(),
             TemplateDescriptor::of::<Card>(),
+            TemplateDescriptor::of::<Board>(),
         ])
         .unwrap();
     renderer
@@ -212,8 +303,8 @@ async fn img_03_failures_draw_the_fallback_and_required_fails() {
     assert_eq!(
         error.to_string(),
         format!(
-            "[IMG-03] template `pic` requires remote image `{}/a.png`, which could not be used: \
-             HTTP 404",
+            "[IMG-03] template `pic` requires remote image `{}/a.png` (field `images[0]`), which \
+             could not be used: HTTP 404",
             server.origin()
         )
     );
@@ -329,7 +420,8 @@ async fn img_03_an_undeclared_image_is_an_error() {
         error.to_string(),
         format!(
             "[IMG-03] template `pic` draws remote image `{}/b.png`, which no `#[asset]` field \
-             declares",
+             declares; a struct in the Template data that holds it needs `#[derive(Assets)]` and \
+             `#[asset]` on its image field and on the field that holds the struct",
             server.origin()
         )
     );
@@ -483,5 +575,132 @@ async fn img_03_an_animated_avatar_animates() {
     assert_eq!(
         server.requests()[1].target,
         format!("/avatars/1/{HASH}.webp?size=64")
+    );
+}
+
+#[test]
+fn img_03_nested_assets_are_declared_with_their_paths() {
+    let a = RemoteImage::url("https://cdn.discordapp.com/a.png").unwrap();
+    let b = RemoteImage::url("https://cdn.discordapp.com/b.png").unwrap();
+    let value = Board {
+        groups: vec![
+            Group {
+                banner: Some(b.clone()),
+                rows: rows(&[&a, &b]),
+            },
+            Group {
+                banner: None,
+                rows: rows(&[&a]),
+            },
+        ],
+        draw: vec![],
+    };
+    let mut out = DeclaredImages::default();
+    value.declare(&mut out);
+    let declared: Vec<(String, bool, RemoteImage)> = out
+        .into_vec()
+        .into_iter()
+        .map(|d| (d.field.into_owned(), d.required, d.image))
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            ("groups[0].banner".to_owned(), true, b.clone()),
+            ("groups[0].rows[0].avatar".to_owned(), false, a.clone()),
+            ("groups[0].rows[1].avatar".to_owned(), false, b),
+            ("groups[1].rows[0].avatar".to_owned(), false, a),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn img_03_nested_duplicates_are_fetched_once_and_count_once() {
+    let server = Server::start(|_| Reply::Ok(png(2, 2, RED))).await;
+    let r = remote_renderer(
+        &RemoteConfig::new()
+            .discord_cdn(server.origin())
+            .max_per_job(2),
+    );
+    let a = RemoteImage::url(&server.url("/a.png")).unwrap();
+    let b = RemoteImage::url(&server.url("/b.png")).unwrap();
+    let c = RemoteImage::url(&server.url("/c.png")).unwrap();
+    let group = Group {
+        banner: Some(b.clone()),
+        rows: rows(&[&a, &a, &b]),
+    };
+    let out = r
+        .render(board(vec![group.clone(), group], vec![a.clone()]))
+        .await
+        .unwrap();
+    assert_eq!(corner(&out.bytes), RED);
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "two distinct images on two levels"
+    );
+    // A third distinct image two levels down is over `max_per_job = 2`.
+    let error = r
+        .render(board(
+            vec![Group {
+                banner: Some(b),
+                rows: rows(&[&a, &c]),
+            }],
+            vec![],
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            RenderError::OverCap {
+                cap: RenderCap::RemoteImages,
+                limit: 2,
+                actual: 3,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(server.requests().len(), 2, "nothing fetched over the cap");
+}
+
+#[tokio::test]
+async fn img_03_a_nested_required_field_names_its_path() {
+    let server = Server::start(|_| Reply::Status(404)).await;
+    let r = for_server(&server);
+    let a = RemoteImage::url(&server.url("/a.png")).unwrap();
+    // A failed avatar is optional: the fallback is drawn.
+    let out = r
+        .render(board(
+            vec![Group {
+                banner: None,
+                rows: rows(&[&a]),
+            }],
+            vec![a.clone()],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(corner(&out.bytes), SLATE);
+    // The same image as a required banner of the second group fails, named
+    // by that field although an optional row declared it first.
+    let error = r
+        .render(board(
+            vec![
+                Group {
+                    banner: None,
+                    rows: rows(&[&a]),
+                },
+                Group {
+                    banner: Some(a.clone()),
+                    rows: vec![],
+                },
+            ],
+            vec![],
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, RenderError::RemoteImage { field, .. } if field == "groups[1].banner"),
+        "{error:?}"
     );
 }
