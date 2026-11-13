@@ -46,7 +46,11 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   `render_with` and `render_report` on `EventCtx` and `HookCtx`, `app.render(..)` for
   background tasks), with the same errors, metrics and Render Error Sink. One call
   can cap its own output with `RenderOptions::max_bytes(n)` (for a 256 KiB emoji or a
-  thumbnail) without lowering the App's `size_target`.
+  thumbnail) without lowering the App's `size_target`. An animation can play once or
+  `n` times (`AnimationSpec::once`, `.plays(Plays::Times(n))`, `plays = n` on the
+  attribute; written as total plays in WebP, APNG and GIF) and rest on its first or
+  last frame (`hold_start`, `hold_end`) without drawing extra frames, and
+  pixel-identical consecutive frames are encoded as one.
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

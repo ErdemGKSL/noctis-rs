@@ -169,11 +169,13 @@ A share drawn as the row's own background (leaderboards, poll results): §5.1.
 ### 2.5 Animated fill
 
 The view gets a `Frame { index, count }` and draws that moment. Ease towards the end
-value during the first half of the frames, then hold: animations loop forever, and a
-bar that snaps back to zero the moment it is full reads as broken.
+value over the frames, then let the file rest on the full bar: play it once and hold
+the last frame (`.once().hold_end(..)` below). A looping bar that snaps back to zero
+the moment it is full reads as broken.
 
 ```rust
-/// 0.0 → 1.0 over the first `run` share of the frames (ease-out cubic), then held.
+/// 0.0 → 1.0 over the first `run` share of the frames (ease-out cubic), then held
+/// (`run = 1.0` eases over every frame).
 /// `Frame::STILL` is `{ index: 0, count: 1 }`, so a still shows the end state.
 fn progress(frame: Frame, run: f32) -> f32 {
     let t = (frame.index + 1) as f32 / (frame.count as f32 * run).max(1.0);
@@ -191,7 +193,7 @@ pub struct XpGain {
 
 impl TemplateView for XpGain {
     fn view(&self, frame: Frame) -> Node {
-        let value = self.from + (self.to - self.from) * progress(frame, 0.5);
+        let value = self.from + (self.to - self.from) * progress(frame, 1.0);
         view! {
             <div tw="flex flex-col justify-center gap-3 w-full h-full px-6 bg-surface">
                 <div tw="flex justify-between text-2xl font-semibold text-white">
@@ -218,15 +220,19 @@ let card = XpGain { left, right, from: before, to: after };
 let bar = if before == after {
     ctx.render(card).await?                    // plain view or refresh: a still PNG of the end state
 } else {
-    // right after a gain: the same Template, animated for this call (2 s at 15 fps = 30 frames)
-    let spec = AnimationSpec::new(Duration::from_secs(2), 15, AnimatedFormat::DEFAULT);
+    // right after a gain: the same Template, animated for this call (1 s at 15 fps =
+    // 15 frames), played once, then resting on the full bar for 3 s
+    let spec = AnimationSpec::new(Duration::from_secs(1), 15, AnimatedFormat::DEFAULT)
+        .once()
+        .hold_end(Duration::from_secs(3));
     ctx.render_with(card, RenderOptions::new().animation(spec)).await?
 };
 ```
 
-Put `animation(duration_ms = 2000, fps = 15)` in `#[template(..)]` instead when the
-picture is always animated; add `format = Gif` there (or `AnimatedFormat::Gif` in the
-spec) for a GIF, which needs the `image-gif` feature.
+Put `animation(duration_ms = 1000, fps = 15, plays = 1, hold_end_ms = 3000)` in
+`#[template(..)]` instead when the picture is always animated; add `format = Gif`
+there (or `AnimatedFormat::Gif` in the spec) for a GIF, which needs the `image-gif`
+feature.
 
 - **WebP or GIF.** The default animated WebP is smaller and encodes faster: this strip
   measured about 5 KB as WebP and 27 KB as GIF. Choose GIF only when the file must be a
@@ -237,9 +243,17 @@ spec) for a GIF, which needs the `image-gif` feature.
 - **Frames cost.** Queue weight is `ceil(frames / 8)` and bytes grow with frames:
   12 to 15 fps for 1.5 to 2 s is enough for a bar. 30 frames of 800 × 96 rendered in
   about 50 ms on a small cloud machine; measure yours (`images-ui.md` §8).
-- **Looping cannot be turned off**, and every frame lasts `1000 / fps` ms: a hold is
-  made of repeated frames, as `progress(frame, 0.5)` does. For a "plays once" effect,
-  swap the animation for a still on the next interaction (`images-ui.md` §6).
+- **Play count and holds.** `.plays(Plays::Times(n))` / `.once()` (default
+  `Plays::Forever`; `plays = n` on the attribute, 1..=65535) is written into the file
+  as `n` plays in total, in every format. `.hold_start(d)` / `.hold_end(d)`
+  (`hold_start_ms` / `hold_end_ms`) show the first / last frame `d` longer: no frame
+  is drawn for a hold, so it costs no queue weight, and the duration cap counts
+  `duration + holds` (6 s by default). Frames that come out pixel-identical are
+  written as one longer frame, so an eased bar that already reached its end costs no
+  bytes either. Whether a client honours the play count is client behaviour: a
+  client may still loop it or not play it at all, so the held end state must read on
+  its own. To be sure the next view is static, swap the animation for a still on the
+  next interaction (`images-ui.md` §6).
 
 ## 3. Gauges
 
@@ -898,9 +912,10 @@ impl TemplateView for Loading {
   transparent animation edges are not something to rely on across clients.
 - A still of a CSS-animated Template is its first keyframe (for `animate-rise … both`
   that is invisible): pixel snapshots of such Templates show frame 0.
-- Animations loop forever, and whether they play at all is the user's client setting
-  (client behaviour, not an API rule): the alt text and the Text Display must tell the
-  whole story without the motion, and the held end state must be readable on its own.
+- Animations loop forever unless the spec says `plays` (§2.5), and whether a client
+  plays them at all, or honours the play count, is the user's client setting (client
+  behaviour, not an API rule): the alt text and the Text Display must tell the whole
+  story without the motion, and the held end state must be readable on its own.
 
 ## 11. Text, emoji and remote pictures inside images
 

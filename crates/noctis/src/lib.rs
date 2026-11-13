@@ -2354,7 +2354,7 @@ pub mod ports {
     //! - [`encode_value`] and [`decode_value`]: typed values as postcard with
     //!   a leading schema byte; a schema mismatch reads as a miss.
     //! - The stable half of the render contract: [`Template`], [`Size`],
-    //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Frame`],
+    //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Plays`], [`Frame`],
     //!   [`OutputFormat`], [`EncodeSettings`], [`RenderError`] and
     //!   [`RenderCap`]. The renderer-facing items (`Renderer`,
     //!   `RendererPorts`, `RenderJob`, `RenderOutput`, `TemplateDescriptor`,
@@ -2392,7 +2392,7 @@ pub mod ports {
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, CacheStore, DiscordCache,
         EncodeSettings, Format, Frame, GuildAccessList, IdentifyQueue, Lease, LocaleSource,
-        ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore, RenderCache,
+        ModuleStateStore, OutputFormat, Plays, PortError, RateLimitStore, RefStore, RenderCache,
         RenderCap, RenderError, SessionStore, Size, Template, ValueError, decode_value,
         encode_value,
     };
@@ -2500,7 +2500,7 @@ pub mod image {
     //!   [`ThemeErrorKind`], `[TW-02]`); [`theme!`] embeds it. Its tokens are
     //!   read through [`ThemeTokens`] by [`ThemeNamespace`].
     //! - The contract: [`Template`], [`Frame`], [`Size`], [`Format`],
-    //!   [`AnimationSpec`], [`AnimatedFormat`], [`OutputFormat`],
+    //!   [`AnimationSpec`], [`AnimatedFormat`], [`Plays`], [`OutputFormat`],
     //!   [`EncodeSettings`], [`RenderError`] and [`RenderCap`].
     //! - The class errors: [`InvalidClasses`], [`UnknownClass`] and
     //!   [`Suggestion`].
@@ -2530,7 +2530,15 @@ pub mod image {
     //!   WebP and APNG 90; `RenderError::OverCap` with `RenderCap::Fps`).
     //!   Every frame has the Template's size: a frame root that declares
     //!   another pixel size (`Style::width_px`, `w-[Npx]`, …) fails with
-    //!   `RenderError::SizeMismatch`. `ctx.render_report` returns a
+    //!   `RenderError::SizeMismatch`. Play count and holds (FR-69):
+    //!   [`AnimationSpec::plays`] ([`Plays::Forever`] by default, or
+    //!   [`Plays::Times`]; [`AnimationSpec::once`]) is written as the total
+    //!   number of plays in every format (whether a client honours it is
+    //!   client behaviour), and [`AnimationSpec::hold_start`] /
+    //!   [`hold_end`](AnimationSpec::hold_end) show the first / last frame
+    //!   longer without drawing a frame; the duration cap checks
+    //!   [`AnimationSpec::total_duration`]. Pixel-identical consecutive
+    //!   frames are encoded as one. `ctx.render_report` returns a
     //!   [`RenderReport`] with the encoded `format` and `settings_used`.
     //! - Per-call budget (FR-33): `RenderOptions::new().max_bytes(n)` caps
     //!   one render at `min(n, Upload Budget, size_target)` (for a 256 KiB
@@ -2634,8 +2642,10 @@ pub mod image {
 
     /// `#[derive(Template)]`: implements [`Template`] from
     /// `#[template(id = "..", version = N, size = (w, h), format = ..[,
-    /// animation(duration_ms = .., fps = ..[, format = ..])])]`, checked at
-    /// `cargo check`; the animated `format` defaults to
+    /// animation(duration_ms = .., fps = ..[, format = ..][, plays = n]
+    /// [, hold_start_ms = ..][, hold_end_ms = ..])])]`, checked at
+    /// `cargo check` (`plays` is 1..=65535 and loops forever when omitted);
+    /// the animated `format` defaults to
     /// [`AnimatedFormat::DEFAULT`], and `Gif`/`Apng` need `image-gif`.
     /// `Serialize` and `Deserialize` are required too. `#[asset]` /
     /// `#[asset(required)]` fields declare [`RemoteImage`]s (`[IMG-03]`).
@@ -2666,8 +2676,8 @@ pub mod image {
     pub use noctis_image::{Font, StaticImage};
     pub use noctis_image::{ImageSrc, RemoteConfig, RemoteImage, RemoteUrlError};
     pub use noctis_ports::{
-        AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderCap,
-        RenderError, Size, Template,
+        AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, Plays,
+        RenderCap, RenderError, Size, Template,
     };
 
     pub mod unstable {

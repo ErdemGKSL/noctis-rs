@@ -16,8 +16,9 @@ use crate::budget;
 /// 1. `job_pixels` (default 4 000 000): the canvas `w*h` of every job;
 /// 2. `frame_pixels` (default 1 000 000): the canvas `w*h` of each frame of
 ///    an animation (a still is bounded by `job_pixels` alone);
-/// 3. `duration` (default 6 s): an animation's duration, in whole
-///    milliseconds;
+/// 3. `duration` (default 6 s): an animation's played duration
+///    (`AnimationSpec::total_duration`: its duration plus its holds), in
+///    whole milliseconds;
 /// 4. `frames` (default 90): an animation's frame count.
 ///
 /// ```
@@ -102,7 +103,7 @@ impl RenderCaps {
             over(
                 RenderCap::Duration,
                 budget::total_ms(self.duration),
-                budget::total_ms(spec.duration),
+                budget::total_ms(spec.total_duration()),
             )?;
             over(
                 RenderCap::Frames,

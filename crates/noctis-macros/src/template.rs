@@ -28,6 +28,9 @@ use crate::common::combine;
 /// The longest Template id.
 const MAX_ID_LEN: usize = 64;
 
+/// The form `animation` takes, for the error when it has no parentheses.
+const ANIMATION_FORM: &str = "`animation` takes `(duration_ms = <ms>, fps = <n>, format = .., \
+                              plays = <n>, hold_start_ms = <ms>, hold_end_ms = <ms>)`";
 const KEYS: &str = "`id`, `version`, `size`, `format`, `animation(..)` and `module`";
 const STILL_FORMATS: &str =
     "`Png`, `Jpeg { quality: 1..=100 }`, `Webp { quality: 1..=100 }` or `WebpLossless`";
@@ -50,13 +53,18 @@ pub(crate) enum Animated {
     Apng,
 }
 
-/// `animation(duration_ms = .., fps = ..[, format = ..])`; `format`
-/// defaults to `Webp { quality: 80 }`.
+/// `animation(duration_ms = .., fps = ..[, format = ..][, plays = ..]
+/// [, hold_start_ms = ..][, hold_end_ms = ..])`; `format` defaults to
+/// `Webp { quality: 80 }`, `plays` to forever (`None`) and the holds to 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Animation {
     pub(crate) duration_ms: u32,
     pub(crate) fps: u16,
     pub(crate) format: Animated,
+    /// The total plays, 1..=65535; `None` loops forever.
+    pub(crate) plays: Option<u16>,
+    pub(crate) hold_start_ms: u32,
+    pub(crate) hold_end_ms: u32,
 }
 
 /// The checked `#[template(..)]` settings.
@@ -282,11 +290,31 @@ fn emit(ident: &Ident, settings: &Settings) -> TokenStream {
                 Animated::Gif => quote!(#ports::AnimatedFormat::Gif),
                 Animated::Apng => quote!(#ports::AnimatedFormat::Apng),
             };
-            quote!(::core::option::Option::Some(#ports::AnimationSpec::new(
-                ::core::time::Duration::from_millis(#ms),
-                #fps,
-                #format,
-            )))
+            let plays = match a.plays {
+                None => quote!(#ports::Plays::Forever),
+                Some(n) => {
+                    let n = Literal::u16_unsuffixed(n);
+                    // `n` is checked to be 1..=65535 at parse time.
+                    quote!(#ports::Plays::Times(
+                        match ::core::num::NonZeroU16::new(#n) {
+                            ::core::option::Option::Some(n) => n,
+                            ::core::option::Option::None => ::core::panic!("plays is at least 1"),
+                        }
+                    ))
+                }
+            };
+            let start = Literal::u64_unsuffixed(u64::from(a.hold_start_ms));
+            let end = Literal::u64_unsuffixed(u64::from(a.hold_end_ms));
+            quote!(::core::option::Option::Some(
+                #ports::AnimationSpec::new(
+                    ::core::time::Duration::from_millis(#ms),
+                    #fps,
+                    #format,
+                )
+                .plays(#plays)
+                .hold_start(::core::time::Duration::from_millis(#start))
+                .hold_end(::core::time::Duration::from_millis(#end))
+            ))
         }
     };
     quote! {
@@ -328,10 +356,7 @@ fn parse_settings(
         match name.as_str() {
             "animation" => {
                 if !input.peek(syn::token::Paren) {
-                    return Err(syn::Error::new(
-                        key.span(),
-                        "`animation` takes `(duration_ms = <ms>, fps = <n>, format = ..)`",
-                    ));
+                    return Err(syn::Error::new(key.span(), ANIMATION_FORM));
                 }
                 let content;
                 parenthesized!(content in input);
@@ -433,6 +458,7 @@ fn parse_animation(
     let mut errors = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     let (mut duration, mut fps, mut format) = (None, None, None);
+    let (mut plays, mut hold_start_ms, mut hold_end_ms) = (None, 0, 0);
     while !input.is_empty() {
         let k = Ident::parse_any(input)?;
         let name = k.to_string();
@@ -459,10 +485,28 @@ fn parse_animation(
             "fps" => int(&value, "`fps`", &["", "u16"], 1, 90)
                 .map(|v| fps = Some((narrow::<u16>(v), value.clone()))),
             "format" => animated_format(&value).map(|v| format = Some(v)),
+            "plays" => int(&value, "`plays`", &["", "u16"], 1, u128::from(u16::MAX))
+                .map(|v| plays = Some(narrow::<u16>(v))),
+            "hold_start_ms" | "hold_end_ms" => int(
+                &value,
+                &format!("`{name}`"),
+                &["", "u32"],
+                0,
+                u128::from(u32::MAX),
+            )
+            .map(|v| {
+                let ms = narrow::<u32>(v);
+                if name == "hold_start_ms" {
+                    hold_start_ms = ms;
+                } else {
+                    hold_end_ms = ms;
+                }
+            }),
             _ => Err(syn::Error::new(
                 k.span(),
                 format!(
-                    "unknown key `{name}` in `animation(..)`: it takes `duration_ms`, `fps` and `format`"
+                    "unknown key `{name}` in `animation(..)`: it takes `duration_ms`, `fps`, \
+                     `format`, `plays`, `hold_start_ms` and `hold_end_ms`"
                 ),
             )),
         };
@@ -502,6 +546,9 @@ fn parse_animation(
             duration_ms,
             fps,
             format: format.unwrap_or(Animated::Webp(80)),
+            plays,
+            hold_start_ms,
+            hold_end_ms,
         })),
         _ => Ok(Err(vec![syn::Error::new(
             key.span(),

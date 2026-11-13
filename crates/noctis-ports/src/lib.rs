@@ -87,7 +87,7 @@ pub use error::PortError;
 pub use identify::{IdentifyQueue, Lease};
 pub use locale::LocaleSource;
 pub use render::{
-    AnimatedFormat, AnimationSpec, EncodeSettings, ErasedView, Format, Frame, OutputFormat,
+    AnimatedFormat, AnimationSpec, EncodeSettings, ErasedView, Format, Frame, OutputFormat, Plays,
     RenderCap, RenderError, RenderJob, RenderOutput, Renderer, RendererPorts, Size, Template,
     TemplateDescriptor, decode_template,
 };

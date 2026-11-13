@@ -1,0 +1,5 @@
+error: `plays` takes an integer literal 1..=65535 (`u16`), found `0`
+ --> tests/types-image/template_plays_zero.rs:8:59
+  |
+8 |            animation(duration_ms = 500, fps = 10, plays = 0))]
+  |                                                           ^

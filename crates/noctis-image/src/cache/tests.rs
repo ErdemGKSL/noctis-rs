@@ -1,7 +1,10 @@
 //! The FR-36 key, store key and entry codec rows.
 
 use std::collections::HashSet;
+use std::num::NonZeroU16;
 use std::time::Duration;
+
+use noctis_ports::Plays;
 
 use super::*;
 
@@ -69,7 +72,7 @@ fn fr_36_every_field_changes_the_key() {
         (
             "schema",
             KeyInputs {
-                schema: b"noctis.render.v2",
+                schema: b"noctis.render.v3",
                 ..b.clone()
             },
         ),
@@ -184,6 +187,34 @@ fn fr_36_every_field_changes_the_key() {
                     format: AnimatedFormat::Webp { quality: 81 },
                     ..spec
                 }),
+                ..b.clone()
+            },
+        ),
+        (
+            "plays",
+            KeyInputs {
+                animation: Some(spec.once()),
+                ..b.clone()
+            },
+        ),
+        (
+            "plays count",
+            KeyInputs {
+                animation: Some(spec.plays(Plays::Times(NonZeroU16::new(3).unwrap()))),
+                ..b.clone()
+            },
+        ),
+        (
+            "hold_start",
+            KeyInputs {
+                animation: Some(spec.hold_start(Duration::from_millis(500))),
+                ..b.clone()
+            },
+        ),
+        (
+            "hold_end",
+            KeyInputs {
+                animation: Some(spec.hold_end(Duration::from_millis(500))),
                 ..b.clone()
             },
         ),
@@ -306,7 +337,7 @@ fn fr_36_unicode_inputs_have_a_stable_key() {
 
 /// The key of the Unicode row; a change means the layout changed, so bump
 /// [`KEY_SCHEMA`] too.
-const GOLDEN: &str = "9acaf51fc80f21f157ad41addeb658feabfe41b98515105555d2193e867eb56f";
+const GOLDEN: &str = "a9c3de6c51bc6844dd4fc375bfb260f188c25509eb55d278caba4c288b57fc68";
 
 #[test]
 fn fr_36_the_store_key_is_versioned_lowercase_hex() {

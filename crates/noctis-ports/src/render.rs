@@ -9,6 +9,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
+use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -177,6 +178,9 @@ impl RenderJob {
                     AnimatedFormat::Apng => (2, 0),
                 };
                 hasher.update(&[tag, quality]);
+                hasher.update(&spec.plays.count().map_or(0, NonZeroU16::get).to_le_bytes());
+                hasher.update(&spec.hold_start.as_nanos().to_le_bytes());
+                hasher.update(&spec.hold_end.as_nanos().to_le_bytes());
             }
         }
         hasher.update(&self.upload_budget.to_le_bytes());
@@ -283,25 +287,119 @@ impl AnimatedFormat {
     }
 }
 
+/// How many times an animation plays in total (FR-69).
+///
+/// The encoder writes it into every format as the total number of plays:
+/// animated WebP and APNG store `n`, GIF stores a NETSCAPE repeat of
+/// `n - 1` (and no NETSCAPE extension at all for one play). Whether a
+/// client honours it is client behaviour.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Plays {
+    /// Loops forever (the default).
+    #[default]
+    Forever,
+    /// Plays `n` times in total, then rests on the last frame.
+    Times(NonZeroU16),
+}
+
+impl Plays {
+    /// Plays once.
+    pub const ONCE: Self = Self::Times(NonZeroU16::MIN);
+
+    /// The total number of plays, or `None` for [`Plays::Forever`].
+    #[must_use]
+    pub const fn count(self) -> Option<NonZeroU16> {
+        match self {
+            Self::Forever => None,
+            Self::Times(n) => Some(n),
+        }
+    }
+}
+
 /// How a Template animates.
+///
+/// Built with [`AnimationSpec::new`] plus the `const` setters
+/// [`plays`](Self::plays), [`once`](Self::once),
+/// [`hold_start`](Self::hold_start) and [`hold_end`](Self::hold_end), so it
+/// works in `const ANIMATION`.
+///
+/// ```
+/// # use std::time::Duration;
+/// # use noctis_ports::{AnimatedFormat, AnimationSpec, Plays};
+/// const LEVEL_UP: AnimationSpec =
+///     AnimationSpec::new(Duration::from_millis(1200), 30, AnimatedFormat::DEFAULT)
+///         .once()
+///         .hold_end(Duration::from_secs(2));
+/// assert_eq!(LEVEL_UP.plays, Plays::ONCE);
+/// assert_eq!(LEVEL_UP.total_duration(), Duration::from_millis(3200));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AnimationSpec {
-    /// The total duration.
+    /// The drawn duration: frames are drawn at `1/fps` steps over it.
     pub duration: Duration,
     /// Frames per second.
     pub fps: u16,
     /// The animated output format.
     pub format: AnimatedFormat,
+    /// How many times the file plays (default [`Plays::Forever`]).
+    pub plays: Plays,
+    /// How much longer the first frame shows (default zero), in whole
+    /// milliseconds. It adds no frame.
+    pub hold_start: Duration,
+    /// How much longer the last frame shows (default zero), in whole
+    /// milliseconds. It adds no frame.
+    pub hold_end: Duration,
 }
 
 impl AnimationSpec {
-    /// An animation of `duration` at `fps` frames per second.
+    /// An animation of `duration` at `fps` frames per second that loops
+    /// forever, with no holds.
     pub const fn new(duration: Duration, fps: u16, format: AnimatedFormat) -> Self {
         Self {
             duration,
             fps,
             format,
+            plays: Plays::Forever,
+            hold_start: Duration::ZERO,
+            hold_end: Duration::ZERO,
         }
+    }
+
+    /// Sets how many times the file plays.
+    #[must_use]
+    pub const fn plays(mut self, plays: Plays) -> Self {
+        self.plays = plays;
+        self
+    }
+
+    /// Plays the file once: `plays(Plays::ONCE)`.
+    #[must_use]
+    pub const fn once(self) -> Self {
+        self.plays(Plays::ONCE)
+    }
+
+    /// Shows the first frame `hold` longer (whole milliseconds).
+    #[must_use]
+    pub const fn hold_start(mut self, hold: Duration) -> Self {
+        self.hold_start = hold;
+        self
+    }
+
+    /// Shows the last frame `hold` longer (whole milliseconds), so a
+    /// finite animation rests on it.
+    #[must_use]
+    pub const fn hold_end(mut self, hold: Duration) -> Self {
+        self.hold_end = hold;
+        self
+    }
+
+    /// The played duration of one loop: `duration + hold_start + hold_end`
+    /// (saturating). The Renderer's duration cap checks this.
+    #[must_use]
+    pub const fn total_duration(&self) -> Duration {
+        self.duration
+            .saturating_add(self.hold_start)
+            .saturating_add(self.hold_end)
     }
 
     /// Checks the frame rate against the format's cap
@@ -1101,6 +1199,10 @@ mod tests {
                 format: AnimatedFormat::Apng,
                 ..anim
             }),
+            animated(anim.once()),
+            animated(anim.plays(Plays::Times(NonZeroU16::new(2).unwrap()))),
+            animated(anim.hold_start(Duration::from_millis(1))),
+            animated(anim.hold_end(Duration::from_millis(1))),
             with(|j| j.upload_budget = 1001).key(b"fixed=1"),
         ];
         let distinct: std::collections::HashSet<_> = keys.iter().collect();
@@ -1150,7 +1252,7 @@ mod tests {
             (env!("CARGO_PKG_VERSION"), hex(job.key("uzak=1".as_bytes()))),
             (
                 "0.1.0",
-                "6d2ea91e73083d0c7ecd84e93e6943d9df50a7919a99d20907dcc677fe032242".to_owned()
+                "2c22cfd80ad5173121d2a27ea2fff5e6f77ba311b2a7eb4cea7f8c4667f31d49".to_owned()
             ),
             "the golden key pins the Noctis version; re-pin it on a version bump"
         );

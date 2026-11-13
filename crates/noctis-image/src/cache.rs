@@ -4,7 +4,8 @@
 //! render's bytes: the key schema, the Noctis and takumi versions, the
 //! Template id and version, the Theme digest, the job's postcard data, the
 //! App's asset pairs (fonts, static images, the remote-image CDN and
-//! fallback), the size, the format, the animation and the effective encode
+//! fallback), the size, the format, the animation (its play count and holds
+//! included) and the effective encode
 //! settings. Every variable-length field is framed by its `u64` LE byte
 //! length; integers are fixed-width LE.
 //!
@@ -12,6 +13,7 @@
 //! output format, the encode settings) followed by the image bytes.
 
 use std::fmt;
+use std::num::NonZeroU16;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use noctis_ports::{
@@ -20,7 +22,7 @@ use noctis_ports::{
 };
 
 /// The key layout's version; bump it whenever the layout changes.
-pub(crate) const KEY_SCHEMA: &[u8] = b"noctis.render.v1";
+pub(crate) const KEY_SCHEMA: &[u8] = b"noctis.render.v2";
 /// The Noctis version: every crate shares one (AD-2).
 pub(crate) const NOCTIS_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The pinned takumi versions (`Cargo.lock`; the pin test keeps it honest).
@@ -151,6 +153,9 @@ impl<'a> KeyInputs<'a> {
                     AnimatedFormat::Apng => (2, 0),
                 };
                 h.update(&[tag, quality]);
+                h.update(&spec.plays.count().map_or(0, NonZeroU16::get).to_le_bytes());
+                h.update(&spec.hold_start.as_nanos().to_le_bytes());
+                h.update(&spec.hold_end.as_nanos().to_le_bytes());
             }
         }
         h.update(&self.budget.to_le_bytes());

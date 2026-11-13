@@ -82,7 +82,10 @@ fn template_animation() {
         Some(Animation {
             duration_ms: 2000,
             fps: 20,
-            format: Animated::Webp(80)
+            format: Animated::Webp(80),
+            plays: None,
+            hold_start_ms: 0,
+            hold_end_ms: 0,
         })
     );
     let s = settings(&base(
@@ -90,6 +93,36 @@ fn template_animation() {
     ))
     .unwrap();
     assert_eq!(s.animation.map(|a| a.format), Some(Animated::Apng));
+}
+
+#[test]
+fn template_animation_plays_and_holds() {
+    let s = settings(&base(quote!(
+        , animation(duration_ms = 1200, fps = 30, plays = 1, hold_start_ms = 0, hold_end_ms = 2000u32)
+    )))
+    .unwrap();
+    let a = s.animation.unwrap();
+    assert_eq!(
+        (a.plays, a.hold_start_ms, a.hold_end_ms),
+        (Some(1), 0, 2000)
+    );
+    let s = settings(&base(
+        quote!(, animation(duration_ms = 1, fps = 1, plays = 65535)),
+    ))
+    .unwrap();
+    assert_eq!(s.animation.unwrap().plays, Some(65535));
+    fails(
+        base(quote!(, animation(duration_ms = 1, fps = 1, plays = 0))),
+        "`plays` takes an integer literal 1..=65535 (`u16`), found `0`",
+    );
+    fails(
+        base(quote!(, animation(duration_ms = 1, fps = 1, plays = 65536))),
+        "`plays` takes an integer literal 1..=65535",
+    );
+    fails(
+        base(quote!(, animation(duration_ms = 1, fps = 1, hold_end_ms = -1))),
+        "`hold_end_ms` takes an integer literal 0..=4294967295",
+    );
 }
 
 #[test]

@@ -783,7 +783,15 @@ list in CI.
     `@keyframes`. Code-driven animations compute one Template state per frame:
     `TemplateView::view(&self, frame: Frame)` receives the frame index and count, so
     one data value describes the whole animation. Every frame has the job's size; a
-    root node whose explicit size differs from it is a typed error.
+    root node whose explicit size differs from it is a typed error. The spec also
+    carries the play count (`Plays::{Forever, Times(NonZeroU16)}`, written as total
+    plays in every format: WebP and APNG store `n`, GIF a NETSCAPE repeat of `n - 1`
+    and none for one play) and the holds (`hold_start`, `hold_end`: the first / last
+    frame shown longer, drawing no frame and adding no admission weight; the duration
+    cap checks `duration + holds`). Pixel-identical consecutive frames are encoded as
+    one; there is no per-frame delay list (the spec is a `Copy`, hashed `const`). The
+    size ladder keeps play count and holds; both are part of the cache key. Whether a
+    client honours the play count is client behaviour (amended by Story 20.6).
   - No font is bundled unless `default-font` is on; no registered font is a startup
     error. The emoji font is opt-in (`image-emoji`), with a startup warning when
     absent. Theme keyframes come from `noctis-theme.css`; redefining a built-in

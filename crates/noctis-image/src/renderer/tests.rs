@@ -259,6 +259,7 @@ fn renderer_budget(
             TemplateDescriptor::of::<Pulse>(),
             TemplateDescriptor::of::<RootSized>(),
             TemplateDescriptor::of::<NarrowStill>(),
+            TemplateDescriptor::of::<Steps>(),
         ])
         .unwrap();
     renderer
@@ -615,6 +616,36 @@ impl TemplateView for Noise {
             )
         });
         div(Classes::__literal("flex flex-wrap w-full h-full")).children(cells)
+    }
+}
+
+/// A Template whose first half of frames is one colour and second half
+/// another, so consecutive frames repeat (FR-69 merging).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Steps;
+
+impl Template for Steps {
+    const ID: &'static str = "steps";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(4, 4);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl crate::TemplateAssets for Steps {}
+
+impl TemplateView for Steps {
+    fn view(&self, frame: Frame) -> Node {
+        let rgb = if frame.index * 2 < frame.count {
+            0x00FF_0000
+        } else {
+            0x0000_00FF
+        };
+        div(Classes::__literal("w-full h-full")).style(Style::new().bg_rgb(rgb))
     }
 }
 
@@ -1528,4 +1559,5 @@ fn img_01_register_without_font_fails() {
 
 mod cache;
 mod emoji;
+mod plays;
 mod remote;

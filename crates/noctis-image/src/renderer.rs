@@ -21,8 +21,9 @@ use bytes::Bytes;
 use futures_util::FutureExt;
 use image::imageops::FilterType;
 use noctis_ports::{
-    AnimatedFormat, AssetStore, BoxFuture, EncodeSettings, Format, Frame, RenderCache, RenderError,
-    RenderJob, RenderOutput, Renderer, RendererPorts, Size, TemplateDescriptor,
+    AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, EncodeSettings, Format, Frame,
+    RenderCache, RenderError, RenderJob, RenderOutput, Renderer, RendererPorts, Size,
+    TemplateDescriptor,
 };
 #[cfg(feature = "gif")]
 use takumi::prelude::{AnimatedGifOptions, AnimatedPngOptions};
@@ -87,6 +88,10 @@ struct Shared {
 
 /// Why an animation with fps 0 or a duration under 1 ms is unsupported.
 const ANIMATION_BOUNDS: &str = "an animation needs fps >= 1 and a duration of at least 1 ms";
+/// Why an animated WebP longer than one WebP frame can last is unsupported:
+/// a long hold could not be stored.
+const WEBP_TOTAL: &str =
+    "an animated WebP plays at most 16777215 ms (duration plus holds); use GIF or APNG";
 /// Why GIF/APNG output is unsupported without the `gif` feature.
 #[cfg(not(feature = "gif"))]
 const GIF_FEATURE: &str = "GIF and APNG output need the `image-gif` feature";
@@ -230,6 +235,16 @@ impl TakumiRenderer {
             spec.check_fps(job.template_id)?;
         }
         self.shared.caps.check(job)?;
+        // Only caps raised past 4.6 hours reach this.
+        if let Some(spec) = job.animation
+            && matches!(spec.format, AnimatedFormat::Webp { .. })
+            && budget::total_ms(spec.total_duration()) > u64::from(timing::WEBP_MAX_FRAME_MS)
+        {
+            return Err(RenderError::Unsupported {
+                id: job.template_id.to_owned(),
+                why: WEBP_TOTAL.into(),
+            });
+        }
         Ok(view)
     }
 }
@@ -540,9 +555,9 @@ impl Shared {
         })?;
         let (format, frames) = match job.animation {
             Some(spec) if !attempt.still => {
-                // `Encoder::draw` already bounded the count to `u32`.
-                let count = encoder.frames.as_ref().map_or(0, |f| f.full.len());
-                (spec.format.into(), u32::try_from(count).unwrap_or(u32::MAX))
+                // The frames drawn, before identical ones were merged.
+                let drawn = encoder.frames.as_ref().map_or(0, |f| f.drawn);
+                (spec.format.into(), drawn)
             }
             _ => (job.format.into(), 1),
         };
@@ -622,8 +637,12 @@ fn too_many_frames(job: &RenderJob) -> RenderError {
 
 /// The full-size frames of one fps (`None` for a still Template), plus the
 /// frames last resampled from them, so quality steps at one size reuse them.
+/// An animation's frames are already merged (identical consecutive frames
+/// are one) and carry the holds.
 struct Frames {
     fps: Option<u16>,
+    /// How many frames were drawn (`settings_used.frames`).
+    drawn: u32,
     full: Vec<AnimationFrame>,
     resampled: Option<(Size, Vec<AnimationFrame>)>,
 }
@@ -660,7 +679,7 @@ impl Encoder<'_> {
             Some(spec) if !attempt.still => {
                 let frames = self.frames_sized(fps, attempt.size)?;
                 write_animated(
-                    spec.format,
+                    spec,
                     attempt.quality,
                     Cow::Borrowed(frames),
                     &mut bytes,
@@ -682,9 +701,10 @@ impl Encoder<'_> {
     /// The full-size frames at `fps`, drawn on first use.
     fn frames_at(&mut self, fps: Option<u16>) -> Result<&[AnimationFrame], RenderError> {
         if self.frames.as_ref().is_none_or(|f| f.fps != fps) {
-            let frames = self.draw(fps)?;
+            let (drawn, frames) = self.draw(fps)?;
             self.frames = Some(Frames {
                 fps,
+                drawn,
                 full: frames,
                 resampled: None,
             });
@@ -724,15 +744,16 @@ impl Encoder<'_> {
     }
 
     /// Draws every frame at `fps` (one still frame for `None`), stopping
-    /// before a frame once the requester is gone.
-    fn draw(&self, fps: Option<u16>) -> Result<Vec<AnimationFrame>, RenderError> {
+    /// before a frame once the requester is gone; returns the drawn count
+    /// and the frames, merged and with the holds applied.
+    fn draw(&self, fps: Option<u16>) -> Result<(u32, Vec<AnimationFrame>), RenderError> {
         let (shared, view, job, resolved) = (self.shared, self.view, self.job, self.resolved);
         if self.requester.gone() {
             return Err(requester_gone());
         }
         let (Some(fps), Some(spec)) = (fps, job.animation) else {
             let still = shared.frame(view, job, resolved, Frame::STILL, 0)?;
-            return Ok(vec![AnimationFrame::new(still, 0)]);
+            return Ok((1, vec![AnimationFrame::new(still, 0)]));
         };
         let spans = budget::spans(spec.duration, fps);
         let count = u32::try_from(spans.len()).map_err(|_| too_many_frames(job))?;
@@ -742,7 +763,7 @@ impl Encoder<'_> {
                 why: ANIMATION_BOUNDS.into(),
             });
         }
-        spans
+        let drawn = spans
             .iter()
             .zip(0..count)
             .map(|(span, index)| {
@@ -753,7 +774,10 @@ impl Encoder<'_> {
                 let bitmap = shared.frame(view, job, resolved, frame, span.start_ms)?;
                 Ok(AnimationFrame::new(bitmap, span.duration_ms))
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut frames = timing::merge_identical(drawn);
+        timing::apply_holds(&mut frames, &spec);
+        Ok((count, frames))
     }
 }
 
@@ -801,9 +825,11 @@ fn demultiply(pixels: &mut [u8]) {
     }
 }
 
-/// Encodes `frames` as `format` into `out`.
+/// Encodes `frames` as `spec.format` into `out`, with `spec.plays` as the
+/// format's loop count (normalized to total plays) and every frame longer
+/// than the format stores split.
 fn write_animated(
-    format: AnimatedFormat,
+    spec: AnimationSpec,
     quality: Option<u8>,
     frames: Cow<'_, [AnimationFrame]>,
     out: &mut Vec<u8>,
@@ -813,23 +839,27 @@ fn write_animated(
     )]
     job: &RenderJob,
 ) -> Result<(), RenderError> {
+    let format = spec.format;
+    let loop_count = timing::loop_count(spec.plays, format);
+    let frames = timing::split_long(frames, timing::max_frame_ms(format));
     match format {
         AnimatedFormat::Webp { quality: requested } => {
             let options = AnimatedWebpOptions::builder()
                 .lossless(false)
                 .quality(quality.unwrap_or(requested))
+                .loop_count(loop_count)
                 .build();
             takumi::write_animated_webp(frames, out, options).map_err(RenderError::failed)
         }
         #[cfg(feature = "gif")]
         AnimatedFormat::Gif => {
-            takumi::write_animated_gif(frames, out, AnimatedGifOptions::default())
-                .map_err(RenderError::failed)
+            let options = AnimatedGifOptions::builder().loop_count(loop_count).build();
+            takumi::write_animated_gif(frames, out, options).map_err(RenderError::failed)
         }
         #[cfg(feature = "gif")]
         AnimatedFormat::Apng => {
-            takumi::write_animated_png(&frames, out, AnimatedPngOptions::default())
-                .map_err(RenderError::failed)
+            let options = AnimatedPngOptions::builder().loop_count(loop_count).build();
+            takumi::write_animated_png(&frames, out, options).map_err(RenderError::failed)
         }
         #[cfg(not(feature = "gif"))]
         AnimatedFormat::Gif | AnimatedFormat::Apng => Err(RenderError::Unsupported {
@@ -855,6 +885,8 @@ fn still_encoding(format: Format, quality: Option<u8>) -> takumi::prelude::Outpu
         Format::WebpLossless => OutputFormat::WebPLossless,
     }
 }
+
+mod timing;
 
 #[cfg(test)]
 mod tests;

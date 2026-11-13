@@ -340,17 +340,19 @@ pub fn render_board(
 
 ## 6. Animation in a UI
 
-Animated images autoplay in clients that allow it and loop forever. Use them where
-motion says something:
+Animated images autoplay in clients that allow it and loop forever unless the
+`AnimationSpec` sets a play count (`.once()`, `.plays(Plays::Times(n))`; whether a
+client honours it is client behaviour). Use them where motion says something:
 
 | Moment | Technique |
 | --- | --- |
 | A value just changed (XP gained, HP lost, vote counted) | frame-driven fill from the old to the new value, rendered with `ctx.render_with(.., animation)` for this one answer (`images-cookbook.md` §2.5) |
-| A result is revealed (roll, draw, rank up) | frame-driven view that holds the result for the second half of the frames |
+| A result is revealed (roll, draw, rank up) | frame-driven view played `.once()` that rests on the result with `.hold_end(..)` (no extra frames drawn) |
 | Work continues after the answer | a loading card (`images-cookbook.md` §10.1), replaced by the result |
 | Ambience (a live badge, a pulsing status) | a CSS animation in a Thumbnail; keep it tiny (128 to 256 px, 1 to 2 s) |
 
-- **Play once, then settle.** The animation belongs to the answer of the interaction
+- **Play once, then settle.** Give the spec `.once()` and a `.hold_end(..)` so the
+  file itself ends on the result. The animation belongs to the answer of the interaction
   that caused the change. The next render of the same screen (a refresh, a page turn,
   another user's click) uses the still: the same Template rendered with `ctx.render`.
   A bar that replays its fill every time anyone touches the message is noise.

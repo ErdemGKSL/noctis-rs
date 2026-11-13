@@ -3477,9 +3477,17 @@ pub struct noctis::image::AnimationSpec
 pub noctis::image::AnimationSpec::duration: core::time::Duration
 pub noctis::image::AnimationSpec::format: noctis::image::AnimatedFormat
 pub noctis::image::AnimationSpec::fps: u16
+pub noctis::image::AnimationSpec::hold_end: core::time::Duration
+pub noctis::image::AnimationSpec::hold_start: core::time::Duration
+pub noctis::image::AnimationSpec::plays: noctis::image::Plays
 impl noctis::image::AnimationSpec
 pub fn noctis::image::AnimationSpec::check_fps(&self, &str) -> core::result::Result<(), noctis::image::RenderError>
+pub const fn noctis::image::AnimationSpec::hold_end(self, core::time::Duration) -> Self
+pub const fn noctis::image::AnimationSpec::hold_start(self, core::time::Duration) -> Self
 pub const fn noctis::image::AnimationSpec::new(core::time::Duration, u16, noctis::image::AnimatedFormat) -> Self
+pub const fn noctis::image::AnimationSpec::once(self) -> Self
+pub const fn noctis::image::AnimationSpec::plays(self, noctis::image::Plays) -> Self
+pub const fn noctis::image::AnimationSpec::total_duration(&self) -> core::time::Duration
 impl core::clone::Clone for noctis::image::AnimationSpec
 pub fn noctis::image::AnimationSpec::clone(&self) -> Self
 impl core::cmp::Eq for noctis::image::AnimationSpec
@@ -3684,6 +3692,25 @@ impl core::hash::Hash for noctis::image::OutputFormat
 pub fn noctis::image::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::OutputFormat
 impl core::marker::StructuralPartialEq for noctis::image::OutputFormat
+pub enum noctis::image::Plays
+pub noctis::image::Plays::Forever
+pub noctis::image::Plays::Times(core::num::nonzero::NonZeroU16)
+impl noctis::image::Plays
+pub const noctis::image::Plays::ONCE: Self
+pub const fn noctis::image::Plays::count(self) -> core::option::Option<core::num::nonzero::NonZeroU16>
+impl core::clone::Clone for noctis::image::Plays
+pub fn noctis::image::Plays::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Plays
+impl core::cmp::PartialEq for noctis::image::Plays
+pub fn noctis::image::Plays::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::Plays
+pub fn noctis::image::Plays::default() -> Self
+impl core::fmt::Debug for noctis::image::Plays
+pub fn noctis::image::Plays::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::Plays
+pub fn noctis::image::Plays::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::Plays
+impl core::marker::StructuralPartialEq for noctis::image::Plays
 pub struct noctis::image::RemoteConfig
 impl noctis::image::RemoteConfig
 pub fn noctis::image::RemoteConfig::allow_origin(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -4607,9 +4634,17 @@ pub struct noctis::ports::AnimationSpec
 pub noctis::ports::AnimationSpec::duration: core::time::Duration
 pub noctis::ports::AnimationSpec::format: noctis::image::AnimatedFormat
 pub noctis::ports::AnimationSpec::fps: u16
+pub noctis::ports::AnimationSpec::hold_end: core::time::Duration
+pub noctis::ports::AnimationSpec::hold_start: core::time::Duration
+pub noctis::ports::AnimationSpec::plays: noctis::image::Plays
 impl noctis::ports::AnimationSpec
 pub fn noctis::ports::AnimationSpec::check_fps(&self, &str) -> core::result::Result<(), noctis::image::RenderError>
+pub const fn noctis::ports::AnimationSpec::hold_end(self, core::time::Duration) -> Self
+pub const fn noctis::ports::AnimationSpec::hold_start(self, core::time::Duration) -> Self
 pub const fn noctis::ports::AnimationSpec::new(core::time::Duration, u16, noctis::image::AnimatedFormat) -> Self
+pub const fn noctis::ports::AnimationSpec::once(self) -> Self
+pub const fn noctis::ports::AnimationSpec::plays(self, noctis::image::Plays) -> Self
+pub const fn noctis::ports::AnimationSpec::total_duration(&self) -> core::time::Duration
 impl core::clone::Clone for noctis::ports::AnimationSpec
 pub fn noctis::ports::AnimationSpec::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::AnimationSpec
@@ -4821,6 +4856,25 @@ impl core::hash::Hash for noctis::ports::OutputFormat
 pub fn noctis::ports::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ports::OutputFormat
 impl core::marker::StructuralPartialEq for noctis::ports::OutputFormat
+pub enum noctis::ports::Plays
+pub noctis::ports::Plays::Forever
+pub noctis::ports::Plays::Times(core::num::nonzero::NonZeroU16)
+impl noctis::ports::Plays
+pub const noctis::ports::Plays::ONCE: Self
+pub const fn noctis::ports::Plays::count(self) -> core::option::Option<core::num::nonzero::NonZeroU16>
+impl core::clone::Clone for noctis::ports::Plays
+pub fn noctis::ports::Plays::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::Plays
+impl core::cmp::PartialEq for noctis::ports::Plays
+pub fn noctis::ports::Plays::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ports::Plays
+pub fn noctis::ports::Plays::default() -> Self
+impl core::fmt::Debug for noctis::ports::Plays
+pub fn noctis::ports::Plays::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::Plays
+pub fn noctis::ports::Plays::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::Plays
+impl core::marker::StructuralPartialEq for noctis::ports::Plays
 #[non_exhaustive] pub enum noctis::ports::PortError
 pub noctis::ports::PortError::Backend(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::ports::PortError::InvalidValue

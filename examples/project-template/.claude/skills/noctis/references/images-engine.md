@@ -627,7 +627,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 - Per-job caps per App: `ImageConfig::new().caps(RenderCaps::new().frames(120))`.
   `RenderCaps::new()` (= `default()`) is 4 MP (`job_pixels`, 4_000_000, `w*h` of every
   job), 1 MP per frame (`frame_pixels`, 1_000_000, animations only), 90 `frames` and 6 s
-  `duration` (whole ms); setters `.job_pixels(u64)`, `.frame_pixels(u64)`,
+  `duration` (whole ms, of `duration + hold_start + hold_end`); setters `.job_pixels(u64)`, `.frame_pixels(u64)`,
   `.frames(u32)`, `.duration(Duration)`. Limits are inclusive and checked before
   admission in that order (pixels, then duration, then frames), after the fps/duration
   and `image-gif` checks; the first exceeded is the `OverCap`. Out-of-range caps fail
@@ -721,7 +721,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   render pool. Frame `i` starts at `i*1000/fps` ms and lasts until the next one (the
   last ends at `duration_ms`); `count` is `ceil(duration_ms * fps / 1000)` (2000 ms at
   20 fps: 40 frames). Keep `count` within the frames cap (default 90) and
-  `duration_ms` within the duration cap (default 6000), and each frame within 1 MP,
+  `duration_ms` plus the holds within the duration cap (default 6000), and each frame within 1 MP,
   or the render fails before it is queued with `RenderError::OverCap` (§8, "Per-job
   caps"). Override or add the animation per call with
   `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::DEFAULT)))`;
@@ -734,11 +734,39 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   `w-full h-full` and animate children.
 - Default animated format: animated WebP (smaller and ~3× faster than GIF); GIF with
   `image-gif` for maximum compatibility. Design GIF Templates with flat colours.
-- Every animation loops forever and every frame lasts the same time: there is no loop
-  count and no per-frame delay to set. A pause or a held end state is made of repeated
-  frames in the view (`images-cookbook.md` §2.5). The built-in `animate-spin`,
-  `animate-ping` and `animate-bounce` cycle in 1 s, `animate-pulse` in 2 s: choose a
-  duration that is a whole number of cycles so the loop has no jump.
+- Play count: an animation loops forever by default (`Plays::Forever`).
+  `AnimationSpec::plays(Plays::Times(n))` (`n` a `NonZeroU16`; `Plays::ONCE` is one
+  play, `Plays::count()` the count or `None`) or `.once()`, or
+  `plays = n` (1..=65535; `plays = 0` does not compile) in `animation(..)`, writes `n`
+  plays in total into every format: animated WebP and APNG carry loop count `n`, a GIF
+  carries a NETSCAPE repeat of `n - 1` and none at all for one play. Whether a client
+  honours it is client behaviour (and whether it animates at all is a user setting):
+  keep the last frame readable on its own.
+- Holds: `.hold_start(d)` / `.hold_end(d)` (`hold_start_ms = ..` / `hold_end_ms = ..`
+  on the attribute, default 0) lengthen the first / last frame by `d` (whole ms). No
+  frame is drawn for a hold: the view sees the same `Frame { index, count }`, the
+  queue weight is unchanged, and the duration cap checks
+  `AnimationSpec::total_duration()` (`duration + hold_start + hold_end`;
+  `RenderError::OverCap` with `RenderCap::Duration` when over). An animated WebP plays
+  at most 16 777 215 ms in all (`RenderError::Unsupported` above that; GIF and APNG
+  split a longer frame). Frames are otherwise equal in length (`1000 / fps` ms); there
+  is no per-frame delay list.
+- Pixel-identical consecutive frames are written as one frame with the summed
+  duration in every format, so a pause drawn as repeated frames costs no bytes;
+  `settings_used.frames` still counts the frames drawn. The size ladder keeps the play
+  count and the holds when it lowers the fps or the size (a still fallback has
+  neither). Play count and holds are part of the render cache key.
+  ```rust
+  #[derive(Template, Serialize, Deserialize)]
+  #[template(id = "fx.levelup", version = 1, size = (600, 200), format = Png,
+             animation(duration_ms = 1200, fps = 20, plays = 1, hold_end_ms = 3000))]
+  struct LevelUp { level: u32 }
+  // per call: AnimationSpec::new(Duration::from_millis(1200), 20, AnimatedFormat::DEFAULT)
+  //     .once().hold_end(Duration::from_secs(3))
+  ```
+- The built-in `animate-spin`, `animate-ping` and `animate-bounce` cycle in 1 s,
+  `animate-pulse` in 2 s: for a looping animation choose a duration that is a whole
+  number of cycles so the loop has no jump.
 
 ### Size budget
 

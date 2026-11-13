@@ -729,3 +729,19 @@ Planning decisions (2026-11-13, Epic 20):
   existed only as the Usage Skill's `images-emoji.md` §5.2 example, not in the
   template code; that example is replaced by the Publish sync (§5.1) and a short
   "by hand" note.
+- (decision, Story 20.6) GIF's one play is takumi's `loop_count: Some(0)`: the gif
+  0.14 encoder writes no NETSCAPE extension for `Repeat::Finite(0)`, so no byte
+  surgery is needed. Merging of identical frames happens in Noctis before every
+  encoder (takumi already merges for WebP only); `settings_used.frames` keeps the
+  drawn count. A merged or held frame longer than the format stores is split for GIF
+  (655 350 ms) and APNG (65 535 ms); an animated WebP whose `duration + holds` exceeds
+  16 777 215 ms is `RenderError::Unsupported` (one WebP frame cannot be longer). Holds
+  are whole milliseconds. `plays` on the attribute is an integer 1..=65535 (omitted is
+  forever; no `Forever` keyword). The render key schema became `noctis.render.v2`,
+  and `RenderJob::key` hashes plays and holds for animated jobs only, under the
+  unchanged schema `noctis.render.job.v1`, so a custom Renderer's still digests (and
+  attachment names) do not move.
+- (decision, Story 20.6) The Project Template has no animated Template yet (only the
+  still `ProfileCard`), so "compiles against the new spec" holds trivially; the
+  play-once animation is added by Story 20.12's sweep, and the Usage Skill's
+  cookbook §2.5 example now uses `.once().hold_end(..)`.
