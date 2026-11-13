@@ -202,6 +202,8 @@ impl TestApp {
         let app = builder.build().map_err(TestError::Build)?;
         let renderer = app.renderer().cloned();
         let probe = AppProbe::of(&app);
+        // Every declared emoji resolves without a list (FR-82).
+        probe.seed_emojis(&|_| true);
         let definitions = probe.commands();
         let (stop, stopped) = oneshot::channel::<()>();
         let task = tokio::spawn(app.run_until(async move {
@@ -279,6 +281,29 @@ impl TestApp {
     #[must_use]
     pub fn user(mut self, user: TestUser) -> Self {
         self.seeds.users.insert(user.id, user);
+        self
+    }
+
+    /// Limits which declared application emojis exist, to test the
+    /// degraded path: only the declared names in `names` resolve (to
+    /// [`fake_emoji_id`](crate::fake_emoji_id)), every other lookup returns
+    /// `None` and its text token writes nothing. Without this call every
+    /// declared emoji resolves. No request is sent either way.
+    ///
+    /// ```no_run
+    /// # async fn check(app: noctis_testkit::TestApp) {
+    /// // Only `check` exists; `check_white` and every other name are missing.
+    /// let app = app.app_emojis(["check"]);
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn app_emojis<I, S>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let keep: HashSet<String> = names.into_iter().map(|n| n.as_ref().to_owned()).collect();
+        self.probe.seed_emojis(&|name| keep.contains(name));
         self
     }
 

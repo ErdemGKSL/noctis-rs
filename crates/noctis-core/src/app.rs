@@ -382,6 +382,21 @@ impl App {
     /// # }
     /// ```
     pub fn emoji_declarations(&self) -> &crate::emoji::EmojiDeclarations {
+        self.shared.emojis.declarations()
+    }
+
+    /// The App's application emoji table: typed lookups of the declared
+    /// emojis (`get`, `white`, `on`, `text`), the same handle as
+    /// `ctx.emojis()` in every context. Empty until `run` has listed the
+    /// application's emojis, or [`Emojis::reload`](crate::emoji::Emojis::reload).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert!(app.emojis().missing().is_empty());
+    /// # }
+    /// ```
+    pub fn emojis(&self) -> &crate::emoji::Emojis {
         &self.shared.emojis
     }
 
@@ -1215,14 +1230,16 @@ impl App {
                 // Discord request.
                 self.load_locale_overlays().await?;
                 let poller = self.start_module_state().await;
+                let emojis = self.start_emojis().await;
                 hooks.app_started(self.publisher);
                 self.publish_at_startup().await;
                 self.warm_up(warmed).await;
-                Ok::<_, Error>((self.gateway_info().await?, poller))
+                Ok::<_, Error>((self.gateway_info().await?, poller, emojis))
             } => info?,
         };
-        // Polls the Module state until `run_with` returns.
-        let (info, _poller) = info;
+        // Polls the Module state and keeps the emoji table listed until
+        // `run_with` returns.
+        let (info, _poller, _emojis) = info;
         let plan = plan(info, self.shard_total, self.shard_range.clone())?;
         let total = plan.total.get();
         let shards = plan.shards.clone();
@@ -1481,6 +1498,19 @@ impl App {
             state,
             self.module_state_poll,
         )))
+    }
+
+    /// Lists the application emojis once (only with emoji sets), before
+    /// any handler runs, then keeps them listed in the background (retries
+    /// with backoff, re-lists while names are missing); dropping the
+    /// returned guard stops it. A failed list only warns.
+    async fn start_emojis(&self) -> Option<AbortOnDrop> {
+        let emojis = &self.shared.emojis;
+        if !emojis.has_declarations() {
+            return None;
+        }
+        let first = emojis.reload().await;
+        Some(AbortOnDrop(tokio::spawn(emojis.clone().keep_listed(first))))
     }
 
     /// The publisher's global Publish (only with `publisher`), before any
@@ -2060,6 +2090,9 @@ pub struct AppBuilder {
     shutdown_tasks: Vec<ShutdownTask>,
     /// The emoji sets (`emojis`), one per type, in registration order.
     emoji_sets: Vec<crate::emoji::EmojiSet>,
+    /// The re-list interval while declared emojis are missing
+    /// (`emoji_reload_interval`).
+    emoji_reload_interval: Duration,
     violations: Vec<BuildViolation>,
 }
 
@@ -2170,6 +2203,7 @@ impl AppBuilder {
             plugin_types: HashSet::new(),
             shutdown_tasks: Vec::new(),
             emoji_sets: Vec::new(),
+            emoji_reload_interval: crate::emoji::DEFAULT_RELOAD_INTERVAL,
             violations: Vec::new(),
         }
     }
@@ -2423,6 +2457,24 @@ impl AppBuilder {
         if !self.emoji_sets.iter().any(|s| s.id == set.id) {
             self.emoji_sets.push(set);
         }
+        self
+    }
+
+    /// How often the App re-lists its application emojis while a declared
+    /// name is missing from the application (default 60 s): a Cluster
+    /// process or one that started before the publisher's upload picks the
+    /// new emojis up without a restart. `Duration::ZERO` turns the re-list
+    /// off; a failed list is still retried, and every Publish of this
+    /// process still re-lists.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.emoji_reload_interval(Duration::from_secs(300));
+    /// ```
+    pub fn emoji_reload_interval(&mut self, interval: Duration) -> &mut Self {
+        self.emoji_reload_interval = interval;
         self
     }
 
@@ -3463,7 +3515,13 @@ impl AppBuilder {
             config.http_timeout,
             &app,
         );
-        let http = http_client(&config, &edge, http_proxy.is_some());
+        let http = Arc::new(http_client(&config, &edge, http_proxy.is_some()));
+        let emojis = crate::emoji::Emojis::new(
+            emojis,
+            Arc::clone(&http),
+            config.token.is_some(),
+            config.emoji_reload_interval,
+        );
         let mut ports = Ports::resolve(config.ports, &app_id);
         let discord_cache = discord_cache_feed(&mut ports, config.discord_cache);
         if let Some(renderer) = &config.renderer {
@@ -3488,11 +3546,11 @@ impl AppBuilder {
                 discord_cache,
                 module_state,
                 sinks: config.error_sinks,
-                http: Arc::new(http),
+                http,
                 states: config.states,
                 edge,
                 limits: config.limits,
-                emojis: Arc::new(emojis),
+                emojis,
                 registry: Arc::clone(&registry),
                 ack_deadline: config.ack_deadline,
                 refs,

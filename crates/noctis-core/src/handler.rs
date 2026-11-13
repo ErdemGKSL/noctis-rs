@@ -220,8 +220,8 @@ pub(crate) struct AppShared {
     /// The Limits every Responder validates against (`AppBuilder::limits`).
     pub(crate) limits: noctis_rules::Limits,
     /// The declared application emojis, folded once at build
-    /// (`AppBuilder::emojis`; empty without a set).
-    pub(crate) emojis: Arc<crate::emoji::EmojiDeclarations>,
+    /// (`AppBuilder::emojis`; empty without a set), and their listed ids.
+    pub(crate) emojis: crate::emoji::Emojis,
     /// The folded Registry (the Dispatcher resolves Commands in it).
     pub(crate) registry: Arc<Registry>,
     /// When the auto-defer acknowledges a pending interaction, after
@@ -386,6 +386,13 @@ impl EventCtx {
     /// outside an interaction, such as a prefix command.
     pub fn dispatcher(&self) -> &Dispatcher {
         &self.0.dispatcher
+    }
+
+    /// The App's application emoji table (`App::emojis`): typed lookups
+    /// of the declared emojis, `get`, `white`, `on(style, ..)` and `text`;
+    /// no lookup does I/O. Empty in the detached test seams.
+    pub fn emojis(&self) -> &crate::emoji::Emojis {
+        &self.0.app.emojis
     }
 
     /// The App's typed key-value handle over its namespaced `CacheStore`

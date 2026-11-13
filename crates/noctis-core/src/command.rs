@@ -384,6 +384,13 @@ impl CommandCtx {
             })
     }
 
+    /// The App's application emoji table (`App::emojis`): typed lookups
+    /// of the declared emojis, `get`, `white`, `on(style, ..)` and `text`;
+    /// no lookup does I/O. Empty in the detached test seams.
+    pub fn emojis(&self) -> &crate::emoji::Emojis {
+        crate::emoji::emojis_of(self.0.app.as_deref())
+    }
+
     /// The App's Limits (`AppBuilder::limits`), what the Responder
     /// validates against; pass it to render functions that size pages with
     /// `noctis::ui::Budget`. [`Limits::default`] in the detached test

@@ -2143,6 +2143,27 @@ pub mod emoji {
     //! (`[EMO-03]`), more than 2000 names `BuildViolation::TooManyEmojis`
     //! (`[EMO-01]`). An App without a set makes no emoji request.
     //!
+    //! At start the App lists the application's emojis once and builds the
+    //! name → id table before any handler runs; `ctx.emojis()` (every
+    //! context) and [`App::emojis`](crate::App::emojis) return its
+    //! [`Emojis`] handle:
+    //!
+    //! - `get(Icons::Check)` → `Option<Emoji>`, the coloured variant;
+    //!   `white(..)` the `_white` one.
+    //! - `on(ButtonStyle::Success, Icons::Check)`: the white variant on
+    //!   `Primary`, `Success` and `Danger` when declared, else the coloured
+    //!   one; the coloured one on `Secondary`.
+    //! - `text(Icons::Check)`: a `Display` token, `<:check:ID>` (`<a:..>`
+    //!   when animated), empty while missing.
+    //!
+    //! `.emoji(..)` on `RouteButton`, `LinkButton` and `SelectOption` takes
+    //! the `Option<Emoji>` directly. A missing emoji never fails a render:
+    //! the lookups return `None`, start-up logs the missing names in one
+    //! `warn` that says to run Publish, a failed list is retried with
+    //! backoff, and the table is re-listed every 60 s while a name is
+    //! missing (`AppBuilder::emoji_reload_interval`) and after every
+    //! Publish; `ctx.emojis().reload().await` forces it.
+    //!
     //! ```
     //! use noctis::prelude::*;
     //!
@@ -2165,7 +2186,7 @@ pub mod emoji {
 
     pub use noctis_core::emoji::{
         AppEmojis, DeclaredEmoji, EmojiArt, EmojiDecl, EmojiDeclarations, EmojiFormat, EmojiImage,
-        EmojiTone,
+        EmojiListError, EmojiText, EmojiTone, Emojis,
     };
     pub use noctis_macros::AppEmojis;
 }
@@ -4229,6 +4250,6 @@ pub mod testkit {
         AutocompleteRun, ClickRun, CommandRun, HttpCall, MEMORY_FLAT_SLACK_BYTES, MemoryReport,
         MenuRun, ModalForm, RecordedFile, Response, ResponseKind, SelectRun, SubmitRun, TestApp,
         TestComponent, TestError, TestGuild, TestMessage, TestOption, TestUser, Tolerance,
-        WireCost, assert_memory_flat, assert_render_snapshot, dhat, render_json,
+        WireCost, assert_memory_flat, assert_render_snapshot, dhat, fake_emoji_id, render_json,
     };
 }

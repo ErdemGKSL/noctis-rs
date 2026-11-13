@@ -327,6 +327,68 @@ async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Resu
     Ok(())
 }
 
+/// Application emojis (`ctx.emojis()`): under `TestApp` every declared emoji resolves to
+/// a stable fake id without a request, on a button (the white variant on a coloured
+/// style), a select option and in text; `app_emojis(..)` tests the degraded path.
+#[tokio::test(flavor = "multi_thread")]
+async fn dashboard_modules_tab_shows_application_emojis() -> anyhow::Result<()> {
+    use noctis::testkit::fake_emoji_id;
+
+    let app = app().await?;
+    let modules = app
+        .command("dashboard")
+        .option("module", "setup")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
+    // Both modules are enabled: Disable is Danger, so it shows `cross_white`.
+    let disable = modules.button_by_emoji("cross")?;
+    assert_eq!(disable.label(), Some("Disable"));
+    assert_eq!(disable.emoji(), Some("cross_white"));
+    let online = format!("<:st_online:{}>", fake_emoji_id("st_online"));
+    assert!(modules.text().contains(&online), "{}", modules.text());
+    let json = modules.message_json().to_string();
+    let check = format!(r#""id":"{}","name":"check""#, fake_emoji_id("check"));
+    assert!(json.contains(&check), "{json}");
+
+    // Picking only `profile` in the select disables `setup`: its toggle becomes Enable
+    // (Success), with `check_white`.
+    let select = modules
+        .components()
+        .into_iter()
+        .find(|c| c.route() == Some("dash.on"))
+        .ok_or_else(|| anyhow::anyhow!("no module select"))?;
+    let picked = app
+        .select(select)
+        .values(["profile"])
+        .by(ADMIN)
+        .run()
+        .await?;
+    assert_eq!(
+        picked.button_by_emoji("check")?.emoji(),
+        Some("check_white")
+    );
+
+    // Degraded: only `check` exists. No white variant, no `cross`, no status dot.
+    let app = app.app_emojis(["check"]);
+    let degraded = app
+        .command("dashboard")
+        .option("module", "setup")
+        .by(ADMIN)
+        .in_guild(GUILD)
+        .run()
+        .await?;
+    assert!(
+        !degraded.text().contains("st_online"),
+        "{}",
+        degraded.text()
+    );
+    assert_eq!(degraded.button_by_emoji("check")?.emoji(), Some("check"));
+    assert!(degraded.button("Disable")?.emoji().is_none());
+    Ok(())
+}
+
 /// The `data` of a run's type-9 (modal) callback.
 macro_rules! modal_data {
     ($response:expr) => {

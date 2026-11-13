@@ -11,8 +11,9 @@ engine (§4), declaring the set in code and uploading (§5), using them from cod
 emoji progress bars (§7), animated emojis (§8), emoji or attachment (§9).
 
 **Declare the set in code** with `#[derive(AppEmojis)]` (§5.0): names, files, formats
-and sizes are checked at `cargo check`. Uploading and the name → id lookup still go
-through the twilight client that `ctx.http()` returns (§5.2, §6).
+and sizes are checked at `cargo check`. The App lists the application's emojis at start
+and `ctx.emojis()` looks them up by the typed variant (§6). Uploading still goes through
+the twilight client that `ctx.http()` returns (§5.2).
 
 ## 1. What Discord guarantees
 
@@ -81,8 +82,8 @@ Follow this checklist unless the user of the bot project says otherwise.
    clients; avoid pure white, near-black and pale tints for the coloured variant.
 9. **Upload once, reference by name.** Keep the PNGs in the repository
    (`assets/emoji/<name>.png`), upload them to the application once per environment,
-   and look ids up by name at start (§5, §6): the ids differ between a test bot and
-   the production bot.
+   and look them up with `ctx.emojis()` (§6), never by a hard-coded id: the ids differ
+   between a test bot and the production bot.
 
 ## 3. Making the art
 
@@ -360,94 +361,69 @@ impl EmojiSync {
   and, for `EmojiImage::File { bytes, format }`, build the data URI from `bytes` with
   `format.mime()` (`image/png`, `image/gif`, `image/jpeg`); upload `white_image()`
   under `white_name()` too.
-- After a sync, restart the bot or reload the table (§6) so the new ids are known.
+- After a sync, call `ctx.emojis().reload().await` (§6) so this process knows the new
+  ids at once; other processes re-list on their own within 60 s while a name is
+  missing.
 
 ## 6. Using them from code
 
-Look the ids up by name once, at start, and keep them in App state:
+The App lists the application's emojis once at start (`GET
+/applications/{id}/emojis`, through its one HTTP client) and builds the name → id
+table before any handler runs. `ctx.emojis()` returns it in every context
+(`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx`, `AutocompleteCtx`,
+`EventCtx`, `HookCtx`), and `app.emojis()` outside one. Pass it to the render function
+like `&Strings`:
 
 ```rust
-use std::collections::BTreeMap;
-use std::sync::OnceLock;
-
-use noctis::id::marker::EmojiMarker;
-use noctis::lifecycle::{AppStarted, HookCtx};
+use noctis::emoji::Emojis;
 use noctis::prelude::*;
-use noctis::ui::{ButtonStyle, Emoji};
+use noctis::ui::{ActionRow, Button, ButtonStyle, SelectOption, TextDisplay};
 
-/// name → id of this application's emojis. Registered with `.state(EmojiIds::default())`.
-#[derive(Debug, Default)]
-pub struct EmojiIds(OnceLock<BTreeMap<String, Id<EmojiMarker>>>);
+use crate::emoji::Icons;
 
-impl EmojiIds {
-    fn id(&self, name: &str) -> Option<Id<EmojiMarker>> {
-        self.0.get()?.get(name).copied()
-    }
-
-    /// For a button or a select option. `None` until the emoji exists.
-    pub fn emoji(&self, name: &'static str) -> Option<Emoji> {
-        self.id(name).map(|id| Emoji::custom(id, name, false))
-    }
-
-    /// The token for Text Display content. Empty until the emoji exists.
-    pub fn inline(&self, name: &str) -> String {
-        self.id(name).map(|id| format!("<:{name}:{id}>")).unwrap_or_default()
-    }
-
-    /// Methodology rule 5: white on a coloured button, coloured on the grey one.
-    pub fn on(&self, style: ButtonStyle, name: &'static str, white: &'static str) -> Option<Emoji> {
-        match style {
-            ButtonStyle::Secondary => self.emoji(name),
-            _ => self.emoji(white),      // Primary, Success, Danger
-        }
-    }
-}
-
-#[derive(Hook, Debug)]
-#[hook(module = "emoji")]
-pub struct LoadEmojis;
-
-impl LoadEmojis {
-    #[handler]
-    async fn handle(self, ctx: HookCtx, _started: AppStarted) -> HandlerResult<()> {
-        let Some(table) = ctx.state::<EmojiIds>() else { return Ok(()) };
-        let app = ctx.http().current_user_application().await?.model().await?.id;
-        let list = ctx.http().get_application_emojis(app).await?.model().await?;
-        let _ = table.0.set(list.items.into_iter().map(|e| (e.name, e.id)).collect());
-        Ok(())
-    }
-}
+// in a handler:
+ctx.respond(render_order(order, &s, ctx.emojis())).await
 ```
 
-Handlers read the table with `ctx.state::<EmojiIds>()` and pass `&EmojiIds` to the
-render function like `&Strings`.
+| Call | Returns | Use it for |
+| --- | --- | --- |
+| `emojis.get(Icons::Check)` | `Option<Emoji>`, the coloured variant | select options, `LinkButton`, `Secondary` buttons |
+| `emojis.white(Icons::Check)` | `Option<Emoji>`, `check_white` | rarely: `on` picks it for you |
+| `emojis.on(style, Icons::Check)` | `Option<Emoji>`: white on `Primary`, `Success` and `Danger` when the icon declares `#[emoji(white)]` (coloured while `check_white` is missing), else coloured; coloured on `Secondary` | every `RouteButton` |
+| `emojis.text(Icons::Check)` | `EmojiText`, a `Display` token: `<:check:ID>`, `<a:spin:ID>` when animated, **nothing** while missing; `is_missing()` | Text Display content, Template data |
+| `emojis.id("check")` | `Option<Id<EmojiMarker>>` by declared name | `RemoteImage::custom_emoji(id, ..)` |
+| `emojis.missing()` | the declared names the last list did not find | a status or admin screen |
+| `emojis.is_loaded()` | whether a list has succeeded | the same |
+| `emojis.reload().await` | `Result<(), EmojiListError>`: list now | after your own upload (§5.2) |
+| `emojis.declarations()` | the `EmojiDeclarations` | listing the set |
 
-**On buttons** (the style decides the variant):
+No lookup does I/O or allocates more than the value it returns; `Emojis` is a cheap
+`Clone` (`ctx.emojis().clone()` into a spawned task). Every App has its own table.
+
+**On buttons** (the style decides the variant): `.emoji(..)` on `RouteButton`,
+`LinkButton` and `SelectOption` takes the `Option<Emoji>` directly, and `None` leaves
+the component without an emoji (also replacing a `defaults(emoji = ..)`).
 
 ```rust
-pub fn confirm_row(order: OrderId, e: &EmojiIds) -> ActionRow {
-    let mut confirm = ConfirmOrder { order }.build();          // defaults(style = Success, ..)
-    if let Some(emoji) = e.on(ButtonStyle::Success, "check", "check_white") {
-        confirm = confirm.emoji(emoji);                          // white: Success is coloured
-    }
-    let mut cancel = CancelOrder { order }.build();            // defaults(style = Secondary, ..)
-    if let Some(emoji) = e.on(ButtonStyle::Secondary, "cross", "cross_white") {
-        cancel = cancel.emoji(emoji);                            // coloured: Secondary is grey
-    }
+pub fn confirm_row(order: OrderId, e: &Emojis) -> ActionRow {
+    let confirm = ConfirmOrder { order }.build()               // defaults(style = Success, ..)
+        .emoji(e.on(ButtonStyle::Success, Icons::Check));       // check_white
+    let cancel = CancelOrder { order }.build()                 // defaults(style = Secondary, ..)
+        .emoji(e.on(ButtonStyle::Secondary, Icons::Cross));    // cross
     ActionRow::buttons([Button::from(confirm), Button::from(cancel)])
 }
 ```
 
 When a button's style changes per render (Enable is `Success`, Disable is `Danger`),
-pass the same `style` to `.style(..)` and to `e.on(..)` so the pair cannot drift apart.
+compute the `style` once and pass it to `.style(style)` and to `e.on(style, ..)` so the
+pair cannot drift apart (the Project Template's dashboard Modules tab does this).
 
 **On select options** (coloured variant):
 
 ```rust
-let mut option = SelectOption::new(s.shop.item_name(item), item.key());
-if let Some(emoji) = e.emoji(item.icon()) {
-    option = option.emoji(emoji);
-}
+SelectOption::new(s.shop.item_name(item), item.key())
+    .emoji(e.get(item.icon()))          // item.icon() -> Icons
+    .default(item == current)
 ```
 
 **In text** (coloured variant):
@@ -455,11 +431,26 @@ if let Some(emoji) = e.emoji(item.icon()) {
 ```rust
 TextDisplay::new(format!(
     "{} **{}** · {}",
-    e.inline("st_online"),
+    e.text(Icons::StOnline),
     escape_markdown(&member.name),       // escape user text, never the token
     s.status.online(),
 ))
 ```
+
+What happens when an emoji is missing (not uploaded yet, or the list failed):
+
+- **Nothing fails.** The lookups return `None` and the token writes nothing, so keep
+  labels and words complete without the emoji (methodology rule 7). Watch for a
+  leading space when the token is empty (`format!("{} x", ..).trim_start()`).
+- **Start-up logs it** in one `warn` (target `noctis::emoji`) naming the missing names
+  and saying to run Publish. A failed list also only warns: the bot starts, the table
+  stays empty, and the list is retried with backoff (1 s doubling to 60 s).
+- **It heals on its own.** While a declared name is missing, the table is re-listed
+  every 60 s (`AppBuilder::emoji_reload_interval(Duration)`; `Duration::ZERO` turns it
+  off), and after every Publish of this process; a Cluster process picks up the
+  publisher's upload without a restart.
+
+Other rules:
 
 - **Never pass a token through `escape_markdown`**: it escapes the `_` in
   `check_white` and the emoji stops rendering. Escape the user text, then concatenate.
@@ -467,34 +458,53 @@ TextDisplay::new(format!(
   characters of the 4000 (CV2-04). Short names matter in long lists.
 - **Only the `emoji` field renders on a button or an option.** A token inside a label,
   a placeholder or a modal title is shown as plain characters (client behaviour).
-- **A missing emoji degrades to nothing**: `emoji(..)` is `None`, `inline(..)` is
-  empty. Keep labels and words complete without it (methodology rule 7).
 - **A fixed id as a literal**: `#[button("shop.buy", defaults(style = Success, label =
   keys::SHOP_BUY, emoji = "<:cart_white:1300000000000000003>"))]` is checked at
   `cargo check`, but pins one application's id into the code: fine for a bot with a
   single application, wrong when a test bot and a production bot share the source.
+  Names in `defaults(emoji = ..)` are not supported (defaults are compile-time data);
+  set the emoji per render with `.emoji(e.on(..))`.
 - **Unicode emoji need no upload**: `Emoji::unicode("🔄")`. Use them for throwaway
   marks; use application emojis when the set must look like one family.
 
+**In tests**, `TestApp` resolves every declared emoji to a stable fake id without a
+request (`noctis::testkit::fake_emoji_id("check")`), `app.app_emojis(["check"])` keeps
+only the names given (the degraded path), and `Response::button_by_emoji("check")`
+finds a button by the declared name, its `check_white` variant included
+(`testing.md`).
+
 **Inside rendered images**: a token in a Template's *data* draws inline, fetched from
 the Discord CDN like any custom emoji (`images-engine.md` §7 "Custom emoji"), so
-`format!("{} {}", e.inline("coin"), price)` works as a `String` field of a card; and
-`RemoteImage::custom_emoji(id, false)` in an `#[asset]` field draws one at any size.
-The same icon set then appears in text, on buttons and in pictures.
+`format!("{} {}", e.text(Icons::Coin), price)` works as a `String` field of a card; and
+`RemoteImage::custom_emoji(id, false)` in an `#[asset]` field (with `e.id("coin")`)
+draws one at any size. The same icon set then appears in text, on buttons and in
+pictures.
 
 ## 7. Emoji progress bars
 
 A bar made of emojis lives in the text itself: no attachment, no render per value, and
-it sits on the same line as its numbers.
+it sits on the same line as its numbers. The six pieces are variants of the set:
 
 ```rust
+#[derive(AppEmojis, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bar {
+    BarOnA, BarOnB, BarOnC,       // bar_on_a.png …: lit start, middle, end
+    BarOffA, BarOffB, BarOffC,    // unlit
+}
+
 /// `filled` of `total` segments, e.g. 4 of 10.
-pub fn emoji_bar(e: &EmojiIds, filled: usize, total: usize) -> String {
+pub fn emoji_bar(e: &Emojis, filled: usize, total: usize) -> String {
     (0..total)
         .map(|i| {
-            let set = if i < filled { "on" } else { "off" };
-            let piece = if i == 0 { "a" } else if i + 1 == total { "c" } else { "b" };
-            e.inline(&format!("bar_{set}_{piece}"))
+            let piece = match (i < filled, i == 0, i + 1 == total) {
+                (true, true, _) => Bar::BarOnA,
+                (true, _, true) => Bar::BarOnC,
+                (true, _, _) => Bar::BarOnB,
+                (false, true, _) => Bar::BarOffA,
+                (false, _, true) => Bar::BarOffC,
+                (false, _, _) => Bar::BarOffB,
+            };
+            e.text(piece).to_string()
         })
         .collect()
 }
@@ -507,6 +517,8 @@ TextDisplay::new(format!(
 ))
 ```
 
+- Register the second set too (`builder.emojis::<Icons>().emojis::<Bar>()`); a name
+  two sets declare fails `build()` with `[EMO-03]`.
 - Six emojis make every state: start, middle and end, each lit and unlit. Pieces touch
   the left and right canvas edges (§4). Whether neighbouring emojis touch on screen is
   client behaviour: the pieces look intended both as one joined bar and as segments.
@@ -536,9 +548,8 @@ An animated emoji is uploaded as an animated image and written `<a:name:id>`
 - Use them sparingly: a spinner on a "working" line, a pulse on a live status. A
   message full of moving glyphs is unreadable, and clients can be set not to animate
   emoji (client behaviour).
-- Keep `animated` with the name in your table when you ship animated emojis (the
-  emoji objects from `get_application_emojis` carry `animated: bool`), since the token
-  and `Emoji::custom` both need it.
+- `ctx.emojis()` keeps `animated` from the list, so `get(..)` and `text(..)` of a GIF
+  emoji are already animated (`<a:name:id>`); declare it as a `.gif` file (§5.0).
 
 ## 9. Emoji or attachment?
 

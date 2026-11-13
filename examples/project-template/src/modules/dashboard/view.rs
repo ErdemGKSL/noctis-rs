@@ -2,15 +2,17 @@
 //! Command and every handler load [`DashData`] and call [`render_dashboard`]; nothing
 //! else builds this message. It is pure (no I/O), so tests snapshot it directly.
 
+use noctis::emoji::Emojis;
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
 use noctis::rules::Limits;
 use noctis::ui::{
-    ActionRow, Budget, ButtonStyle, Components, Container, ContainerComponent, Section, Separator,
-    TextDisplay, V2Message, escape_markdown,
+    ActionRow, Budget, ButtonStyle, Components, Container, ContainerComponent, Section,
+    SelectOption, Separator, TextDisplay, V2Message, escape_markdown,
 };
 
-use super::{DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
+use super::{DashTab, EnabledModules, ModuleKey, OpenTab, ToggleModule, TurnPage};
+use crate::emoji::Icons;
 use crate::strings::Strings;
 
 const ACCENT: Rgb = rgb!(0x5865_F2);
@@ -29,12 +31,14 @@ pub struct DashData {
 }
 
 /// Renders the dashboard on `tab`; `page` matters only on the Roles tab and is clamped.
+/// `emojis` is `ctx.emojis()`: a missing application emoji renders as none, never fails.
 pub fn render_dashboard(
     data: &DashData,
     s: &Strings,
     tab: DashTab,
     page: u16,
     limits: &Limits,
+    emojis: &Emojis,
 ) -> V2Message {
     let header = TextDisplay::new(format!(
         "## {}\n-# {}",
@@ -76,7 +80,8 @@ pub fn render_dashboard(
         DashTab::Modules => data
             .modules
             .iter()
-            .map(|&(module, enabled)| module_row(data, s, module, enabled))
+            .map(|&(module, enabled)| module_row(data, s, module, enabled, emojis))
+            .chain([ActionRow::select(enabled_select(data, s, emojis)).into()])
             .collect(),
     };
 
@@ -169,18 +174,26 @@ fn pager(data: &DashData, s: &Strings, page: u16, pages: u16) -> ActionRow {
 }
 
 /// A settings row: the state as text, the action as the accessory. The style encodes the
-/// action (Success to enable, Danger to disable).
+/// action (Success to enable, Danger to disable); the same `style` picks the emoji's
+/// variant (`on`: white on a coloured button), so the pair cannot drift apart.
 fn module_row(
     data: &DashData,
     s: &Strings,
     module: ModuleKey,
     enabled: bool,
+    emojis: &Emojis,
 ) -> ContainerComponent {
     let name = module_name(s, module);
-    let state = if enabled {
-        s.common.enabled()
+    let (state, dot) = if enabled {
+        // `text` writes `<:st_online:ID>`, or nothing while the emoji is missing.
+        (s.common.enabled(), emojis.text(Icons::StOnline).to_string())
     } else {
-        s.common.disabled()
+        (s.common.disabled(), String::new())
+    };
+    let (label, style, icon) = if enabled {
+        (s.common.disable(), ButtonStyle::Danger, Icons::Cross)
+    } else {
+        (s.common.enable(), ButtonStyle::Success, Icons::Check)
     };
     let toggle = ToggleModule {
         guild: data.guild,
@@ -188,17 +201,24 @@ fn module_row(
         enable: !enabled,
     }
     .build()
-    .label(if enabled {
-        s.common.disable()
-    } else {
-        s.common.enable()
-    })
-    .style(if enabled {
-        ButtonStyle::Danger
-    } else {
-        ButtonStyle::Success
-    });
-    Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle).into()
+    .label(label)
+    .style(style)
+    .emoji(emojis.on(style, icon));
+    let line = format!("{dot} **{name}** · {state}");
+    Section::new([TextDisplay::new(line.trim_start().to_owned())], toggle).into()
+}
+
+/// Every module as one option of a multi-select, the enabled ones pre-selected; each
+/// option shows its state with the coloured emoji.
+fn enabled_select(data: &DashData, s: &Strings, emojis: &Emojis) -> noctis::ui::StringSelect {
+    EnabledModules { guild: data.guild }
+        .build()
+        .options(data.modules.iter().map(|&(module, enabled)| {
+            let icon = if enabled { Icons::Check } else { Icons::Cross };
+            SelectOption::new(module_name(s, module), module.module_id())
+                .emoji(emojis.get(icon))
+                .default(enabled)
+        }))
 }
 
 /// A module's display name in the given locale (the Modules tab and `/dashboard`'s

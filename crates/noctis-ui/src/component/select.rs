@@ -62,11 +62,13 @@ impl SelectOption {
         }
     }
 
-    /// The emoji shown before the label.
+    /// The emoji shown before the label: an [`Emoji`], or the
+    /// `Option<Emoji>` an application emoji lookup returns (`None` leaves
+    /// the option without an emoji).
     #[must_use]
-    pub fn emoji(self, emoji: Emoji) -> Self {
+    pub fn emoji(self, emoji: impl Into<Option<Emoji>>) -> Self {
         Self {
-            emoji: Some(emoji),
+            emoji: emoji.into(),
             ..self
         }
     }

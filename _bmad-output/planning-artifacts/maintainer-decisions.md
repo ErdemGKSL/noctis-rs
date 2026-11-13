@@ -668,3 +668,31 @@ Planning decisions (2026-11-13, Epic 20):
 - (decision, Story 20.3) `#[emoji(render)]` and `EmojiArt` were kept in this story (no
   move to 20.5): the declaration side is small; only the rendering at Publish is
   Story 20.5's.
+- (decision, Story 20.4) The table lives in core as `noctis::emoji::Emojis` (an `Arc`
+  over an `ArcSwap` map of declared names only), held by the App and returned as
+  `&Emojis` by `ctx.emojis()` in every context (an empty detached table in the test
+  seams). The application id comes from `GET /applications/@me` once per table (not
+  from the token, which is wrong for older applications), then
+  `GET /applications/{id}/emojis`; both go through Publish's request helper, so
+  errors read the same (`EmojiListError`).
+- (decision, Story 20.4) The first list is awaited in `App::run` after the Module-state
+  load and before the startup Publish (so before `GET /gateway/bot` and any handler);
+  one background task then retries a failed list (1 s doubling to 60 s) and re-lists
+  every `AppBuilder::emoji_reload_interval` (default 60 s, `Duration::ZERO` off) while
+  a declared name is missing, and ends once none is. Every non-dry-run Publish that
+  resolves `Ok` re-lists. The missing-names `warn` is logged only when the missing set
+  changes, so the 60 s re-list does not repeat it.
+- (decision, Story 20.4) `on(style, icon)` falls back to the coloured variant when the
+  declared white one is missing from the application (better than no icon);
+  `white(icon)` alone does not fall back. `.emoji(None)` clears the emoji, a declared
+  `defaults(emoji = ..)` included.
+- (decision, Story 20.4) `TestApp` seeds the table through a hidden probe seam instead
+  of answering the list on its HTTP fake: a seeded table never lists, so there is no
+  start-up race and no request. Fake ids are an FNV-1a hash of the name in the
+  snowflake range (`noctis_testkit::fake_emoji_id`), stable across runs.
+  `button_by_emoji(name)` matches the exact emoji name first, then a custom emoji
+  named `<name>_white`.
+- (decision, Story 20.4) The Project Template shows the three uses on the dashboard's
+  Modules tab: the toggle buttons (`on`, the style computed once), a new multi-select
+  `dash.on` of enabled modules (options with `get`), and a status dot (`text`) in each
+  row.

@@ -210,7 +210,7 @@ development_status:
   20-1-render-from-events-hooks-and-background-tasks: done
   20-2-per-call-render-size-budget: done
   20-3-application-emoji-rules-and-declared-sets: done
-  20-4-the-emoji-table-and-typed-lookup: backlog
+  20-4-the-emoji-table-and-typed-lookup: done
   20-5-emoji-sync-on-publish: backlog
   20-6-animation-play-count-and-holds: backlog
   20-7-more-typed-style-setters: backlog

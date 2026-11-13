@@ -234,6 +234,13 @@ macro_rules! ctx_accessors {
                 self.0.app.as_ref()?.states.get::<T>()
             }
 
+            /// The App's application emoji table (`App::emojis`): typed lookups
+            /// of the declared emojis, `get`, `white`, `on(style, ..)` and `text`;
+            /// no lookup does I/O. Empty in the detached test seams.
+        pub fn emojis(&self) -> &crate::emoji::Emojis {
+                crate::emoji::emojis_of(self.0.app.as_deref())
+            }
+
             /// The App's typed key-value handle over its namespaced
             /// `CacheStore` (a cheap clone).
             pub fn kv(&self) -> crate::Kv {

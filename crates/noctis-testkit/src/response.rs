@@ -243,7 +243,9 @@ impl TestMessage {
     }
 
     /// The first button whose emoji is `emoji` (a Unicode emoji, or a
-    /// custom emoji's name).
+    /// custom emoji's name); for a declared application emoji such as
+    /// `"check"`, a button showing its white variant (`check_white`, from
+    /// `ctx.emojis().on(..)`) matches too when no button shows `check`.
     ///
     /// # Errors
     ///
@@ -254,9 +256,15 @@ impl TestMessage {
             .iter()
             .filter_map(|b| b.emoji().map(str::to_owned))
             .collect();
-        buttons
-            .into_iter()
-            .find(|b| b.emoji() == Some(emoji))
+        let white = format!("{emoji}_white");
+        let exact = buttons.iter().position(|b| b.emoji() == Some(emoji));
+        let found = exact.or_else(|| {
+            buttons
+                .iter()
+                .position(|b| b.is_custom_emoji() && b.emoji() == Some(white.as_str()))
+        });
+        found
+            .and_then(|index| buttons.into_iter().nth(index))
             .ok_or_else(|| TestError::NotFound {
                 what: format!("button with emoji {emoji:?}"),
                 available,
@@ -322,6 +330,11 @@ impl TestComponent {
             .get("emoji")
             .and_then(|e| e.get("name"))
             .and_then(Value::as_str)
+    }
+
+    /// Whether the emoji is a custom one (it has an `id`).
+    fn is_custom_emoji(&self) -> bool {
+        self.json.get("emoji").and_then(|e| e.get("id")).is_some()
     }
 
     /// The style of an interactive button; `None` for link and premium
@@ -618,7 +631,9 @@ impl Response {
         }
     }
 
-    /// The final message's first button with `emoji`.
+    /// The final message's first button with `emoji` (see
+    /// [`TestMessage::button_by_emoji`]: a declared name matches its white
+    /// variant too).
     ///
     /// # Errors
     ///

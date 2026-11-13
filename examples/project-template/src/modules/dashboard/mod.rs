@@ -137,3 +137,18 @@ pub struct ToggleModule {
     pub module: ModuleKey,
     pub enable: bool,
 }
+
+/// The Modules tab's multi-select: the modules picked are enabled, the others disabled.
+/// Each option shows the module's state as an application emoji (`ctx.emojis()`).
+///
+/// Width (`noctis_route_width`): `dash.on: F 1 + route 7 + sep 1 + S 0 + N 2 + body 11 + T 0 = 22 (limit 100)`.
+#[derive(StringSelectMenu, Debug, Clone, Copy)]
+#[string_select(
+    "dash.on",
+    permissions = MANAGE_GUILD,
+    defaults(placeholder = keys::DASHBOARD_ENABLED_PLACEHOLDER, min_values = 0, max_values = 2),
+    module = "dashboard",
+)]
+pub struct EnabledModules {
+    pub guild: Id<GuildMarker>,
+}

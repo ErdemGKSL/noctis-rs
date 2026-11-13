@@ -86,6 +86,13 @@ configured resources (`adapters.md` §1.2); a re-seeded id is fed again, and wit
 `DiscordCacheConfig::none()` nothing is fed. Users reach a `USER` cache from the
 interactions themselves (a DM run's invoker, resolved user options).
 
+**Application emojis** (`images-emoji.md` §6): every emoji the App declares
+(`.emojis::<Icons>()`) resolves in `ctx.emojis()` to a stable fake id, without a
+request; `noctis::testkit::fake_emoji_id("check")` is that id, so a test can assert a
+token such as `<:check:ID>`. `app.app_emojis(["check"])` (on the built `TestApp`, like a
+seed) keeps only the names given: every other lookup is `None` and its token writes
+nothing, which tests the degraded path.
+
 ## 3. Driving interactions
 
 ```rust
@@ -149,7 +156,7 @@ Locale, default `en-US`). `CommandRun`, `MenuRun` and `AutocompleteRun` add
 | `is_rate_limited()` | the final message is the default `noctis.rate_limited` notice in the run's locale (any `{retry}` timestamp): a declared `rate_limit(..)` refused the run and the handler never ran. Repeat the same `run` past the limit to trigger it; an `#[on_rate_limited]` or App override message is not recognized, so assert its text |
 | `http_calls()` | `&[HttpCall]`: every request of the run (`method()`, `path()` after `/api/v10`, `json()` (the `payload_json` part of a multipart upload), `files()` (`&[RecordedFile]`: the `files[n]` parts, empty for JSON bodies)); REST routes the fake does not know answer 404 |
 | `text()` | all Text Display content (legacy: `content`) joined with `\n`; `""` without a message |
-| `button(label)`, `button_by_emoji(e)`, `component::<R>()` | `Result<TestComponent, TestError>` (`NotFound` lists what is there) |
+| `button(label)`, `button_by_emoji(e)`, `component::<R>()` | `Result<TestComponent, TestError>` (`NotFound` lists what is there); `button_by_emoji("check")` also finds a button showing a declared emoji's `check_white` variant |
 | `buttons()`, `components()` | every button / component, pre-order |
 | `message_json()` | the JSON Noctis sent, volatile `custom_id` parts masked (below); `Null` without a message |
 | `cost()` | `WireCost { components, text_chars }` of the sent JSON (equal to `noctis::ui::cost`); zero without a message |

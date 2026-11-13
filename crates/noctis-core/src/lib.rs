@@ -481,6 +481,14 @@ pub mod __testing {
             out
         }
 
+        /// Seeds the App's emoji table without a list: every declared name
+        /// `keep` accepts resolves to [`fake_emoji_id`]; the App then never
+        /// lists (its startup list and `reload` are no-ops). Call it before
+        /// `run`.
+        pub fn seed_emojis(&self, keep: &dyn Fn(&str) -> bool) {
+            self.shared.emojis.seed(keep, &fake_emoji_id);
+        }
+
         /// Applies `event` to the App's Discord cache through the same path
         /// and event-type filter as the drain (a no-op for an event type the
         /// configuration does not feed, and with `DiscordCacheConfig::none()`).
@@ -531,6 +539,20 @@ pub mod __testing {
                 args,
             )
         }
+    }
+
+    /// The stable fake id the testkit gives the declared emoji `name`: an
+    /// FNV-1a hash of the name in the snowflake range, the same in every
+    /// run and process.
+    pub fn fake_emoji_id(
+        name: &str,
+    ) -> twilight_model::id::Id<twilight_model::id::marker::EmojiMarker> {
+        const BASE: u64 = 1_100_000_000_000_000_000;
+        const SPAN: u64 = 100_000_000_000_000_000;
+        let hash = name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        });
+        twilight_model::id::Id::new(BASE + hash % SPAN)
     }
 
     /// `raw` with its per-send parts masked (select nonce `NN`, Ref body

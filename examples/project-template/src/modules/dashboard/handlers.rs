@@ -13,7 +13,7 @@ use noctis::prelude::*;
 use noctis::{DiscordCacheReader, Modules};
 
 use super::view::{DashData, module_name, render_dashboard};
-use super::{DashGuild, DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
+use super::{DashGuild, DashTab, EnabledModules, ModuleKey, OpenTab, ToggleModule, TurnPage};
 use crate::BotMeta;
 use crate::strings::Strings;
 
@@ -47,8 +47,15 @@ impl Dashboard {
         };
         let data = load(ctx.cache(), &ctx.modules(), guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_dashboard(&data, &s, tab, 0, ctx.limits()))
-            .await
+        ctx.respond(render_dashboard(
+            &data,
+            &s,
+            tab,
+            0,
+            ctx.limits(),
+            ctx.emojis(),
+        ))
+        .await
     }
 
     /// Suggests modules from the Module registry's stored per-guild state, matched against
@@ -88,8 +95,15 @@ impl OpenTab {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
         let data = load(ctx.cache(), &ctx.modules(), self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.update(render_dashboard(&data, &s, self.tab, 0, ctx.limits()))
-            .await
+        ctx.update(render_dashboard(
+            &data,
+            &s,
+            self.tab,
+            0,
+            ctx.limits(),
+            ctx.emojis(),
+        ))
+        .await
     }
 }
 
@@ -106,6 +120,7 @@ impl TurnPage {
             DashTab::Roles,
             self.page,
             ctx.limits(),
+            ctx.emojis(),
         ))
         .await
     }
@@ -131,6 +146,34 @@ impl ToggleModule {
             DashTab::Modules,
             0,
             ctx.limits(),
+            ctx.emojis(),
+        ))
+        .await
+    }
+}
+
+impl EnabledModules {
+    /// The picked modules are enabled, every other one disabled. Values are client
+    /// input: an unknown id is ignored.
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
+        let picked = ctx.values().strings();
+        for module in ModuleKey::ALL {
+            let enable = picked.iter().any(|v| ModuleKey::from_id(v) == Some(module));
+            ctx.modules()
+                .set_enabled(module.module_id(), ModuleScope::Guild(self.guild), enable)
+                .await?;
+        }
+        let data = load(ctx.cache(), &ctx.modules(), self.guild, &meta).await?;
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(render_dashboard(
+            &data,
+            &s,
+            DashTab::Modules,
+            0,
+            ctx.limits(),
+            ctx.emojis(),
         ))
         .await
     }

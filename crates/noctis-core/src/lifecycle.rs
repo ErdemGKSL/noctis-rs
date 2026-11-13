@@ -588,6 +588,13 @@ impl HookCtx {
         self.0.app.gateway.clone()
     }
 
+    /// The App's application emoji table (`App::emojis`): typed lookups
+    /// of the declared emojis, `get`, `white`, `on(style, ..)` and `text`;
+    /// no lookup does I/O. Empty in the detached test seams.
+    pub fn emojis(&self) -> &crate::emoji::Emojis {
+        &self.0.app.emojis
+    }
+
     /// The App's typed key-value handle over its namespaced `CacheStore`.
     pub fn kv(&self) -> crate::Kv {
         crate::Kv::of(Some(&self.0.app))

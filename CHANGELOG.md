@@ -53,7 +53,15 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   time, `#[emoji(white)]` adds the `<name>_white` variant and `#[emoji(render)]` draws
   one from a Template. A bad or repeated name, a missing or unsupported file and a file
   over 256 KiB fail `cargo check` (EMO-02..04); a name two sets declare and more than
-  2000 names fail `App::build` (EMO-03, EMO-01).
+  2000 names fail `App::build` (EMO-03, EMO-01). At start the App lists the
+  application's emojis once, and `ctx.emojis()` (every context) or `App::emojis()`
+  looks them up by variant: `get`, `white`, `on(ButtonStyle, ..)` (the white variant on
+  coloured buttons) and `text(..)`, a `<:name:id>` token. A missing emoji is `None` and
+  an empty token, never an error; `.emoji(..)` on buttons and select options takes the
+  `Option`. Missing names are logged, a failed list is retried with backoff, and the
+  table is re-listed while names are missing (`AppBuilder::emoji_reload_interval`) and
+  after every Publish. `TestApp` resolves every declared emoji to a stable fake id
+  (`fake_emoji_id`), and `TestApp::app_emojis(..)` tests the degraded path.
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,

@@ -155,10 +155,13 @@ impl<R> RouteButton<R> {
         self.map(|d| d.label = Some(label.into()))
     }
 
-    /// The emoji shown before the label.
+    /// The emoji shown before the label: an [`Emoji`], or the
+    /// `Option<Emoji>` an application emoji lookup returns (`None` leaves
+    /// the button without an emoji, replacing a declared default).
     #[must_use]
-    pub fn emoji(self, emoji: Emoji) -> Self {
-        self.map(|d| d.emoji = Some(emoji))
+    pub fn emoji(self, emoji: impl Into<Option<Emoji>>) -> Self {
+        let emoji = emoji.into();
+        self.map(|d| d.emoji = emoji)
     }
 
     /// Whether the button is greyed out.
@@ -297,11 +300,13 @@ impl LinkButton {
         }
     }
 
-    /// The emoji shown before the label.
+    /// The emoji shown before the label: an [`Emoji`], or the
+    /// `Option<Emoji>` an application emoji lookup returns (`None` leaves
+    /// the button without an emoji).
     #[must_use]
-    pub fn emoji(self, emoji: Emoji) -> Self {
+    pub fn emoji(self, emoji: impl Into<Option<Emoji>>) -> Self {
         Self {
-            emoji: Some(emoji),
+            emoji: emoji.into(),
             ..self
         }
     }

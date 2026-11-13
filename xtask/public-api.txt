@@ -79,6 +79,7 @@ pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id:
 pub fn noctis::App::discord_cache(&self) -> noctis::DiscordCacheConfig
 pub fn noctis::App::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::App::emoji_declarations(&self) -> &noctis::emoji::EmojiDeclarations
+pub fn noctis::App::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
@@ -125,6 +126,7 @@ pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_
 pub fn noctis::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::discover(&mut self) -> &mut Self
+pub fn noctis::AppBuilder::emoji_reload_interval(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::emojis<T: noctis::emoji::AppEmojis>(&mut self) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -221,6 +223,7 @@ impl noctis::AutocompleteCtx
 pub fn noctis::AutocompleteCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::AutocompleteCtx::command_path(&self) -> &'static str
+pub fn noctis::AutocompleteCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::AutocompleteCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -565,6 +568,7 @@ impl noctis::CommandCtx
 pub fn noctis::CommandCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::CommandCtx::command_path(&self) -> &'static str
+pub fn noctis::CommandCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::CommandCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
@@ -744,6 +748,7 @@ impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ComponentCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -1065,6 +1070,7 @@ impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ExpiredCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -1535,6 +1541,7 @@ impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ModalSubmitCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -2815,6 +2822,47 @@ pub fn noctis::emoji::EmojiImage::clone(&self) -> Self
 impl core::fmt::Debug for noctis::emoji::EmojiImage
 pub fn noctis::emoji::EmojiImage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::emoji::EmojiImage
+#[non_exhaustive] pub enum noctis::emoji::EmojiListError
+pub noctis::emoji::EmojiListError::Detached
+pub noctis::emoji::EmojiListError::InvalidResponse
+pub noctis::emoji::EmojiListError::InvalidResponse::reason: &'static str
+pub noctis::emoji::EmojiListError::InvalidResponse::route: alloc::string::String
+pub noctis::emoji::EmojiListError::MissingToken
+pub noctis::emoji::EmojiListError::Rejected
+pub noctis::emoji::EmojiListError::Rejected::code: core::option::Option<u32>
+pub noctis::emoji::EmojiListError::Rejected::route: alloc::string::String
+pub noctis::emoji::EmojiListError::Rejected::status: u16
+pub noctis::emoji::EmojiListError::Transport
+pub noctis::emoji::EmojiListError::Transport::route: alloc::string::String
+impl core::clone::Clone for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::emoji::EmojiListError
+impl core::cmp::PartialEq for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::eq(&self, &Self) -> bool
+impl core::convert::From<noctis::publish::PublishError> for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::from(noctis::publish::PublishError) -> Self
+impl core::error::Error for noctis::emoji::EmojiListError
+impl core::fmt::Debug for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::emoji::EmojiListError
+impl core::convert::From<noctis::publish::PublishError> for noctis::emoji::EmojiListError
+pub fn noctis::emoji::EmojiListError::from(noctis::publish::PublishError) -> Self
+pub struct noctis::emoji::EmojiText(_)
+impl noctis::emoji::EmojiText
+pub const fn noctis::emoji::EmojiText::is_missing(&self) -> bool
+impl core::clone::Clone for noctis::emoji::EmojiText
+pub fn noctis::emoji::EmojiText::clone(&self) -> Self
+impl core::cmp::Eq for noctis::emoji::EmojiText
+impl core::cmp::PartialEq for noctis::emoji::EmojiText
+pub fn noctis::emoji::EmojiText::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::emoji::EmojiText
+pub fn noctis::emoji::EmojiText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::emoji::EmojiText
+pub fn noctis::emoji::EmojiText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::emoji::EmojiText
+impl core::marker::StructuralPartialEq for noctis::emoji::EmojiText
 pub enum noctis::emoji::EmojiTone
 pub noctis::emoji::EmojiTone::Colour
 pub noctis::emoji::EmojiTone::White
@@ -2829,6 +2877,21 @@ impl core::hash::Hash for noctis::emoji::EmojiTone
 pub fn noctis::emoji::EmojiTone::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::emoji::EmojiTone
 impl core::marker::StructuralPartialEq for noctis::emoji::EmojiTone
+pub struct noctis::emoji::Emojis(_)
+impl noctis::emoji::Emojis
+pub fn noctis::emoji::Emojis::declarations(&self) -> &noctis::emoji::EmojiDeclarations
+pub fn noctis::emoji::Emojis::get<E: noctis::emoji::AppEmojis>(&self, E) -> core::option::Option<noctis::ui::Emoji>
+pub fn noctis::emoji::Emojis::id(&self, &str) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::EmojiMarker>>
+pub fn noctis::emoji::Emojis::is_loaded(&self) -> bool
+pub fn noctis::emoji::Emojis::missing(&self) -> alloc::vec::Vec<&'static str>
+pub fn noctis::emoji::Emojis::on<E: noctis::emoji::AppEmojis>(&self, noctis::ui::ButtonStyle, E) -> core::option::Option<noctis::ui::Emoji>
+pub async fn noctis::emoji::Emojis::reload(&self) -> core::result::Result<(), noctis::emoji::EmojiListError>
+pub fn noctis::emoji::Emojis::text<E: noctis::emoji::AppEmojis>(&self, E) -> noctis::emoji::EmojiText
+pub fn noctis::emoji::Emojis::white<E: noctis::emoji::AppEmojis>(&self, E) -> core::option::Option<noctis::ui::Emoji>
+impl core::clone::Clone for noctis::emoji::Emojis
+pub fn noctis::emoji::Emojis::clone(&self) -> Self
+impl core::fmt::Debug for noctis::emoji::Emojis
+pub fn noctis::emoji::Emojis::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub mod noctis::events
 pub use noctis::events::AutoModerationActionExecution
 pub use noctis::events::AutoModerationRuleCreate
@@ -2847,6 +2910,7 @@ pub use noctis::events::EntitlementUpdate
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
+pub fn noctis::events::EventCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -2870,6 +2934,7 @@ pub struct noctis::events::EventCtx(_)
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
+pub fn noctis::events::EventCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -4208,6 +4273,7 @@ impl noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
 pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
+pub fn noctis::lifecycle::HookCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
@@ -4229,6 +4295,7 @@ impl noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::app_id(&self) -> &str
 pub fn noctis::lifecycle::HookCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::lifecycle::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
+pub fn noctis::lifecycle::HookCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::lifecycle::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::lifecycle::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::lifecycle::HookCtx::kv(&self) -> noctis::Kv
@@ -5286,6 +5353,7 @@ pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_m
 pub fn noctis::prelude::App::discord_cache(&self) -> noctis::DiscordCacheConfig
 pub fn noctis::prelude::App::emitter(&self) -> noctis::lifecycle::Emitter
 pub fn noctis::prelude::App::emoji_declarations(&self) -> &noctis::emoji::EmojiDeclarations
+pub fn noctis::prelude::App::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
@@ -5332,6 +5400,7 @@ pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<
 pub fn noctis::prelude::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discover(&mut self) -> &mut Self
+pub fn noctis::prelude::AppBuilder::emoji_reload_interval(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::emojis<T: noctis::emoji::AppEmojis>(&mut self) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -5385,6 +5454,7 @@ impl noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::AutocompleteCtx::command_path(&self) -> &'static str
+pub fn noctis::prelude::AutocompleteCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -5464,6 +5534,7 @@ impl noctis::prelude::CommandCtx
 pub fn noctis::prelude::CommandCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::CommandCtx::command_path(&self) -> &'static str
+pub fn noctis::prelude::CommandCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::prelude::CommandCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
@@ -5537,6 +5608,7 @@ impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ComponentCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -5638,6 +5710,7 @@ impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ExpiredCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -5711,6 +5784,7 @@ impl noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
 pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
+pub fn noctis::prelude::HookCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
@@ -5732,6 +5806,7 @@ impl noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::app_id(&self) -> &str
 pub fn noctis::prelude::HookCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::HookCtx::emitter(&self) -> noctis::lifecycle::Emitter
+pub fn noctis::prelude::HookCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::HookCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::HookCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::HookCtx::kv(&self) -> noctis::Kv
@@ -5847,6 +5922,7 @@ impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ModalSubmitCtx::emojis(&self) -> &noctis::emoji::Emojis
 pub fn noctis::prelude::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -7738,6 +7814,7 @@ pub struct noctis::testkit::TestApp
 impl noctis::testkit::TestApp
 pub const noctis::testkit::TestApp::DEFAULT_USER: twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::testkit::TestApp::answer_voice(self, bool) -> Self
+pub fn noctis::testkit::TestApp::app_emojis<I, S>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = S>, S: core::convert::AsRef<str>
 pub fn noctis::testkit::TestApp::autocomplete(&self, &str, &str, &str) -> noctis::testkit::AutocompleteRun<'_>
 pub async fn noctis::testkit::TestApp::build(&mut noctis::AppBuilder) -> core::result::Result<Self, noctis::testkit::TestError>
 pub fn noctis::testkit::TestApp::click(&self, noctis::testkit::TestComponent) -> noctis::testkit::ClickRun<'_>
@@ -7958,6 +8035,7 @@ impl core::marker::StructuralPartialEq for noctis::testkit::WireCost
 pub async fn noctis::testkit::assert_memory_flat<'a, F, Fut>(&'a noctis::testkit::TestApp, usize, F) -> core::result::Result<noctis::testkit::MemoryReport, noctis::testkit::TestError> where F: core::ops::function::FnMut(&'a noctis::testkit::TestApp) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<(), noctis::testkit::TestError>>
 pub macro noctis::testkit::assert_render_snapshot!
 pub use noctis::testkit::dhat
+pub fn noctis::testkit::fake_emoji_id(&str) -> twilight_model::id::Id<twilight_model::id::marker::EmojiMarker>
 pub fn noctis::testkit::render_json(&noctis::ui::V2Message) -> core::result::Result<serde_json::value::Value, noctis::testkit::TestError>
 pub mod noctis::testkit::conformance
 pub async fn noctis::testkit::conformance::asset_store<P: noctis::ports::AssetStore, F: core::ops::function::Fn() -> P>(F)
@@ -8881,7 +8959,7 @@ impl core::marker::StructuralPartialEq for noctis::ui::LimitWarning
 pub struct noctis::ui::LinkButton
 impl noctis::ui::LinkButton
 pub fn noctis::ui::LinkButton::disabled(self, bool) -> Self
-pub fn noctis::ui::LinkButton::emoji(self, noctis::ui::Emoji) -> Self
+pub fn noctis::ui::LinkButton::emoji(self, impl core::convert::Into<core::option::Option<noctis::ui::Emoji>>) -> Self
 pub fn noctis::ui::LinkButton::label(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn noctis::ui::LinkButton::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl core::clone::Clone for noctis::ui::LinkButton
@@ -9446,7 +9524,7 @@ impl core::marker::StructuralPartialEq for noctis::ui::Roles
 pub struct noctis::ui::RouteButton<R>
 impl<R> noctis::ui::RouteButton<R>
 pub fn noctis::ui::RouteButton<R>::disabled(self, bool) -> Self
-pub fn noctis::ui::RouteButton<R>::emoji(self, noctis::ui::Emoji) -> Self
+pub fn noctis::ui::RouteButton<R>::emoji(self, impl core::convert::Into<core::option::Option<noctis::ui::Emoji>>) -> Self
 pub fn noctis::ui::RouteButton<R>::label(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::RouteButton<R>::overrides(self, noctis::prelude::ButtonOverrides) -> Self
 pub fn noctis::ui::RouteButton<R>::style(self, noctis::ui::ButtonStyle) -> Self
@@ -9487,7 +9565,7 @@ pub struct noctis::ui::SelectOption
 impl noctis::ui::SelectOption
 pub fn noctis::ui::SelectOption::default(self, bool) -> Self
 pub fn noctis::ui::SelectOption::description(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
-pub fn noctis::ui::SelectOption::emoji(self, noctis::ui::Emoji) -> Self
+pub fn noctis::ui::SelectOption::emoji(self, impl core::convert::Into<core::option::Option<noctis::ui::Emoji>>) -> Self
 pub fn noctis::ui::SelectOption::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl core::clone::Clone for noctis::ui::SelectOption
 pub fn noctis::ui::SelectOption::clone(&self) -> Self

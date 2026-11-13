@@ -64,6 +64,21 @@ pub use response::{
 pub use seed::{TestGuild, TestOption, TestUser};
 pub use snapshot::Tolerance;
 
+/// The stable fake id [`TestApp`] gives the declared application emoji
+/// `name` (FR-82): the same in every run and process, so a test can assert
+/// a text token such as `<:check:ID>`.
+///
+/// ```
+/// let id = noctis_testkit::fake_emoji_id("check");
+/// assert_eq!(id, noctis_testkit::fake_emoji_id("check"));
+/// assert_ne!(id, noctis_testkit::fake_emoji_id("cross"));
+/// ```
+pub fn fake_emoji_id(
+    name: &str,
+) -> twilight_model::id::Id<twilight_model::id::marker::EmojiMarker> {
+    noctis_core::__testing::fake_emoji_id(name)
+}
+
 /// What [`assert_render_snapshot!`] expands to; not part of the API.
 #[doc(hidden)]
 pub mod __private {

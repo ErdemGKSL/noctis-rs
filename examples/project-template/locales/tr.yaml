@@ -103,6 +103,7 @@ dashboard:
   overview: "**Roller:** {roles}\n**Açık modüller:** {modules}\n**Çevrimiçi:** {started}"
   no_roles: "-# Bu sunucuda henüz rol yok."
   page: "Sayfa {page} / {pages}"
+  enabled_placeholder: Açık modüller
   module:
     setup: Sunucu kurulumu
     profile: Profiller ve XP

@@ -98,6 +98,7 @@ dashboard:
   overview: "**Roles:** {roles}\n**Enabled modules:** {modules}\n**Online since:** {started}"
   no_roles: "-# This server has no roles yet."
   page: "Page {page} of {pages}"
+  enabled_placeholder: Enabled modules
   module:
     setup: Server setup
     profile: Profiles and XP

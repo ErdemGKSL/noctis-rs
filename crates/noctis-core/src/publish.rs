@@ -378,6 +378,19 @@ impl<'a> IntoFuture for Publish<'a> {
         let (app, scope, dry_run, clear) = (self.app, self.scope, self.dry_run, self.clear);
         Box::pin(async move {
             let result = execute(self).instrument(span).await;
+            // FR-82: a written Publish re-lists the application emojis, so
+            // this process sees what its own Publish uploaded.
+            if result.is_ok()
+                && !dry_run
+                && app.emojis().has_declarations()
+                && let Err(error) = app.emojis().reload().await
+            {
+                tracing::warn!(
+                    target: "noctis::emoji",
+                    %error,
+                    "could not re-list the application emojis after Publish"
+                );
+            }
             // FR-54: every resolved Publish fires its Lifecycle Hook.
             let shared = app.shared();
             match &result {
@@ -405,8 +418,8 @@ impl<'a> IntoFuture for Publish<'a> {
 }
 
 /// The application fields Publish needs.
-struct Application {
-    id: u64,
+pub(crate) struct Application {
+    pub(crate) id: u64,
     /// The enabled installation types (`integration_types_config` keys),
     /// sorted.
     enabled: Vec<u64>,
@@ -746,7 +759,7 @@ fn split_remote(body: &[u8], defaults: &Defaults) -> Result<RemoteCommands, &'st
 /// The application `id` and enabled installation types of a
 /// `GET /applications/@me` body. A missing or null
 /// `integration_types_config` means only guild install (0).
-fn parse_application(body: &[u8]) -> Result<Application, &'static str> {
+pub(crate) fn parse_application(body: &[u8]) -> Result<Application, &'static str> {
     let value: Value = serde_json::from_slice(body).map_err(|_| "not JSON")?;
     let id = match value.get("id") {
         Some(Value::String(id)) => id.parse::<u64>().ok(),
@@ -766,7 +779,7 @@ fn parse_application(body: &[u8]) -> Result<Application, &'static str> {
 
 /// Sends one request with the bot token through the App's twilight client;
 /// the response body.
-async fn send(
+pub(crate) async fn send(
     http: &twilight_http::Client,
     route: &Route<'_>,
     label: &str,
