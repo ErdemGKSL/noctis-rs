@@ -91,6 +91,14 @@ recorded here.
   and the automatic prefix table, guard emulation, ephemeral emulation), FR-14
   amended and AD-32; the design is maintainer decision §12. The plan now has 114
   stories.
+- **Correct course, 2026-11-13 (maintainer request):** writing the image Usage Skill
+  showed seven gaps, and the maintainer asked for them as a new epic: first-class
+  application emojis (declare, sync, typed lookup), `render` outside interactions,
+  animation play count and holds, a per-call size budget, more `Style` setters with
+  arcs and lines, theme tokens as gradient stops with `tabular-nums` and `z-*`, and
+  `#[asset]` in nested data. It became Epic 20, "Application emojis and image engine
+  additions", with twelve stories; FR-82 and AD-33 (application emojis) are written by
+  Story 20.3, and the design is maintainer decision §13. The plan now has 126 stories.
 
 ### Validation summary (step 4)
 
@@ -727,6 +735,15 @@ same struct, handler, options, guards and response kinds, emulated over the mess
 transport. `command_type = "slash" | "prefix" | "all"` (default `all`) picks the
 surfaces; nothing is opted in by type.
 **FRs covered:** FR-14 (amended); FR-10, FR-19.
+
+### Epic 20: Application emojis and image engine additions (P1, added 2026-11-13)
+A bot author declares application emojis as a typed set, Publish uploads them, and
+`ctx.emojis()` puts the right variant on buttons, selects and text. The image engine
+gains renders from events and hooks, a per-call size budget, play count and holds,
+more `Style` setters, arcs, pies, lines and areas, theme-coloured gradient stops,
+`tabular-nums`, `z-*` and nested `#[asset]` data.
+**FRs covered:** FR-82 (new); FR-32, FR-33, FR-66, FR-67, FR-69, FR-70; FR-13, FR-49,
+FR-50.
 
 ## Epic 1: Project foundation and Discord rules as code
 
@@ -4234,3 +4251,608 @@ channel that is deleted after `PrefixPlugin::ephemeral_ttl` (default 10 s, 1-60 
 **When** the story is done
 **Then** testkit-based tests cover DM delivery, the 50007 fallback and its deletion,
 and the Project Template, Usage Skill and FR-14 text describe the emulation
+
+## Epic 20: Application emojis and image engine additions
+
+A bot author declares the bot's application emojis once, as a typed set whose names
+are checked at `cargo check`; Publish uploads what is missing, every process loads the
+name → id table at start, and `ctx.emojis()` hands a button, a select option or a line
+of text the right emoji (the white variant on a coloured button) with no twilight
+call. The image engine loses the gaps found while writing the image Usage Skill:
+renders from event handlers, Lifecycle Hooks and background tasks, a per-call size
+budget, play count and holds for animations, more `Style` setters, arcs, pies, lines
+and areas, theme colours as gradient stops, `tabular-nums` and `z-*`, and `#[asset]`
+inside nested data. Added 2026-11-13 at the maintainer's request (maintainer decision
+§13; FR-82 and AD-33 are written by Story 20.3, AD-15 and AD-22 are amended by the
+stories that change them).
+
+**Order:** 20.1 → 20.2 → 20.3 → 20.4 → 20.5, then 20.6 to 20.11 in any order, then
+20.12. Stories 20.6 to 20.11 depend on nothing in this epic; 20.5 needs 20.1 (render
+without an interaction), 20.2 (the 256 KiB budget) and 20.3 to 20.4.
+
+**Starting point (main at the image Usage Skill rewrite, 2026-11-13):**
+
+- Emojis: Noctis has `noctis::ui::Emoji::{custom, unicode}`, `.emoji(Emoji)` on
+  `RouteButton`, `LinkButton` and `SelectOption`, the IMG-04 token grammar and
+  `RemoteImage::custom_emoji`; nothing declares, uploads or looks up application
+  emojis. Authors call twilight-http 0.17.1 (`get_application_emojis`,
+  `add_application_emoji`, `update_application_emoji`, `delete_application_emoji`)
+  through `ctx.http()` and keep their own table (`images-emoji.md` §5 to §6).
+- Publish already runs in exactly one process (`--publish`, `--publish-guild`,
+  `NOCTIS_PUBLISHER=true`; `PublishCompleted` / `PublishFailed` hooks, `--dry-run`).
+- Rendering: `ctx.render`, `render_with` and `render_report` exist on `CommandCtx`,
+  `ComponentCtx`, `ModalSubmitCtx` and `ExpiredCtx` only (`noctis-core/src/render.rs`
+  takes a `CtxInner`); `EventCtx` and `HookCtx` have none, so the Usage Skill teaches
+  `noctis::image::unstable::RenderJob` with `app.renderer()`. `RenderOptions` has
+  `animation(..)` only. `RenderJob::upload_budget` exists and the size ladder already
+  fits `min(upload_budget, size_target)` (`noctis-image/src/budget.rs`).
+- Animation: `AnimationSpec { duration, fps, format }` is `Copy`, hashed into the
+  cache key and a `const` in `Template::ANIMATION`. Every output loops forever and
+  every frame lasts `1000 / fps` ms, although the renderer already hands the encoders
+  a duration per frame. takumi-raster 0.5.8 has `loop_count: Option<u16>` on
+  `AnimatedWebpOptions`, `AnimatedGifOptions` and `AnimatedPngOptions`.
+- `Style` has `width_*`, `height_*`, `gap_px`, `bg_rgb`, `color_rgb`,
+  `border_color_rgb`, `opacity`, `translate_px` and `rotate_deg`, lowered to inline
+  CSS (`noctis-image/src/lower.rs`). takumi-core 0.31.0 parses `conic-gradient`,
+  `clip-path` (`polygon()`, `path()`, `circle()`, `ellipse()`, `inset()`),
+  `mask-image`, `z-index` and `font-variant-numeric` as CSS declarations, but its
+  Tailwind map has no `z-*` and no `tabular-nums` utility (still none in takumi-core
+  0.36.0, whose Tailwind module layout also changed). takumi's `svg-source` feature is
+  off on purpose (IMG-02).
+- Grammar: takumi lowers `from-brand` to `var(--color-brand)` (`TwVarColor`), but
+  `tw::generated::VAR_TARGETS` has no `from`, `via`, `to`, `shadow` or `text-shadow`
+  entry, so `tw::validate` rejects it (`tw/theme/tests.rs`).
+- `#[asset]` accepts `RemoteImage`, `Option<RemoteImage>` and `Vec<RemoteImage>` on the
+  Template struct itself (sealed `AssetField`, `noctis-image/src/remote/declare.rs`).
+
+Discord facts below are from `discord-api-docs` `developers/resources/emoji.mdx`
+("Application-Owned Emoji", "Emoji Formats", the five application emoji endpoints) and
+`developers/reference.mdx` ("Image Data"), read 2026-11-13; verify each again before
+relying on it. Every story that changes the public API re-blesses
+`xtask/public-api.txt`, updates the Usage Skill's `API hash` line and updates
+`examples/project-template/` (code, `AGENTS.md`, Usage Skill) in the same commit.
+
+### Story 20.1: Render from events, hooks and background tasks
+
+As a bot author,
+I want `render` on `EventCtx`, on `HookCtx` and on the built `App`,
+So that a welcome card on `MemberAdd` or a scheduled leaderboard needs no unstable API.
+
+**Implements:** FR-32, FR-37; AD-22 (amended), AD-2, AD-29. Crates: `noctis-core`,
+`noctis` (facade), `noctis-testkit`.
+
+**Acceptance Criteria:**
+
+**Given** an event handler or a Lifecycle Hook on an App with a Renderer
+**When** it calls `ctx.render(t)`, `ctx.render_with(t, RenderOptions)` or
+`ctx.render_report(t, RenderOptions)`
+**Then** it gets the same `Attachment` / `RenderReport` as an interaction context,
+through the same code path (`noctis.render` span, `noctis_render_duration_seconds`,
+`noctis_render_queue_depth`, rejected counter, Render Error Sink), with the Upload
+Budget `Limits::attachment_bytes` (there is no interaction to report another one), and
+the attachment sends with `ctx.messages().send(channel, view)`
+
+**Given** a built `App` outside any handler (a spawned task, a scheduler)
+**When** it calls `app.render(t)`, `app.render_with(..)` or `app.render_report(..)`
+**Then** the result and the errors are the same; without a Renderer every one of these
+calls returns `RenderError::NoRenderer`
+
+**Given** an event handler whose render is still running when the App shuts down
+**When** shutdown starts
+**Then** the render is dropped like any other in-flight handler work (no new lane, no
+detached task), and the queue-depth gauge returns to its value
+
+**Given** the gates
+**When** the story is done
+**Then** core tests with a fake Renderer cover `EventCtx`, `HookCtx` and `App`
+(success, `NoRenderer`, `QueueFull`, an over-budget output); a facade test renders a
+real Template from an `AppStarted` Hook and posts it; AD-22's "renders are awaited in
+handlers" names events, hooks and `App`; the Usage Skill's "Outside an interaction"
+section (`images-ui.md` §9) teaches these calls and no longer imports
+`noctis::image::unstable`, which stays as the custom-Renderer seam only; the public
+API is re-blessed
+
+### Story 20.2: Per-call render size budget
+
+As a bot author,
+I want to cap one render's output size,
+So that a render meant for a 256 KiB emoji or a small thumbnail fits without lowering
+the whole App's `size_target`.
+
+**Implements:** FR-33; AD-15, ATT-01. Crates: `noctis-core`, `noctis-image`,
+`noctis-ports` (only if the cache key needs it).
+
+**Acceptance Criteria:**
+
+**Given** `RenderOptions::new().max_bytes(n)`
+**When** the render runs through any `render_with` / `render_report`
+**Then** the job's budget is `min(n, the call's Upload Budget, the App's size_target)`,
+the existing ladder (fps, size, quality, still frame) degrades until the output fits,
+`RenderReport::settings_used` shows what was encoded, and a render that cannot fit is
+`RenderError::OverBudget { budget: n, smallest }`
+
+**Given** `max_bytes(0)`
+**When** the call is made
+**Then** it fails with `RenderError::Unsupported` naming the option before the
+Renderer is called (no silent "no limit")
+
+**Given** the same Template value rendered with two different budgets
+**When** the second call hits the cache
+**Then** it never receives an output larger than its own budget (an output that
+already fits may be shared), proven by a cache test
+
+**Given** an animated render with `max_bytes` and the still fallback on
+**When** only the still fits
+**Then** the report shows `frames == 1` and the still format, exactly as today, so a
+caller that needs an animation can refuse it
+
+**Given** the gates
+**When** the story is done
+**Then** unit tests cover the min rule, the ladder under a small budget and the cache
+case; the Usage Skill's budget section (`images-engine.md` §8) documents `max_bytes`;
+the public API is re-blessed
+
+### Story 20.3: Application emoji rules and declared sets
+
+As a bot author,
+I want to declare my application emojis as a Rust enum,
+So that a wrong name, a missing file or an oversized image fails `cargo check`, not a
+deploy.
+
+**Implements:** FR-82 (new), FR-75, FR-79; AD-3, AD-4, AD-7, AD-33 (new).
+Crates: `noctis-rules`, `noctis-macros`, `noctis-core`, `noctis`. New rule ids:
+EMO-01 to EMO-04 (`docs/discord-rules.md` §18 "Application emojis" and `noctis-rules`,
+same ids).
+
+**Acceptance Criteria:**
+
+**Given** `docs/discord-rules.md` and `noctis-rules`
+**When** the story is done
+**Then** both hold EMO-01 (at most 2000 emojis per application **[D]**), EMO-02 (an
+emoji image is at most 256 KiB = 262,144 bytes; a larger upload is a 400 without a
+JSON code **[D]**), EMO-03 (name: 2..=32 of `[A-Za-z0-9_]`, the IMG-04 grammar,
+**[C]**; unique within the application **[U]**) and EMO-04 (uploaded as a data URI of
+PNG, JPEG or GIF: "Emoji Formats" also lists WebP and AVIF but "Image Data" names only
+JPG, GIF and PNG, so Noctis uploads those three **[U]**; "the 128x128 emoji image" is a
+recommendation Noctis documents and does not enforce); `Limits` gains the two numeric
+fields with their rule ids and `xtask rules-catalog` passes
+
+**Given** a fieldless enum with `#[derive(AppEmojis)]` and `#[emojis(dir = "assets/emoji")]`
+**When** it compiles
+**Then** each variant is one emoji whose name is the variant in `snake_case`
+(`#[emoji(name = "st_online")]` overrides it) and whose image is
+`<dir>/<name>.png|gif|jpg` relative to `CARGO_MANIFEST_DIR` (`#[emoji(file = "..")]`
+overrides it), embedded with `include_bytes!` so an edit rebuilds the crate;
+`#[emoji(white)]` also declares `<name>_white` from `<name>_white.<ext>`; a GIF file
+is an animated emoji; a bad or duplicate name is `[EMO-03]`, a missing or
+non-PNG/JPEG/GIF file (sniffed by magic bytes) is `[EMO-04]`, a file over 256 KiB is
+`[EMO-02]`, each a `compile_error!` on the variant; trybuild `compile_fail` fixtures
+cover every one
+
+**Given** a variant marked `#[emoji(render)]` in a set with `#[emojis(art = path::to::fn)]`
+**When** it compiles
+**Then** its image comes from `fn(Self, EmojiTone) -> EmojiArt` at Publish time
+(`EmojiArt::template(impl Template)`; `EmojiTone::{Colour, White}`), no file is read
+for it, and `#[emoji(render)]` without `art` (or `art` with no `render` variant) does
+not compile
+
+**Given** `AppBuilder::emojis::<Icons>()` (one or more sets)
+**When** the App builds
+**Then** the declarations are folded into the App once (data, like the Registry); the
+same name declared twice across sets is `BuildViolation::DuplicateEmoji` (`[EMO-03]`)
+and more than 2000 declared names is `BuildViolation::TooManyEmojis` (`[EMO-01]`); an
+App with no set makes no emoji request ever
+
+**Given** the gates
+**When** the story is done
+**Then** the PRD gains FR-82 and the spine gains AD-33 (declared sets are data built
+once; Publish is the only writer; the table is per App; lookups do no I/O), macro and
+core tests cover naming, files, the white pair and the violations; the Project
+Template declares a small set (files under `assets/emoji/`) and its `AGENTS.md` and
+Usage Skill teach the derive; the public API is re-blessed
+
+### Story 20.4: The emoji table and typed lookup
+
+As a bot author,
+I want `ctx.emojis()` to turn a declared emoji into a button emoji or a text token,
+So that I never keep a name → id table or pick the white variant by hand.
+
+**Implements:** FR-82; AD-9, AD-11, AD-21, AD-33. Crates: `noctis-core`, `noctis-ui`,
+`noctis-testkit`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** an App with at least one emoji set
+**When** it starts
+**Then** it lists the application's emojis once (`GET /applications/{id}/emojis`,
+through the App's one HTTP client) and builds the name → (id, animated) table before
+handlers run; a failed list never stops the start: it logs a `warn`, the table stays
+empty and the list is retried with backoff; declared names the application lacks are
+logged in one `warn` line that names them and says to run Publish
+
+**Given** any context (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx`,
+`AutocompleteCtx`, `EventCtx`, `HookCtx`) or `App::emojis()`
+**When** a handler calls `ctx.emojis()`
+**Then** it gets a cheap handle with `get(Icons::Check) -> Option<Emoji>` (the coloured
+variant), `white(..)`, `on(ButtonStyle, Icons::Check)` (the white variant for
+`Primary`, `Success` and `Danger` when the icon declares one, else the coloured one;
+the coloured one for `Secondary`) and `text(Icons::Check)`, a `Display` value that
+writes `<:name:id>` or `<a:name:id>` and nothing when the emoji is missing; no lookup
+does I/O or allocates more than the returned value
+
+**Given** `.emoji(..)` on `RouteButton`, `LinkButton` and `SelectOption`
+**When** it is given the `Option<Emoji>` a lookup returns
+**Then** it compiles and a `None` leaves the component without an emoji (existing
+`.emoji(Emoji::..)` calls keep compiling)
+
+**Given** a Cluster or a publisher that runs after this process started
+**When** declared names are still missing from the table
+**Then** the table is re-listed on a bounded interval (default 60 s, only while
+something is missing) and after this process's own Publish completes;
+`ctx.emojis().reload().await` forces it; several Apps in one process each have their
+own table
+
+**Given** `TestApp`
+**When** an App with emoji sets is built for a test
+**Then** every declared emoji resolves to a stable fake id without a network call,
+`TestApp::app_emojis(names)` limits which names exist (to test the degraded path),
+and `Response::button_by_emoji` finds a button by the declared name
+
+**Given** the gates
+**When** the story is done
+**Then** core tests cover the load, the retry, the missing-name log, `on` for every
+`ButtonStyle` and the token output; testkit tests cover both `TestApp` modes; the
+Project Template uses `ctx.emojis()` on a button, a select option and a Text Display,
+and the Usage Skill (`images-emoji.md` §6 to §7) replaces its hand-written
+`AppEmojis` state with it; the public API is re-blessed
+
+### Story 20.5: Emoji sync on Publish
+
+As a bot operator,
+I want Publish to upload the emojis the code declares,
+So that a new environment or a new icon needs no Developer Portal work and only one
+process ever writes.
+
+**Implements:** FR-82, FR-13 (Publish); AD-21, AD-24, AD-33; EMO-01, EMO-02, EMO-04,
+RL-01. Crates: `noctis-core`, `noctis-testkit`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** `--publish`, `--publish-guild [<id>]`, `NOCTIS_PUBLISHER=true` or
+`app.publish(..)` on an App with emoji sets
+**When** Publish runs
+**Then** after the Commands it lists the application's emojis and creates every
+declared name that is missing (`POST /applications/{id}/emojis`, one request at a
+time through the App's HTTP client and its rate limiter), never touching an emoji the
+code does not declare; a process that is not publishing never creates, renames or
+deletes an emoji; `--publish-clear` leaves emojis alone
+
+**Given** a `#[emoji(render)]` declaration
+**When** it is created
+**Then** its art is rendered through the App's Renderer with `max_bytes(262_144)`
+(Story 20.2) from the set's `art` function, as PNG (or GIF for an animated Template; a
+still fallback of an animated declaration is an error, not an upload), and a missing
+Renderer is a typed `PublishError` naming the emoji before any request
+
+**Given** the declared art of an existing emoji changed
+**When** Publish runs
+**Then** the change is detected by a blake3 digest of the uploaded bytes kept under
+the App's `Kv` (Discord returns no hash and re-encodes the image); the default policy
+reports it as `changed` and keeps the remote emoji, and
+`AppBuilder::emoji_sync(EmojiSync::new().replace_changed(true))` deletes and re-creates
+it (documented: the id changes, so messages already sent show the old name as text);
+an emoji with no stored digest is adopted as unchanged;
+`EmojiSync::delete_undeclared(true)` (off by default) deletes remote emojis the code
+does not declare
+
+**Given** the creates would take the application over 2000 emojis
+**When** Publish plans the sync
+**Then** it fails with `[EMO-01]` before the first write; a 400 on create is reported
+with the emoji's name and `[EMO-02]` / `[EMO-04]` as the likely rules
+
+**Given** `--dry-run`
+**When** Publish runs
+**Then** no emoji request other than the list is sent and the report shows the plan
+
+**Given** a finished Publish
+**When** hooks and callers read the result
+**Then** `PublishReport` carries the emoji diff (created, unchanged, changed,
+replaced, deleted, by name), `PublishCompleted` hooks see it, a failed sync is a
+`PublishFailed` with a typed `PublishError`, and a Publish that fails half way is
+safe to repeat (creates are skipped for names that now exist)
+
+**Given** the gates
+**When** the story is done
+**Then** `FakeDiscordHttp`-based tests cover create-missing, the 2000 guard, dry run,
+changed/replace, delete-undeclared, a rendered emoji with a fake Renderer and a repeat
+after a failure; the Project Template's owner-only upload Command is removed, and its
+`AGENTS.md`, the Usage Skill (`images-emoji.md` §5, `app-and-sharding.md` Publish
+section) and `docs/guides/` describe the sync; the public API is re-blessed
+
+### Story 20.6: Animation play count and holds
+
+As a bot author,
+I want an animation to play once or N times and to rest on its first or last frame,
+So that a level-up effect ends on the final card instead of looping forever.
+
+**Implements:** FR-69, FR-33, FR-70; AD-15 (amended), AD-22. Crates: `noctis-ports`,
+`noctis-image`, `noctis-macros`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** `AnimationSpec` built with `.plays(Plays::Times(n))` or `.once()` (default
+`Plays::Forever`), or `#[template(animation(duration_ms = .., fps = .., plays = 1))]`
+**When** it is encoded
+**Then** the file plays exactly `n` times in total in every format: animated WebP and
+APNG carry loop count `n`, GIF carries a NETSCAPE repeat of `n - 1` and none at all
+for `n = 1`; `plays = 0` does not compile (`NonZeroU16` at run time); a decode test
+reads the loop count back from each format
+
+**Given** `.hold_start(d)` / `.hold_end(d)` (or `hold_start_ms` / `hold_end_ms` on the
+attribute)
+**When** the animation is encoded
+**Then** the first / last frame's duration is extended by `d`; holds add no frame and
+no admission weight, the view still sees the same `Frame { index, count }`, and
+`duration + hold_start + hold_end` is what `RenderCap::Duration` checks (`OverCap`
+when over)
+
+**Given** consecutive frames that are pixel-identical
+**When** the animation is encoded
+**Then** they are written as one frame with the summed duration, so a hold written as
+repeated frames (today's workaround) costs no bytes; `settings_used.frames` reports
+the frames drawn, as today
+
+**Given** the size ladder
+**When** it lowers the fps or falls back to a still
+**Then** play count and holds are kept (a still has neither)
+
+**Given** two specs that differ only in play count or holds
+**When** both are rendered
+**Then** they have different cache keys; `AnimationSpec` stays `Copy`, `Hash` and
+usable in `const ANIMATION`
+
+**Given** the gates
+**When** the story is done
+**Then** AD-15's animation paragraph names play count and holds; the Usage Skill's
+"Looping cannot be turned off" note (`images-cookbook.md` §2) and the engine animation
+section are rewritten, stating that whether a client honours the play count is client
+behaviour; the Project Template's animated Template compiles against the new spec; the
+public API is re-blessed
+
+### Story 20.7: More typed `Style` setters
+
+As a bot author,
+I want data-driven offsets, radii and border widths,
+So that a marker on a track or a bar's rounded end does not need a formatted class
+string.
+
+**Implements:** FR-32, FR-66; AD-15. Crates: `noctis-image`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** `Style`
+**When** the story is done
+**Then** it has `left_px` / `top_px` / `right_px` / `bottom_px(i32)`, `left_pct` /
+`top_pct` / `right_pct` / `bottom_pct(f32)`, `rounded_px(u32)`, `border_px(u32)`,
+`scale(f32)` and `z_index(i32)`, each a `const fn` with the existing conventions (last
+setter of a property wins, a NaN or infinite `f32` leaves it unchanged, percentages
+clamp to `0..=100`, `scale` clamps to a documented positive range), and `Style` stays
+`Copy` and `PartialEq`
+
+**Given** a node with a class and a `Style` value of the same property
+(`rounded-lg` and `rounded_px(3)`, `left-4` and `left_px(40)`)
+**When** it is drawn
+**Then** the `Style` value wins, as for the existing setters, shown by pixel tests;
+`scale` composes with `translate_px` and `rotate_deg` in one documented order
+
+**Given** the gates
+**When** the story is done
+**Then** `lower` tests cover each declaration, the facade snapshot suite has one
+picture using the new setters, and the Usage Skill's `Style` table
+(`images-engine.md` §5) and the cookbook entries that worked around missing setters
+are updated; the public API is re-blessed
+
+### Story 20.8: Arcs, rings and pies
+
+As a bot author,
+I want to draw an arc, a ring gauge and a pie chart,
+So that a gauge is one node instead of forty rotated ticks.
+
+**Implements:** FR-32; AD-15, AD-25. Crates: `noctis-image`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** the pinned takumi (2.17.0, takumi-core 0.31.0)
+**When** the story starts
+**Then** a pixel test proves that inline `background-image: conic-gradient(..)` with
+degree stops and `mask-image: radial-gradient(..)` draw as CSS specifies; whatever
+does not is recorded as a `(decision)` line and the affected shape below is cut or
+drawn another way (never by turning on `svg-source`)
+
+**Given** `noctis::image::shape::Pie::new([(value, rgb), ..])`
+**When** it is used as a child in `view!` (`{Pie::new(..)}`) with `tw` sizing classes
+**Then** it draws slices proportional to the values, clockwise from 12 o'clock
+(`.start_deg(..)` changes it), as one node filling its box; zero, negative, NaN and
+infinite values are skipped and an all-zero pie draws nothing
+
+**Given** `shape::Arc::new(value_0_to_1, rgb)` with `.track(rgb)`, `.thickness_pct(..)`,
+`.start_deg(..)`, `.sweep_deg(..)` (a 270° gauge) and `.round_caps(true)`
+**When** it is drawn
+**Then** it is a ring segment over its optional track with a transparent centre (other
+nodes can sit inside it through `relative` / `absolute`), the value clamps to `0..=1`,
+and round caps are two circles placed by Noctis
+
+**Given** a shape with more slices than the cap (64)
+**When** it is rendered
+**Then** the render fails with `RenderError::Unsupported` naming the shape and the cap
+
+**Given** the gates
+**When** the story is done
+**Then** pixel snapshots cover a pie, a full ring, a 270° gauge with round caps and
+the edge values (0, 1, tiny slices); shape data is part of the Template data path, so
+the cache key needs no change (asserted); the Usage Skill's gauge recipes
+(`images-cookbook.md` §3) are rewritten with `Arc` and `Pie`; the public API is
+re-blessed
+
+### Story 20.9: Lines and areas
+
+As a bot author,
+I want to draw a connected line and a filled area from a series,
+So that a sparkline or an activity chart is a real line chart.
+
+**Implements:** FR-32; AD-15, AD-25. Crates: `noctis-image`, `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** the pinned takumi
+**When** the story starts
+**Then** a pixel test proves inline `clip-path: polygon(..)` with percentage
+coordinates clips a coloured box; if it does not, the story stops with a `(decision)`
+line and the Usage Skill keeps "no connected lines"
+
+**Given** `shape::Line::new(points, rgb)` with points as `(x, y)` in `0.0..=1.0` of
+the node's box (y up) and `.stroke_px(..)`
+**When** it is drawn
+**Then** the node shows the polyline as a band of that width (the outline polygon is
+computed by Noctis with bevel joins and clipped to the box); `shape::Area::new(points,
+rgb)` fills between the line and the bottom edge; `Line::series(values)` /
+`Area::series(values)` spread values evenly on x and scale y to their min and max
+
+**Given** fewer than two finite points, or more than the cap (512)
+**When** it is rendered
+**Then** fewer than two draws nothing, more than the cap is
+`RenderError::Unsupported`; NaN and infinite points are skipped
+
+**Given** the gates
+**When** the story is done
+**Then** pixel snapshots cover a line, an area under a line (two stacked nodes), a
+flat series and a two-point series; a bench or timing note shows a 512-point line
+stays inside the per-frame budget; the Usage Skill's sparkline section
+(`images-cookbook.md` §4, "A connected line cannot be drawn") is rewritten; the public
+API is re-blessed
+
+### Story 20.10: Theme gradient stops, `tabular-nums` and `z-*` in the class grammar
+
+As a bot author,
+I want `from-brand`, `tabular-nums` and `z-10` to work in `tw`,
+So that brand gradients, aligned numbers and overlays use the classes I already know.
+
+**Implements:** FR-66; AD-15 (amended); TW-01. Crates: `xtask` (`tw-grammar`),
+`noctis-image` (`tw`, `lower`), `noctis-macros` (through `tw`), `noctis`.
+
+**Acceptance Criteria:**
+
+**Given** a theme that defines `--color-brand`
+**When** a Template uses `bg-linear-to-r from-brand via-brand/50 to-surface`,
+`shadow-brand` or `text-shadow-brand`
+**Then** `tw!` / `view!` and the runtime check accept them (the generator maps every
+prefix whose value parser is takumi's `TwVarColor` to the `Color` namespace in
+`VAR_TARGETS`), an undefined token is still `[TW-01]`, and a pixel test shows the
+gradient drawn in the theme's colour, not transparent
+
+**Given** `tabular-nums` (and `proportional-nums`, `lining-nums`, `oldstyle-nums`,
+`slashed-zero`, `normal-nums`) and `z-<integer>`, `-z-<integer>`, `z-[<integer>]`,
+`z-auto`
+**When** they appear in `tw`
+**Then** the grammar accepts them from a small hand-written table of Noctis-lowered
+utilities kept beside the generated one (takumi-free, so the macros see it); lowering
+removes them from the class string takumi parses and emits the CSS declaration
+(`font-variant-numeric: ..`, `z-index: ..`) before the node's `Style`, so a `Style`
+value still wins; a breakpoint variant or `!` on a lowered utility is `[TW-01]`
+
+**Given** `tw_crosscheck`
+**When** it runs
+**Then** generated entries are compared with takumi as today, and every Noctis-lowered
+utility is asserted **not** recognized by takumi's parser, so a takumi bump that adds
+one fails the job with a message saying to delete the table entry;
+`xtask tw-grammar --check` passes
+
+**Given** pixel tests
+**When** two overlapping positioned siblings carry `z-10` and `z-0` in reverse tree
+order, and a column of numbers carries `tabular-nums` with the bundled Inter
+**Then** the `z-10` node paints on top and the digits share one advance width
+
+**Given** the gates
+**When** the story is done
+**Then** AD-15 describes Noctis-lowered utilities and theme-coloured stops,
+`docs/discord-rules.md` TW-01 is updated, and the Usage Skill's grammar lists
+(`images-engine.md` §4, `images-ui.md` troubleshooting rows for `from-brand` and
+`z-*`, `images-cookbook.md` notes on `z-*` and `tabular-nums`) are corrected; the
+`tw` module's public items change only if `Utility` gains a variant, in which case the
+public API is re-blessed
+
+### Story 20.11: `#[asset]` in nested Template data
+
+As a bot author,
+I want a leaderboard row struct to hold its own avatar,
+So that I do not keep a parallel `Vec<RemoteImage>` in step with the rows.
+
+**Implements:** FR-67; AD-15; IMG-03. Crates: `noctis-macros`, `noctis-image`,
+`noctis`.
+
+**Acceptance Criteria:**
+
+**Given** a plain data struct with `#[derive(Assets)]` and `#[asset]` /
+`#[asset(required)]` fields
+**When** a Template (or another `Assets` struct) holds it in an `#[asset]` field as
+`T`, `Option<T>` or `Vec<T>`
+**Then** every remote image inside is declared, with its own field's `required`
+setting, and logs and errors name the path (`rows[3].avatar`); `#[asset(required)]`
+on a field whose type is an `Assets` struct does not compile (`[IMG-03]`: the inner
+fields decide)
+
+**Given** a nested struct that holds a `RemoteImage` in a field without `#[asset]`,
+or an `Assets` struct held in a field without `#[asset]`
+**When** the view draws that image
+**Then** it fails with the existing `UndeclaredImage` error, whose text now names
+`#[derive(Assets)]` as a fix
+
+**Given** the same image in several rows
+**When** the job resolves its assets
+**Then** it is fetched once, and `RemoteConfig::max_per_job` counts distinct images
+across all levels exactly as it does for a `Vec<RemoteImage>` today
+
+**Given** a Template without any `#[asset]` field
+**When** it renders
+**Then** it keeps the synchronous admission path (`DECLARES = false`)
+
+**Given** the gates
+**When** the story is done
+**Then** macro tests and trybuild fixtures cover the derive and its errors, renderer
+tests cover nesting two levels deep with the test server, IMG-03 in
+`docs/discord-rules.md` names the nested form, and the Usage Skill (`images-engine.md`
+§7, the leaderboard recipe in `images-cookbook.md` §5) uses it; the public API is
+re-blessed
+
+### Story 20.12: Project Template, cookbook and guide on the new image and emoji API
+
+As a bot author's agent,
+I want the Project Template and the Usage Skill to show the new APIs working together,
+So that I build emoji-rich, image-rich screens from the skill alone.
+
+**Implements:** FR-49, FR-50, FR-74; AD-17, AD-27. Crates:
+`examples/project-template`, docs only.
+
+**Acceptance Criteria:**
+
+**Given** the Project Template
+**When** it builds and its tests run (`CI=true`, with and without `--all-features`)
+**Then** it has one emoji set with a white pair and one rendered emoji, a screen that
+uses `ctx.emojis()` on buttons (`on(style, ..)`), a select and text, an event handler
+that renders a card, a play-once animation, a ring gauge, a line chart and a
+leaderboard with nested avatar assets, each with a View or pixel snapshot
+
+**Given** the Usage Skill's image references
+**When** they are read
+**Then** no "Noctis does not offer" statement about an API this epic added remains
+(`images.md`, `images-ui.md`, `images-engine.md`, `images-cookbook.md`,
+`images-emoji.md`), `images-emoji.md` is rewritten around declare → Publish →
+`ctx.emojis()` (the methodology of §2 stays), every code block compiles against the
+template's Noctis, and `xtask skill-check` passes with the current `API hash`
+
+**Given** `docs/guides/`
+**When** the story is done
+**Then** a guide covers application emojis (declaring, the sync policies, Clusters:
+only the publisher writes and the others re-list, environments with different ids,
+testing) and `docs/guides/README.md` and `concept-map.md` link it; `README.md` lists application
+emojis and the engine additions; `xtask docs-check` passes

@@ -538,3 +538,94 @@ to `all`. This amends FR-14 and becomes AD-32 and Epic 19.
   `GET /applications/{id}/commands` parsed leniently from raw JSON (only `id`/`name`),
   since twilight's full models fail on missing optional fields; overrides are cached per
   guild and invalidated by `CommandPermissionsUpdate`.
+
+## 13. Application emojis and image engine additions (Epic 20, 2026-11-13)
+
+Writing the image Usage Skill showed seven gaps; the maintainer asked for them as a new
+epic ("yes, plan them as a new epic"). This becomes Epic 20 (twelve stories), FR-82 and
+AD-33 (both written by Story 20.3), and amends AD-15 and AD-22.
+
+- **Application emojis are first-class:** declared in code, uploaded by Publish, looked
+  up by a typed name from every context.
+- **The image engine gains** `render` outside interactions, a per-call size budget,
+  play count and holds, more `Style` setters, arcs, pies, lines and areas, theme
+  colours as gradient stops, `tabular-nums`, `z-*`, and `#[asset]` in nested data.
+
+Planning decisions (2026-11-13, Epic 20):
+
+- (decision) All seven asks were checked against the code and each is a real gap; none
+  is dropped. Two are reshaped: per-frame durations become holds plus merging of
+  identical frames (below), and "arc/path drawing" becomes typed shape nodes, not an
+  SVG or free path API.
+- (decision) Emoji sync rides on Publish instead of running at every start. Publish
+  already runs in exactly one process (`--publish`, `--publish-guild`,
+  `NOCTIS_PUBLISHER=true`), which answers "only one process should sync" without a
+  lock or a new port. Every process only lists the emojis at start (read-only) and
+  re-lists while declared names are missing, so a Cluster needs no coordination.
+- (decision) Emojis are declared with `#[derive(AppEmojis)]` on a fieldless enum (one
+  variant per icon), registered with `AppBuilder::emojis::<T>()`. The variant is the
+  compile-time checked name; files are embedded with `include_bytes!` and checked at
+  `cargo check` (name, format, 256 KiB), following the enforcement ladder (AD-4).
+- (decision) Template-drawn emojis use `#[emoji(render)]` plus one `art` function per
+  set (`fn(Self, EmojiTone) -> EmojiArt`), rendered at Publish through the App's
+  Renderer port. Core never depends on `noctis-image`; without a Renderer such a
+  declaration is a typed Publish error.
+- (decision) The white/coloured methodology is built in as `#[emoji(white)]` (a second
+  emoji named `<name>_white`) and `ctx.emojis().on(ButtonStyle, icon)`: white on
+  `Primary`, `Success` and `Danger`, coloured on `Secondary`, coloured when no white
+  variant is declared.
+- (decision) A missing emoji never fails a render function: lookups return
+  `Option<Emoji>` and an empty text token, `.emoji(..)` accepts the `Option`, and
+  start-up logs the missing names. A failed list at start does not stop the bot.
+- (decision) Emoji names in Route `defaults(emoji = ..)` are not planned: defaults are
+  compile-time data built without a context, and ids differ per application and per
+  App in one process. The `"<:name:id>"` literal stays for single-application bots.
+- (decision) Changed art is detected with a blake3 digest kept under the App's `Kv`,
+  because Discord's emoji object has no hash and the CDN re-encodes images. The default
+  never replaces or deletes: replacing changes the id and breaks messages already
+  sent, so `replace_changed` and `delete_undeclared` are opt-in. Without a durable
+  store a changed emoji is simply reported as unchanged.
+- (decision) Uploads are PNG, JPEG or GIF only. "Emoji Formats" lists WebP and AVIF
+  too, but "Image Data" documents only JPG, GIF and PNG data URIs; the conservative
+  set is used and marked [U] (EMO-04). An animated emoji is therefore a GIF.
+- (decision) New rule ids EMO-01 (2000 per application), EMO-02 (256 KiB), EMO-03
+  (name grammar, shared with IMG-04, and uniqueness) and EMO-04 (upload formats).
+  "128x128" is documented as a recommendation and not enforced: the docs describe the
+  image, they do not state a rejection.
+- (decision) No new facade feature for emojis: the code lives in `noctis-core` (it
+  needs only the HTTP client, `noctis-ui`'s `Emoji` and the Renderer port).
+- (decision) `render` is added to `EventCtx`, `HookCtx` and `App` with the Upload
+  Budget `Limits::attachment_bytes`. `noctis::image::unstable` stays, as the
+  custom-Renderer seam only.
+- (decision) The per-call budget is `RenderOptions::max_bytes`, folded into the
+  existing `RenderJob::upload_budget` (min of the three budgets); no new ladder.
+- (decision) Animation control is `Plays::{Forever, Times(NonZeroU16)}` plus
+  `hold_start` / `hold_end` on `AnimationSpec`. Arbitrary per-frame durations are not
+  offered: the spec is a `Copy`, hashed `const` on the Template and cannot hold a
+  list, and frames are drawn at fixed timestamps for CSS animations. Identical
+  consecutive frames are merged, which makes any hold written as repeated frames free.
+- (decision) Play count is normalized to "total plays": WebP and APNG store `n`, GIF
+  stores a NETSCAPE repeat of `n - 1` and no extension for one play (takumi passes its
+  `loop_count` straight to each format, where the meanings differ by one).
+- (decision) Shapes are drawn with CSS that the pinned takumi already parses
+  (`conic-gradient`, `mask-image`, `clip-path: polygon()`), set as inline style by
+  Noctis. `svg-source` stays off (IMG-02, default dependency graph). Each shape story
+  starts with a pixel proof and cuts what the pinned takumi does not draw.
+- (decision) Shapes are split into two stories (arcs/rings/pies, lines/areas) to keep
+  each to one session.
+- (decision) `z-*` and the numeric font utilities are "Noctis-lowered utilities": a
+  small hand-written table beside the generated grammar, turned into inline CSS before
+  takumi parses the classes. takumi-core has the CSS properties but no Tailwind
+  utility for them, in 0.31.0 and still in 0.36.0, and 0.36.0 moved the Tailwind
+  tables (`map.rs` is gone), so a takumi bump would not help and would break
+  `xtask tw-grammar`. The cross-check asserts takumi does not know these classes, so a
+  later bump that adds them is noticed.
+- (decision) `from-brand` is a generator fix, not a renderer change: takumi already
+  emits `var(--color-brand)` for gradient stops and shadow colours; only Noctis's
+  `VAR_TARGETS` lacked the prefixes.
+- (decision) Nested assets use a new public `#[derive(Assets)]` for plain data structs;
+  `required` is decided by the innermost field.
+- (decision) Order: 20.1 and 20.2 first (the emoji sync needs both), the three emoji
+  stories next (the maintainer's first ask), then the independent engine stories, then
+  one Project Template and Usage Skill sweep. `cargo hack` runs in Story 20.12's gates
+  only, as for every epic.

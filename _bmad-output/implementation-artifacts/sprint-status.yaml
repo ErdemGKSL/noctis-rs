@@ -205,3 +205,18 @@ development_status:
   19-2-guard-emulation-for-prefix-runs: done
   19-3-ephemeral-emulation-for-prefix-runs: done
   epic-19-retrospective: optional
+
+  epic-20: backlog
+  20-1-render-from-events-hooks-and-background-tasks: backlog
+  20-2-per-call-render-size-budget: backlog
+  20-3-application-emoji-rules-and-declared-sets: backlog
+  20-4-the-emoji-table-and-typed-lookup: backlog
+  20-5-emoji-sync-on-publish: backlog
+  20-6-animation-play-count-and-holds: backlog
+  20-7-more-typed-style-setters: backlog
+  20-8-arcs-rings-and-pies: backlog
+  20-9-lines-and-areas: backlog
+  20-10-theme-gradient-stops-tabular-nums-and-z-in-the-class-gramma: backlog
+  20-11-asset-in-nested-template-data: backlog
+  20-12-project-template-cookbook-and-guide-on-the-new-image-and-em: backlog
+  epic-20-retrospective: optional
