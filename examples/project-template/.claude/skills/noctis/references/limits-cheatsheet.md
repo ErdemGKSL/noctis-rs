@@ -347,6 +347,18 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | IMG-03 | remote images: only `#[asset]` fields (`RemoteImage`, `Option<RemoteImage>`, `Vec<RemoteImage>`) are fetched, from allow-listed origins (default `https://cdn.discordapp.com`, `https://media.discordapp.net`; `https`, plain `http` only for loopback); `timeout` 100 ms..=60 s (5 s), `max_bytes` 1024..=67108864 (8 MiB), `concurrency` 1..=256 (8), `max_per_job` 1..=64 (16; `RenderError::OverCap` with `RenderCap::RemoteImages`), `max_pixels` 1..=16777216 (4 MP), `cache_ttl` 1 s..=30 d (1 d); PNG/JPEG/WebP; CDN sizes powers of two 16..=4096; failures draw the fallback, `#[asset(required)]` fails with `RenderError::RemoteImage`; an undeclared remote `<img>` is `RenderError::UndeclaredImage` | C / B / R |
 | IMG-04 | emoji: Unicode emoji draw in colour only with `image-emoji` (bundled Twemoji Mozilla COLRv0, last resort; without it one `noctis::image` warning at `App::build` when Templates are registered); custom emoji tokens `<:name:id>` / `<a:name:id>` (name 2..=32 `[A-Za-z0-9_]`, id 17..=20 digits, non-zero `u64`) in Template data are fetched at size 128 (`img:v1:emoji:<id>:128:<a|s>`), `max_emoji` 0..=128 (32) per job, the rest and failures draw the fallback; a token in literal `view!` text is a compile error; one only the view writes is `RenderError::UndeclaredImage` | C / B / R |
 
+## Image surfaces and application emojis
+
+| Limit | Value | Source |
+| --- | --- | --- |
+| Media Gallery items | 1–10, 1 component in total | CV2-10, CV2-03 |
+| Thumbnail | only a Section accessory; images (animated too), no video | CV2-05, CV2-07, CV2-11 |
+| alt text | ≤ 1024; required on rendered images | CV2-10, CV2-11, ATT-06 |
+| attachments | ≤ 10 per message; 20 MiB per file; 25 MiB per request | ATT-03 [U], ATT-01, ATT-02 |
+| display size of a gallery item or Thumbnail | not documented (client behaviour) | `images.md` §2 |
+| application emojis | ≤ 2000 per application; ≤ 256 KiB each; a 128×128 image; no `USE_EXTERNAL_EMOJIS` needed | Discord Emoji resource (no rule id); `images-emoji.md` §1 |
+| emoji token in text | `<:name:id>` / `<a:name:id>`, counted as characters | CV2-04 |
+
 ## Rendering (Noctis defaults, FR-70)
 
 | Limit | Default |

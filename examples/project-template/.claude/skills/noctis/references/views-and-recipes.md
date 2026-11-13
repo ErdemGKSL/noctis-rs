@@ -1481,7 +1481,7 @@ are how every Noctis bot should be written.
 | A general screen with distinct sections that don't fit one Container | tabs (§3.1), ≤ 5 |
 | A homogeneous list that can exceed 40 components / 4000 characters | pagination (§3.2), inside the active tab if any |
 | Pick one of many entities | String Select (≤ 25 per page) + prev/next |
-| Dense read-only data (cards, charts, leaderboards) | a rendered Template image in a Media Gallery (`images.md`) |
+| Dense read-only data (cards, charts, leaderboards) | a rendered Template image in a Media Gallery (`images.md`, layouts in `images-ui.md`) |
 | A one-line answer | `ctx.reply_text(key)` |
 
 ## 9. Examples

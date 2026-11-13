@@ -1264,7 +1264,7 @@ let app = builder.build()?;
 - `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; checks
   the config ranges and font list, gets the process-scoped render pool (`RenderPool`)
   and font registry (`FontRegistry`, frozen per font list) from the Runtime, decodes
-  the App's static images and sets the takumi Renderer (`images.md` §6).
+  the App's static images and sets the takumi Renderer (`images-engine.md` §6).
 - `noctis::prefix::PrefixPlugin` (`prefix` feature, P2):
   `.plugin(PrefixPlugin::new("!"))` checks its prefix (`BuildViolation::Plugin`) and
   mounts a `MESSAGE_CREATE` handler (Module `noctis-prefix`) that runs the App's slash

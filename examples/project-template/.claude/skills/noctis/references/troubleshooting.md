@@ -78,7 +78,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CV2-08] label too long` | literal > 80 | shorten (guideline ≤ 34 with emoji) |
 | `[MOD-02] more than 5 fields` | modal too big | split into a step flow with two modal steps (`views-and-recipes.md` §3.3) |
 | `[MOD-07]` radio options | enum with < 2 or > 10 variants | adjust the `Choices` enum |
-| unknown Tailwind class `bg-gradient-to-r`, help: `bg-linear-to-r` | v3 name | use the v4 name (see `images.md` §4) |
+| unknown Tailwind class `bg-gradient-to-r`, help: `bg-linear-to-r` | v3 name | use the v4 name (see `images-engine.md` §4) |
 | unknown class `bg-brand` | token missing from `noctis-theme.css` | add `--color-brand` under `@theme` |
 | `[LOC-01] unknown locale file` | file name is not exactly a Discord locale code (`en.yaml` is not one) | rename (`tr.yaml`, `pt-BR.yaml`, `en-US.yaml`) |
 | missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en-US.yaml` or placeholders differ | add the key; match placeholders |
@@ -100,21 +100,21 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | E0277 ``[WH-02] `RouteButton<X>` is not a static row button`` / ``… is not a static Section accessory`` / ``[WH-02] `ActionRow` cannot be a top-level component of a StaticMessage`` (or ``a StaticContainer child``) | a Route button, premium button, select, or a plain `ActionRow`/`Section`/`Container` in a static tree | only `LinkButton`s and Thumbnails in static rows and accessories; use the `Static*` builders, not the V2 ones |
 | `` no method named `with_components` found for struct `ExecuteWebhook` `` (E0599) | trying to turn off `with_components` (WH-01) | nothing to do: Noctis always sends `with_components=true` |
 | ``[WH-04] name: limit between 1 and 80, actual 81`` / ``[WH-04] name: limit a name without `clyde` or `discord` (any case), actual `Discord log` `` | a `webhook_name!` literal that is empty, too long, or contains a reserved word | 1–80 characters without `clyde`/`discord`; `WebhookName::try_new(text, &limits)` for runtime names |
-| ``[TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4)`` / ``…; or declare `--color-nope` in noctis-theme.css`` | a v3 or misspelt class in `tw!`/`tw="…"`, or a theme token the crate's `noctis-theme.css` does not define | use the v4 name the error suggests, or declare the token in `noctis-theme.css` (`images.md` §4-§5) |
-| ``[TW-02] 3:5: …`` (from `tw!`, `view!` or `theme!()`, with `= note: in …/noctis-theme.css`) | the theme file breaks a rule (`ThemeErrorKind`) at that line:column | fix that line (`images.md` §5); `spin`/`ping`/`pulse`/`bounce` are built in and cannot be redefined |
+| ``[TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4)`` / ``…; or declare `--color-nope` in noctis-theme.css`` | a v3 or misspelt class in `tw!`/`tw="…"`, or a theme token the crate's `noctis-theme.css` does not define | use the v4 name the error suggests, or declare the token in `noctis-theme.css` (`images-engine.md` §4-§5) |
+| ``[TW-02] 3:5: …`` (from `tw!`, `view!` or `theme!()`, with `= note: in …/noctis-theme.css`) | the theme file breaks a rule (`ThemeErrorKind`) at that line:column | fix that line (`images-engine.md` §5); `spin`/`ping`/`pulse`/`bounce` are built in and cannot be redefined |
 | ``Template data must serialize deterministically (it is part of the render cache key): `HashMap` …`` | a `HashMap`/`HashSet` in a `#[derive(Template)]` field | use `BTreeMap`, `BTreeSet` or `Vec` |
-| ``[IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>` `` | an `#[asset]` field of another type | make it a `RemoteImage` (or `Option`/`Vec` of one) built with `RemoteImage::avatar`/`guild_icon`/`url`/`placeholder` (`images.md` §7) |
+| ``[IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or `Vec<RemoteImage>` `` | an `#[asset]` field of another type | make it a `RemoteImage` (or `Option`/`Vec` of one) built with `RemoteImage::avatar`/`guild_icon`/`url`/`placeholder` (`images-engine.md` §7) |
 | ``[IMG-03] remote origin `<s>` is invalid: …`` / ``[IMG-03] remote <name> <v> is out of range: use <range>`` (plugin violations) | a bad `RemoteConfig::allow_origin`/`discord_cdn` origin, or a limit outside its range | an origin is `https://host[:port]` (plain `http` only for loopback hosts), no path or wildcard; keep each limit in the range the message names |
 | ``[IMG-03] template `<id>` requires remote image `<image>`, which could not be used: <reason>`` (`RenderError::RemoteImage`) | an `#[asset(required)]` image failed (status, timeout, cap, format, not allow-listed) | drop `required` to draw the fallback, allow-list the origin, or raise the cap the reason names |
 | ``[IMG-03] template `<id>` draws remote image `<image>`, which no `#[asset]` field declares`` (`RenderError::UndeclaredImage`) | the view draws a `RemoteImage` that is not in an `#[asset]` field | put the image in an `#[asset]` field and draw that field |
 | `remote image unavailable; drawing the fallback` (warning, target `noctis::image`) | a non-required remote image failed; `reason` says why | allow-list the origin (`RemoteConfig::allow_origin`), or accept the fallback |
-| ``WARN noctis::image: [IMG-04] the `image-emoji` feature is off: Unicode emoji in Template text render as boxes`` | the App registers a Template without the `image-emoji` feature | enable `image-emoji` (or ignore it when Templates never show Unicode emoji) (`images.md` §6) |
-| ``[IMG-04] custom emoji in literal `view!` text are never fetched: …`` (compile error) | a `<:name:id>` token inside a string literal in `view!` | put the text in a Template field (data is scanned), or declare `#[asset] e: RemoteImage` with `RemoteImage::custom_emoji(id, animated)` and draw `<img src={&self.e} />` (`images.md` §7) |
+| ``WARN noctis::image: [IMG-04] the `image-emoji` feature is off: Unicode emoji in Template text render as boxes`` | the App registers a Template without the `image-emoji` feature | enable `image-emoji` (or ignore it when Templates never show Unicode emoji) (`images-engine.md` §6) |
+| ``[IMG-04] custom emoji in literal `view!` text are never fetched: …`` (compile error) | a `<:name:id>` token inside a string literal in `view!` | put the text in a Template field (data is scanned), or declare `#[asset] e: RemoteImage` with `RemoteImage::custom_emoji(id, animated)` and draw `<img src={&self.e} />` (`images-engine.md` §7) |
 | ``[IMG-03] template `<id>` draws remote image `emoji/<n>`, which no `#[asset]` field declares`` | the view builds a custom emoji token itself (`format!`) that is not in the Template's data | pass the text through a data field, or declare the emoji with `RemoteImage::custom_emoji` |
 | ``WARN noctis::image: <n> custom emoji over the per-job cap of <max> draw the fallback`` / ``[IMG-04] remote max_emoji <v> is out of range: use 0..=128`` | more distinct custom emoji in one job's data than `RemoteConfig::max_emoji` (default 32) / a cap outside 0..=128 | raise `max_emoji` (at most 128), or accept the fallback for the rest |
 | ``invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-` `` (also `` `all` is reserved … ``, `` a Boot Flag is given twice: keep one ``, `` the Boot Flag has 33 characters: shorten it to at most 32 ``) | a `flags = [..]` literal on a kind attribute breaks the Boot Flag grammar | use 1-32 characters of `a-z`, `0-9`, `_`, `-`, never `all`/`none`, each once (`modules-middleware-ratelimits.md` §2) |
 | `` `flags` needs at least one Boot Flag: write `flags = ["beta"]` or remove it `` / `` `flags` takes a list of string literals: write `flags = ["beta"]` `` | `flags = []`, `flags = "beta"`, `flags = [beta]` or a bare `flags` | write `flags = ["beta"]`, or drop the argument for an unflagged registration |
-| ``[IMG-01] no font is registered: add one with `ImageConfig::font(..)` or enable the `default-font` feature`` (a `TemplateRejected` build error) | the App registers a Template but no font, and `default-font` is off | enable `default-font`, or `.image(ImageConfig::new().font(Font::from_static(include_bytes!(..))))` (`images.md` §6) |
+| ``[IMG-01] no font is registered: add one with `ImageConfig::font(..)` or enable the `default-font` feature`` (a `TemplateRejected` build error) | the App registers a Template but no font, and `default-font` is off | enable `default-font`, or `.image(ImageConfig::new().font(Font::from_static(include_bytes!(..))))` (`images-engine.md` §6) |
 | ``[IMG-01] font #<i> …`` (plugin violation) | the `<i>`-th `.font(..)` (from 0) has an inverted `unicode_range`, a bad `family` name, or bytes that are not TTF/OTF/TTC/WOFF2 | fix that font |
 | `ResourceConflict` naming `FontRegistry` | two Apps on one `Runtime` register different fonts (or a different order, or none) | give every App the same font list, or a separate `Runtime` |
 | ``[IMG-02] static image id must match …`` (compile error in a `const`) | a `StaticImage::new` id with uppercase, spaces, a leading/trailing `.`/`_`/`-`, or over 64 bytes | use a lowercase id such as `logo.v2` |
@@ -377,7 +377,7 @@ read what the rule means and apply the fix in the reference it names. Numeric li
 | ATT-03 | ≤ 10 attachments per message | fewer files; `components-v2.md` §12 |
 | ATT-04 | `files[n]` naming | nothing to fix (Noctis names parts); `components-v2.md` §12 |
 | ATT-05 | `attachment://` must name a file in the request | attach the file or keep it by id; `components-v2.md` §12 |
-| ATT-06 | alt text ≤ 1024; rendered images need alt text | add `alt!(..)`; `components-v2.md` §12, `images.md` |
+| ATT-06 | alt text ≤ 1024; rendered images need alt text | add `alt!(..)`; `components-v2.md` §12, `images-ui.md` §12 |
 | ATT-07 | `attachment://` image formats | use png, jpg, webp or gif; `components-v2.md` §12 |
 | WH-01 | webhook components need `with_components` | nothing to fix (by construction); `responder.md` §7 |
 | WH-02 | a webhook you don't own sends only non-interactive components | send a `StaticMessage`; `responder.md` §7 |
@@ -395,11 +395,11 @@ read what the rule means and apply the fix in the reference it names. Numeric li
 | GW-05 | privileged intents must be requested and enabled | `.intents(..)` and the Developer Portal toggle; `app-and-sharding.md` §1, `modules-middleware-ratelimits.md` §4 |
 | GW-06 | `large_threshold` 50-250 | `LargeThreshold::new::<N>()` in range; `app-and-sharding.md` §6 |
 | GW-07 | Request Guild Members limits | one guild, ≤ 100 user ids, wait on `RATE_LIMITED`; `app-and-sharding.md` §6 |
-| TW-01 | Template classes must be known Tailwind v4 classes | fix the class or add the token to `noctis-theme.css`; `images.md` §4 |
-| TW-02 | `noctis-theme.css` grammar | only `@theme { --x: v; }` and `@keyframes`; `images.md` §5 |
-| IMG-01 | text needs a registered font | enable `default-font` or `ImageConfig::font`; `images.md` §6 |
-| IMG-02 | static image id and format | rename the id or convert to PNG/JPEG/WebP, register it; `images.md` §6 |
-| IMG-03 | remote images only from declared `#[asset]` fields | declare the field, allow the origin; `images.md` §7 |
-| IMG-04 | Discord emoji tokens only in data fields | move the `<:name:id>` token into a data field; `images.md` §6 |
+| TW-01 | Template classes must be known Tailwind v4 classes | fix the class or add the token to `noctis-theme.css`; `images-engine.md` §4 |
+| TW-02 | `noctis-theme.css` grammar | only `@theme { --x: v; }` and `@keyframes`; `images-engine.md` §5 |
+| IMG-01 | text needs a registered font | enable `default-font` or `ImageConfig::font`; `images-engine.md` §6 |
+| IMG-02 | static image id and format | rename the id or convert to PNG/JPEG/WebP, register it; `images-engine.md` §6 |
+| IMG-03 | remote images only from declared `#[asset]` fields | declare the field, allow the origin; `images-engine.md` §7 |
+| IMG-04 | Discord emoji tokens only in data fields | move the `<:name:id>` token into a data field; `images-engine.md` §6 |
 | VC-01 | voice op 4 goes through the owning shard and GW-04 | use `ctx.voice()`; handle `VoiceError`; `voice.md` |
 | VC-02 | one voice connection per guild | one call per guild; a newer join replaces it; `voice.md` |

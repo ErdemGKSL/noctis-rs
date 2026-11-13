@@ -397,7 +397,7 @@ changes incompatibly; old entries then read as misses.
 ## 2b. Render contract (`Renderer`)
 
 The seam between core and the image renderer (FR-37). You normally write Templates with
-the image API (`images.md`) and let `.theme(..)`/`.image(..)` install the takumi
+the image API (`images-engine.md`) and let `.theme(..)`/`.image(..)` install the takumi
 Renderer; implement `Renderer` only to replace it (a remote render service, or a test
 double that answers fixed bytes).
 
@@ -441,7 +441,7 @@ and quality, animation, upload budget), the Noctis version and `renderer`, your
 Renderer's own identity: pass its name, version and asset versions
 (`b"my-renderer=2;fonts=3"`), and bump them when its output changes. Return the key as
 `RenderOutput::digest`, and use it as your `RenderCache` key if you cache (the App's
-cache arrives in `bind`). The takumi Renderer keeps its own key (`images.md` §9).
+cache arrives in `bind`). The takumi Renderer keeps its own key (`images-engine.md` §9).
 
 ```rust
 use noctis::bytes::Bytes;
@@ -514,7 +514,7 @@ App's namespaced `AssetStore`, where the takumi Renderer caches fetched remote i
 and `pub render_cache: Option<Arc<dyn RenderCache>>` (the App's namespaced
 `RenderCache`, where the takumi Renderer stores rendered images under
 `render:v1:<64 hex>`, i.e. `<app>:render_cache:render:v1:…` in the backing store;
-`images.md` §9). It writes entries with no TTL (`None`, "no expiry"), so a swapped
+`images-engine.md` §9). It writes entries with no TTL (`None`, "no expiry"), so a swapped
 `RenderCache` Adapter must bound their lifetime itself (its own default expiry or LRU
 eviction, e.g. Redis `maxmemory-policy allkeys-lru`). Build it with `RendererPorts::new(asset_store)` (no render cache) and
 `.with_render_cache(cache)`; `App::build` binds both. Its `Debug` hides the ports. A

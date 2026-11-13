@@ -8,7 +8,8 @@ description: >-
   context menus, Routes and Payloads, buttons and selects, Views (plain render
   functions) and the UI recipes for tabs, pagination, step flows and settings screens,
   modals, the Responder (ctx.respond, ctx.update, ctx.reply_text), budget helpers,
-  Templates and images (tw!, view!), Adapters and
+  Templates and images (tw!, view!, progress bars, gauges, cards, charts, application
+  emojis), Adapters and
   ports, i18n and locale files, Modules, Middleware, rate limits, sharding and Clusters,
   publishing, and tests with the testkit. Also use it when a compile error or BuildError
   names a rule id like [CID-01] or [CMD-11], or when the user asks "how do I … in
@@ -79,7 +80,10 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
 - **Adapters (ports)** are traits for anything that stores data, each with a bounded
   in-memory default; swap in Redis/SQL without touching handlers.
 - **Templates** are Tailwind-styled images written in Rust (`view!`), rendered off the
-  async runtime and attached to Views as Media Gallery or Thumbnail items.
+  async runtime and attached to Views as Media Gallery or Thumbnail items: banners,
+  progress strips, gauges, cards, charts, boards (`references/images.md` is the entry).
+  Small marks inside text and on buttons are application emojis
+  (`references/images-emoji.md`).
 - **Rules are checked early**: compile time for literals and types, `App::build` for
   cross-Module conflicts, runtime only for dynamic data. Every error names a rule id
   (`[CMD-11]`, `[CID-01]`, `[CV2-03]`) from `references/limits-cheatsheet.md`.
@@ -133,7 +137,8 @@ pub struct Dashboard;
 
 impl Dashboard {
     #[handler]
-    async fn handle(self, ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;                 // State<T> comes from the ctx
         let Some(guild) = ctx.guild_id() else {
             return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;     // one-line notice
         };
@@ -181,7 +186,8 @@ let toggle = ToggleModule { guild, module, enable: !enabled }
 // decode (`self`) → validate/authorize (Route Guard) → write → redraw in place
 impl ToggleModule {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
         ctx.modules().set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable).await?;
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
@@ -281,7 +287,7 @@ impl TemplateView for ProfileCard {
 // `ImageConfig::new().font(Font::from_static(..))` in priority order ([IMG-01]).
 // remote images: `#[asset] avatar: RemoteImage` (or `#[asset(required)]`), built with
 // `RemoteImage::avatar(&user, 256)`, drawn with `<img src={&self.avatar} />`; fetched from
-// the Discord CDN allow-list before the render ([IMG-03], `references/images.md` §7).
+// the Discord CDN allow-list before the render ([IMG-03], `references/images-engine.md` §7).
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);
@@ -313,7 +319,7 @@ let card: Attachment = ctx.render(ProfileCard { .. }).await?;
 // NoRenderer, UnknownTemplate, Unsupported, OverCap { id, cap: RenderCap, limit, actual }
 // (over a per-job cap, or RenderCap::Fps over the format's fps cap), OverBudget { budget,
 // smallest } (cannot shrink enough), SizeMismatch { frame, .. } (an animation frame root
-// of another size), Failed, Panicked (see references/images.md §8).
+// of another size), Failed, Panicked (see references/images-engine.md §8).
 // in the render function:
 let mut files = AttachmentSet::new();
 let card = files.add(data.card.clone());
@@ -328,6 +334,12 @@ re-uploading it. `ctx.render(t)` exists on `CommandCtx`, `ComponentCtx`, `ModalS
 worker. A rendered image needs its own `.alt(..)` on the Thumbnail/MediaItem
 (`[ATT-06]` in Strict mode); use `alt!("Profile card")` for a fixed text
 (`components-v2.md` §6).
+
+This is one card. The image engine does much more for a UI: a bar-only strip under the
+text that states the numbers, animated fills, ring gauges and badges as Thumbnails,
+leaderboards, charts, banners, game boards, step indicators, and emoji-sized icons.
+Start at `references/images.md`; the Templates are in `references/images-cookbook.md`,
+the screen layouts and update flow in `references/images-ui.md`.
 
 ### 3.6 A button that opens a modal (with pre-fill)
 
@@ -404,6 +416,8 @@ async fn main() -> anyhow::Result<()> {
 | A homogeneous list that can exceed 40 components / 4000 chars | **pagination recipe** (inside the active tab), page sized with `Budget` | UD-6 |
 | Pick one of many entities (> 5) | a String Select (≤ 25 options per page) + prev/next | 25 options cost 2 components |
 | Dense read-only data: cards, charts, tables, leaderboards | **Template image** in Media Gallery / Thumbnail | UD-2; 1 component, 0 text chars |
+| A value as a shape: progress, level, load, health, time left | text with the numbers, then a **progress strip or gauge image** under or beside it (`references/images-cookbook.md` §2-3) | text stays readable and searchable; the image shows it |
+| A small state mark or icon inside text, on a button or a select option | an **application emoji** (white variant on Primary/Success/Danger buttons) | no attachment; `references/images-emoji.md` |
 | Free text, numbers, or 2+ inputs that must be submitted together | **Modal** opened from a button declared `auto_defer = false` | Message selects fire per change; modals batch |
 | Destructive action | Danger button → confirm View → `one_shot` by-ref Route | Quality rule 3 |
 | Per-user settings on a shared message | Ephemeral sub-panel (`#[button("id", response = ephemeral, defaults(..))]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
@@ -438,6 +452,8 @@ table (symptom, cause, fix, rule id).
 | Doing I/O in a render function | Load data in the handler (or a `load` fn), keep `render_x` pure |
 | Formatting Tailwind classes at runtime (`format!("w-[{}%]", p)`) | Typed style setters: `style={Style::new().width_pct(p)}` |
 | Putting buttons, instructions or links in an image | Components next to the image (UD-2) |
+| Numbers that exist only inside an image | The numbers in a Text Display (and the alt text), the image under it as the visual (`references/images.md` §4) |
+| A coloured emoji on a Primary, Success or Danger button | The white variant there; coloured emojis only on Secondary buttons, select options and text (`references/images-emoji.md` §2) |
 | Hard-coded English in render functions or Templates | Locale keys via `Strings::of(ctx.response_locale())`, passed to `render_x` |
 | `static mut`, global `HashMap`s, `lazy_static` registries | `State<T>` or a port |
 | More than 5 tabs, more than 5 buttons in a row, two selects in a row | Compile errors (CV2-06); restructure (select nav, more rows, pagination) |
@@ -486,7 +502,11 @@ Read only what the task touches.
 | `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`alt!`/`rgb!`; attachments: upload, keep-by-id edits, Upload Budget, rendered-image alt |
 | `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
-| `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |
+| `references/images.md` | start any image work: the mental model, which surface (single-item Media Gallery as a full-width canvas, gallery grid, Thumbnail, File, emoji), canvas sizes, text or image, a complete first example (a progress strip under text) |
+| `references/images-cookbook.md` | draw something: progress bars (still, segmented, animated fill, GIF), stat sheets, ring gauges and dials, level badges, status avatars, sparklines, leaderboards, avatar stacks, column charts, heatmaps, banners, drawn dividers, game boards, step indicators, countdowns, loading states; text, emoji and avatars inside images |
+| `references/images-ui.md` | compose images into a V2 screen: layouts, component and attachment cost, the load → render → View flow, re-rendering on a click and kept attachments, paginated image pages, animation in a UI, dark and light clients, limits, performance and caching, rendering outside an interaction, when not to use an image, snapshot strategy, image troubleshooting |
+| `references/images-emoji.md` | use application emojis: Discord's limits (2000 per app, 256 KiB, 128×128), the emoji methodology (vector style, transparent, white on coloured buttons), drawing glyphs with the engine, uploading through `ctx.http()`, the name → id table, emoji progress bars, animated emojis |
+| `references/images-engine.md` | need the exact engine rule: `#[template(..)]` keys, `view!`/`tw!` syntax, the Tailwind v4 class grammar, `Style`, theme, fonts, static and remote images, emoji in images, animation, render errors, pool, caps, size budget, cache, unstable items |
 | `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing (`app_id`, `Shared::new`), `ctx.kv()` (`Kv`) and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |

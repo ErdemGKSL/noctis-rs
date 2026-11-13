@@ -125,7 +125,8 @@ impl EditNote {
 **When:** dense read-only data (cards, charts, leaderboards; UD-2). **Shape:** a
 `#[derive(Template, Serialize, Deserialize)]` struct registered with
 `Module::template::<X>()`, rendered in the handler with `ctx.render(x).await?`, placed in
-a `MediaGallery` with alt text, buttons next to it. Full code: `images.md` §2 and §10, the
+a `MediaGallery` with alt text, buttons next to it. Full code: `images.md` §5, the drawing techniques in
+`images-cookbook.md`, the screen layouts and the update flow in `images-ui.md`, the
 template's `ProfileCard`.
 
 ```rust
