@@ -629,3 +629,9 @@ Planning decisions (2026-11-13, Epic 20):
   stories next (the maintainer's first ask), then the independent engine stories, then
   one Project Template and Usage Skill sweep. `cargo hack` runs in Story 20.12's gates
   only, as for every epic.
+- (decision, Story 20.1) `App::render`, `render_with` and `render_report` return
+  `'static` futures (they clone the App's shared state), so `tokio::spawn(app.render(t))`
+  works; a recurring scheduler renders with the `HookCtx` it was started from. Render
+  Error Sink reports from an event render carry the shard, guild, Module and
+  Extensions, from a hook only the Module, from `App` none of them; the handler path
+  is `None` because neither context knows it.

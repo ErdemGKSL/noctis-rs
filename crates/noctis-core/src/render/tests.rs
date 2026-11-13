@@ -422,14 +422,20 @@ async fn renders_run_in_one_noctis_render_span() {
     render(&parts(&app), card(), RenderOptions::new())
         .await
         .unwrap();
+    // Story 20.1: the event, hook and App renders, in one test because
+    // tracing caches a callsite's interest across tests.
+    for scope in SCOPES {
+        render_from(scope, &app).await.unwrap();
+    }
     let lines = capture.lines_with(&["fake renders"]);
-    assert_eq!(lines.len(), 1, "{}", capture.text());
-    assert!(
-        lines[0].contains("noctis.render{app=default template=\"card\"}")
-            || lines[0].contains("noctis.render{app=default template=card}"),
-        "{}",
-        lines[0]
-    );
+    assert_eq!(lines.len(), 1 + 3 * SCOPES.len(), "{}", capture.text());
+    for line in lines {
+        assert!(
+            line.contains("noctis.render{app=default template=\"card\"}")
+                || line.contains("noctis.render{app=default template=card}"),
+            "{line}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -754,4 +760,225 @@ async fn fr_37_renderer_errors_pass_through_unchanged() {
         RenderError::Failed(_)
     ));
     assert_eq!(sink.seen().len(), 1);
+}
+
+// Story 20.1: `render` on `EventCtx`, `HookCtx` and `App`.
+
+/// Which context a scope test renders from.
+#[derive(Debug, Clone, Copy)]
+enum Scope {
+    Event,
+    Hook,
+    App,
+}
+
+const SCOPES: [Scope; 3] = [Scope::Event, Scope::Hook, Scope::App];
+
+/// An `EventCtx` of shard 3, guild 7, Module `welcome` on `app`.
+fn event_ctx(app: &App) -> crate::events::EventCtx {
+    let locales = crate::locale::LocaleCell::new(crate::Locales::both(noctis_rules::Locale::EnUs));
+    crate::events::EventCtx::new(
+        3,
+        Some(Id::new(7)),
+        "welcome",
+        Arc::clone(app.shared()),
+        None,
+        locales,
+    )
+}
+
+/// A `HookCtx` of Module `boards` on `app`.
+fn hook_ctx(app: &App) -> crate::lifecycle::HookCtx {
+    crate::lifecycle::HookCtx::new("boards", Arc::clone(app.shared()))
+}
+
+/// Renders `card()` from `scope` on `app` as `render_report`; checks that
+/// `render` and `render_with` give the same attachment on success.
+async fn render_from(scope: Scope, app: &App) -> HandlerResult<RenderReport> {
+    let options = RenderOptions::new();
+    let report = match scope {
+        Scope::Event => event_ctx(app).render_report(card(), options).await,
+        Scope::Hook => hook_ctx(app).render_report(card(), options).await,
+        Scope::App => app.render_report(card(), options).await,
+    }?;
+    let (plain, with) = match scope {
+        Scope::Event => {
+            let ctx = event_ctx(app);
+            (
+                ctx.render(card()).await?,
+                ctx.render_with(card(), options).await?,
+            )
+        }
+        Scope::Hook => {
+            let ctx = hook_ctx(app);
+            (
+                ctx.render(card()).await?,
+                ctx.render_with(card(), options).await?,
+            )
+        }
+        Scope::App => (
+            app.render(card()).await?,
+            app.render_with(card(), options).await?,
+        ),
+    };
+    assert_eq!(plain.name(), report.attachment.name());
+    assert_eq!(with.name(), report.attachment.name());
+    Ok(report)
+}
+
+/// What a scope's report names: shard, guild, Module.
+fn expected_site(scope: Scope) -> (Option<u32>, Option<u64>, Option<String>) {
+    match scope {
+        Scope::Event => (Some(3), Some(7), Some("welcome".to_owned())),
+        Scope::Hook => (None, None, Some("boards".to_owned())),
+        Scope::App => (None, None, None),
+    }
+}
+
+#[tokio::test]
+async fn scopes_render_with_the_app_attachment_limit() {
+    for scope in SCOPES {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        let sink = Arc::new(Recording::default());
+        let fake = Arc::new(Fake::with(Answer::Ok, Some(snapshotter.clone())));
+        let mut limits = Limits::default();
+        limits.attachment_bytes = 4096;
+        let app = app_with(Some(Arc::clone(&fake)), &sink, limits);
+        let report = render_from(scope, &app).await.unwrap();
+        assert_eq!(
+            report.attachment.name(),
+            format!("{}.png", "ab".repeat(8)),
+            "{scope:?}"
+        );
+        assert_eq!(
+            report.attachment.origin(),
+            noctis_ui::AttachmentOrigin::Rendered
+        );
+        assert_eq!(report.format, OutputFormat::Png);
+        assert_eq!(*fake.budget.lock().unwrap(), Some(4096), "{scope:?}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 3, "{scope:?}");
+        // The gauge is live while the fake renders (each snapshot resets it).
+        assert!(fake.depth.lock().unwrap().is_some(), "{scope:?}");
+        let snapshot = snapshot_of(&snapshotter);
+        assert!(
+            has_metric(&snapshot, "noctis_render_duration_seconds"),
+            "{scope:?}"
+        );
+        assert!(!has_metric(&snapshot, "noctis_render_rejected_total"));
+        assert!(sink.seen().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn scopes_without_a_renderer_are_no_renderer() {
+    for scope in SCOPES {
+        let sink = Arc::new(Recording::default());
+        let app = app(None, &sink);
+        let err = render_from(scope, &app).await.unwrap_err();
+        assert!(
+            matches!(render_error(&err), RenderError::NoRenderer),
+            "{scope:?}"
+        );
+        assert!(sink.seen().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn scopes_count_queue_full_without_a_report() {
+    for scope in SCOPES {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        let sink = Arc::new(Recording::default());
+        let app = app(Some(Fake::new(Answer::QueueFull)), &sink);
+        let err = render_from(scope, &app).await.unwrap_err();
+        assert!(
+            matches!(render_error(&err), RenderError::QueueFull),
+            "{scope:?}"
+        );
+        let rejected: Vec<_> = snapshot_of(&snapshotter)
+            .into_iter()
+            .filter(|(n, ..)| n == "noctis_render_rejected_total")
+            .collect();
+        assert_eq!(rejected.len(), 1, "{scope:?}");
+        assert!(
+            rejected[0]
+                .1
+                .contains(&("reason".to_owned(), "queue_full".to_owned()))
+        );
+        assert!(sink.seen().is_empty(), "{scope:?}");
+    }
+}
+
+#[tokio::test]
+async fn scopes_reject_an_over_budget_output_and_report_it() {
+    for scope in SCOPES {
+        let sink = Arc::new(Recording::default());
+        let mut limits = Limits::default();
+        limits.attachment_bytes = 1000;
+        let app = app_with(Some(Fake::new(Answer::Sized(1001))), &sink, limits);
+        let err = render_from(scope, &app).await.unwrap_err();
+        assert!(
+            matches!(
+                render_error(&err),
+                RenderError::OverBudget {
+                    budget: 1000,
+                    smallest: 1001
+                }
+            ),
+            "{scope:?}"
+        );
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1, "{scope:?}: {seen:?}");
+        let (shard, guild, module) = expected_site(scope);
+        assert_eq!(seen[0].origin, ErrorOrigin::Render);
+        assert_eq!(seen[0].kind, format!("error:{err}"));
+        assert_eq!(seen[0].shard, shard, "{scope:?}");
+        assert_eq!(seen[0].guild_id, guild, "{scope:?}");
+        assert_eq!(seen[0].module, module, "{scope:?}");
+        assert_eq!(seen[0].handler, None, "{scope:?}");
+    }
+}
+
+/// A Renderer that never answers; it signals once it holds a job.
+struct Stuck(tokio::sync::Notify);
+
+impl Renderer for Stuck {
+    fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        Box::pin(async move {
+            self.0.notify_one();
+            std::future::pending().await
+        })
+    }
+
+    fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_dropped_scope_render_leaves_the_queue_depth_gauge() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = metrics::set_default_local_recorder(&recorder);
+    let stuck = Arc::new(Stuck(tokio::sync::Notify::new()));
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .renderer(Arc::clone(&stuck));
+    let app = builder.build().unwrap();
+    let ctx = event_ctx(&app);
+    {
+        let render = ctx.render(card());
+        tokio::pin!(render);
+        tokio::select! {
+            _ = &mut render => panic!("a stuck render finished"),
+            () = stuck.0.notified() => {}
+        }
+        assert_eq!(gauge(&snapshotter, "noctis_render_queue_depth"), Some(1.0));
+        // Dropped here, as a shutdown drops in-flight handler work.
+    }
+    assert_eq!(gauge(&snapshotter, "noctis_render_queue_depth"), Some(-1.0));
 }

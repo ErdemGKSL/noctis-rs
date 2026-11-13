@@ -559,7 +559,7 @@ struct HookInner {
 }
 
 impl HookCtx {
-    fn new(module: &'static str, app: Arc<AppShared>) -> Self {
+    pub(crate) fn new(module: &'static str, app: Arc<AppShared>) -> Self {
         Self(Arc::new(HookInner { module, app }))
     }
 
@@ -620,6 +620,19 @@ impl HookCtx {
         Emitter::of(&self.0.app)
     }
 }
+
+impl HookCtx {
+    /// Where `ctx.render` runs: the App's attachment limit and the hook's
+    /// Module.
+    fn render_site(&self) -> crate::render::RenderSite<'_> {
+        crate::render::RenderSite {
+            module: Some(self.0.module),
+            ..crate::render::RenderSite::app(&self.0.app)
+        }
+    }
+}
+
+crate::render::scope_render_methods!(HookCtx, "noctis_core::lifecycle::HookCtx");
 
 impl fmt::Debug for HookCtx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

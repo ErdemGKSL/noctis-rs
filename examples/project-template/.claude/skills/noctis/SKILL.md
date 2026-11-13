@@ -20,7 +20,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `84fbe82f4b9bc30e32ebc4d9aff8cd2f39db7d2a8ddac71dc1a2be134c82fdd9` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `7a8f576e94e6f918ce5521e0950c53240474a56df12f0e9a4e1fe4e375b55542` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -329,8 +329,10 @@ let gallery = MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&na
 
 The Responder uploads only the files the tree uses (`msg.used_attachments()`), each
 once, and an `update` that shows the same card again keeps it by id instead of
-re-uploading it. `ctx.render(t)` exists on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx` and
-`ExpiredCtx`; the render runs on the process-scoped render pool, never on a tokio
+re-uploading it. `ctx.render(t)` exists on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`,
+`ExpiredCtx`, `EventCtx` and `HookCtx`, and as `app.render(t)` on the built `App`
+(outside an interaction the budget is `Limits::attachment_bytes`; `images-ui.md` §9);
+the render runs on the process-scoped render pool, never on a tokio
 worker. A rendered image needs its own `.alt(..)` on the Thumbnail/MediaItem
 (`[ATT-06]` in Strict mode); use `alt!("Profile card")` for a fixed text
 (`components-v2.md` §6).

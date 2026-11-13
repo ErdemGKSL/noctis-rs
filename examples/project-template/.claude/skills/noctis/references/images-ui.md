@@ -459,33 +459,72 @@ limits. Redraw on interactions and on real events.
 
 ## 9. Outside an interaction
 
-`ctx.render` belongs to the interaction contexts. A Command's handler can post a
-rendered View anywhere with `ctx.messages().send(channel, view)`, so "post the weekly
-leaderboard to #hall-of-fame" as a Command is ordinary code.
+Every context renders: `EventCtx`, `HookCtx` and the built `App` have the same
+`render(t)`, `render_with(t, RenderOptions)` and `render_report(t, RenderOptions)` as
+the interaction contexts, with the same errors, cache, span and metrics. There is no
+interaction to report an upload limit, so the budget is `Limits::attachment_bytes`
+(20 MiB by default; the Renderer still fits `size_target`). Post the result with
+`ctx.messages().send(channel, view)`.
 
-Event handlers and hooks (`EventCtx`, `HookCtx`) have **no stable render call** in
-Noctis 0.1. A welcome card on `MemberAdd` or a level-up card from a message event
-therefore has two honest options:
+A welcome card on `MemberAdd`:
 
-- **Stay inside the stable API**: post text and components from the event handler
-  (`ctx.messages().send(..)`) with a button ("Show my card") whose handler renders.
-  Remote pictures that need no drawing (an avatar) can be a Thumbnail by URL:
-  `Thumbnail::new(Media::url(avatar_url))`.
-- **Use the Renderer port directly**, knowing that `noctis::image::unstable` is outside
-  semver and may change in any release:
+```rust
+use noctis::events::MemberAdd;
+use noctis::image::RemoteImage;
+use noctis::prelude::*;
+use noctis::ui::{AttachmentSet, Components, MediaGallery, MediaItem, V2Message};
 
-  ```rust
-  use noctis::image::unstable::RenderJob;
-  use noctis::ui::Attachment;
+#[derive(EventHandler)]
+#[event(module = "welcome")]
+pub struct Welcome;
 
-  // `renderer`: a clone of `app.renderer()` (an `Arc<dyn Renderer>`), taken after
-  // `build()` and handed to the task that needs it.
-  let out = renderer.render(RenderJob::of(&card)?).await?;
-  let image = Attachment::rendered(out.bytes, out.digest, out.format.extension())?;
-  ```
+impl Welcome {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
+        let card = WelcomeCard { name: ev.user.name.clone(), avatar: RemoteImage::avatar(&ev.user, 256) };
+        let mut files = AttachmentSet::new();
+        let image = files.add(ctx.render(card).await?);
+        let msg = V2Message::new(Components::new().push(
+            MediaGallery::new([MediaItem::new(image).alt("Welcome card")]),
+        ))
+        .attachments(files);
+        ctx.messages().send(WELCOME_CHANNEL, msg).await?;
+        Ok(())
+    }
+}
+```
 
-  This path fits the render to the default 20 MiB upload budget and the App's
-  `size_target`, uses the cache, and returns the same `RenderError`s.
+A scheduled leaderboard: start the loop from an `AppStarted` hook and render with the
+hook's context (`HookCtx` is a cheap clone, so move it into the task):
+
+```rust
+#[handler]
+async fn handle(self, ctx: HookCtx, _ev: AppStarted) -> HandlerResult<()> {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            every.tick().await;
+            let board = load_board(&ctx.kv()).await;               // your data
+            match ctx.render(board).await {
+                Ok(image) => { /* ctx.messages().send(BOARD_CHANNEL, view_with(image)).await */ }
+                Err(err) => tracing::warn!(%err, "leaderboard render failed"),
+            }
+        }
+    });
+    Ok(())
+}
+```
+
+Outside any handler, `app.render(t)` (and `render_with`, `render_report`) renders on
+the built App before `app.run()` or in a Shutdown Task; its future borrows nothing, so
+`tokio::spawn(app.render(card))` works. Without a Renderer every call is
+`RenderError::NoRenderer`.
+
+The render is awaited where it is called: no new lane, no detached task. When the App
+shuts down, an event handler or hook still rendering is dropped with the rest of its
+work, which cancels the render. A spawned task outlives that, so stop it yourself
+(a `ShutdownStarted` hook or a Shutdown Task). `noctis::image::unstable` is only for
+writing your own Renderer (`adapters.md` §2b), never for rendering.
 
 ## 10. When not to use an image
 

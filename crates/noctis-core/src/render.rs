@@ -17,6 +17,8 @@ use noctis_ports::{
 };
 use noctis_ui::Attachment;
 use tracing::Instrument as _;
+use twilight_model::id::Id;
+use twilight_model::id::marker::GuildMarker;
 
 use crate::command::CtxInner;
 use crate::handler::AppShared;
@@ -71,7 +73,57 @@ pub struct RenderReport {
     pub settings_used: EncodeSettings,
 }
 
-/// Renders `template` through the App's Renderer with `options`.
+/// Where a render runs: the App, the Upload Budget and the Render Error
+/// Sink report fields of the calling context.
+pub(crate) struct RenderSite<'a> {
+    /// `None` for the detached `__testing` seams (`NoRenderer`).
+    pub(crate) app: Option<&'a Arc<AppShared>>,
+    /// The interaction's Upload Budget; `None` outside an interaction, where
+    /// the App's `Limits::attachment_bytes` applies.
+    pub(crate) upload_budget: Option<usize>,
+    pub(crate) shard: Option<u32>,
+    pub(crate) guild_id: Option<Id<GuildMarker>>,
+    pub(crate) module: Option<&'static str>,
+    pub(crate) handler: Option<&'static str>,
+    pub(crate) extensions: Option<&'a crate::Extensions>,
+}
+
+impl<'a> RenderSite<'a> {
+    /// A render of `app` outside any run (`App::render`).
+    pub(crate) fn app(app: &'a Arc<AppShared>) -> Self {
+        Self {
+            app: Some(app),
+            upload_budget: None,
+            shard: None,
+            guild_id: None,
+            module: None,
+            handler: None,
+            extensions: None,
+        }
+    }
+}
+
+/// Renders `template` through the App's Renderer with `options`, from an
+/// interaction context.
+pub(crate) async fn render<T: Template>(
+    inner: &CtxInner,
+    template: T,
+    options: RenderOptions,
+) -> HandlerResult<RenderReport> {
+    let site = RenderSite {
+        app: inner.app.as_ref(),
+        upload_budget: inner.shared.as_ref().map(|s| s.upload_budget()),
+        shard: Some(inner.shard),
+        guild_id: inner.guild_id,
+        module: Some(inner.module),
+        handler: Some(inner.path),
+        extensions: Some(inner.extensions()),
+    };
+    render_at(site, template, options).await
+}
+
+/// Renders `template` through the App's Renderer with `options`; every
+/// context's `render`, `render_with` and `render_report` lands here.
 ///
 /// Without an App or a Renderer it fails with [`RenderError::NoRenderer`]
 /// (no metric, no report). An animation over its format's fps cap fails
@@ -81,14 +133,13 @@ pub struct RenderReport {
 /// failure is a [`RenderError`] inside the returned [`HandlerError`]; all
 /// of them except `QueueFull` are reported to the [`ErrorOrigin::Render`]
 /// sink.
-pub(crate) async fn render<T: Template>(
-    inner: &CtxInner,
+pub(crate) async fn render_at<T: Template>(
+    site: RenderSite<'_>,
     template: T,
     options: RenderOptions,
 ) -> HandlerResult<RenderReport> {
-    let Some((app, renderer)) = inner
+    let Some((app, renderer)) = site
         .app
-        .as_ref()
         .and_then(|app| app.renderer.as_ref().map(|renderer| (app, renderer)))
     else {
         return Err(HandlerError::new(RenderError::NoRenderer));
@@ -97,11 +148,9 @@ pub(crate) async fn render<T: Template>(
     async {
         let result = match RenderJob::of(&template) {
             Ok(mut job) => {
-                // The render fits what this interaction's upload accepts (ATT-01).
-                let budget = inner
-                    .shared
-                    .as_ref()
-                    .map_or(app.limits.attachment_bytes, |s| s.upload_budget());
+                // The render fits what this interaction's upload accepts, or
+                // the App's attachment limit outside one (ATT-01).
+                let budget = site.upload_budget.unwrap_or(app.limits.attachment_bytes);
                 job.upload_budget = u64::try_from(budget).unwrap_or(u64::MAX);
                 if let Some(spec) = options.animation {
                     job.animation = Some(spec);
@@ -113,11 +162,129 @@ pub(crate) async fn render<T: Template>(
             }
             Err(error) => Err(RenderError::failed(error)),
         };
-        result.map_err(|error| fail(inner, app, error))
+        result.map_err(|error| fail(&site, app, error))
     }
     .instrument(span)
     .await
 }
+
+/// `render`, `render_with` and `render_report` of a context outside an
+/// interaction (`EventCtx`, `HookCtx`): the `impl` block calls
+/// `self.render_site()` for its [`RenderSite`].
+macro_rules! scope_render_methods {
+    ($ty:ident, $import:literal) => {
+        impl $ty {
+            /// Renders `template` through the App's Renderer (feature
+            /// `image`: `.theme(..)` or `.image(..)`) into an
+            /// [`Attachment`](noctis_ui::Attachment) named by its render
+            /// digest, exactly as `CommandCtx::render` does: the same
+            /// `noctis.render{app, template}` span, the
+            /// `noctis_render_duration_seconds`,
+            /// `noctis_render_queue_depth` and
+            /// `noctis_render_rejected_total` metrics and the Render Error
+            /// Sink. There is no interaction here, so the job's
+            /// `upload_budget` is the App's `Limits::attachment_bytes`
+            /// (ATT-01). Post the attachment with
+            /// `ctx.messages().send(channel, view)`.
+            ///
+            /// The render is awaited in the handler: dropping the future
+            /// (a timeout, the App shutting down) cancels it.
+            ///
+            /// ```no_run
+            /// use noctis_ports::{AnimationSpec, ErasedView, Format, Size, Template};
+            /// use noctis_core::HandlerResult;
+            #[doc = concat!("use ", $import, ";")]
+            /// use noctis_ui::{AttachmentSet, Components, MediaGallery, MediaItem, V2Message};
+            /// use twilight_model::id::Id;
+            /// use twilight_model::id::marker::ChannelMarker;
+            ///
+            /// #[derive(serde::Serialize, serde::Deserialize)]
+            /// struct Welcome {
+            ///     name: String,
+            /// }
+            ///
+            /// impl Template for Welcome {
+            ///     const ID: &'static str = "welcome";
+            ///     const VERSION: u32 = 1;
+            ///     const SIZE: Size = Size::new(600, 200);
+            ///     const FORMAT: Format = Format::Png;
+            ///     const ANIMATION: Option<AnimationSpec> = None;
+            ///     fn view() -> ErasedView {
+            ///         ErasedView::new(())
+            ///     }
+            /// }
+            ///
+            #[doc = concat!("async fn welcome(ctx: ", stringify!($ty), ", channel: Id<ChannelMarker>) -> HandlerResult<()> {")]
+            ///     let mut files = AttachmentSet::new();
+            ///     let image = files.add(ctx.render(Welcome { name: "Ada".into() }).await?);
+            ///     let gallery = MediaGallery::new([MediaItem::new(image).alt("Welcome")]);
+            ///     let msg = V2Message::new(Components::new().push(gallery)).attachments(files);
+            ///     ctx.messages().send(channel, msg).await?;
+            ///     Ok(())
+            /// }
+            /// ```
+            ///
+            /// # Errors
+            ///
+            /// The errors of `CommandCtx::render`: a
+            /// [`HandlerError`](crate::HandlerError) wrapping the
+            /// [`RenderError`](noctis_ports::RenderError) (`NoRenderer`
+            /// without a Renderer, `QueueFull`, `UnknownTemplate`,
+            /// `Unsupported`, `OverCap`, `OverBudget`, `SizeMismatch`,
+            /// `UnknownImage`, `RemoteImage`, `Failed`, `Panicked`).
+            pub fn render<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<::noctis_ui::Attachment>,
+            > + Send
+                   + '_ {
+                self.render_with(template, $crate::RenderOptions::new())
+            }
+
+            /// [`render`](Self::render) with per-call
+            /// [`RenderOptions`](crate::RenderOptions) (`.animation(spec)`).
+            ///
+            /// # Errors
+            ///
+            /// The errors of [`render`](Self::render).
+            pub fn render_with<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+                options: $crate::RenderOptions,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<::noctis_ui::Attachment>,
+            > + Send
+                   + '_ {
+                async move {
+                    $crate::render::render_at(self.render_site(), template, options)
+                        .await
+                        .map(|report| report.attachment)
+                }
+            }
+
+            /// [`render_with`](Self::render_with), returning a
+            /// [`RenderReport`](crate::RenderReport): the attachment plus
+            /// the encoded `format` and the `settings_used`.
+            ///
+            /// # Errors
+            ///
+            /// The errors of [`render`](Self::render).
+            pub fn render_report<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+                options: $crate::RenderOptions,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<$crate::RenderReport>,
+            > + Send
+                   + '_ {
+                async move { $crate::render::render_at(self.render_site(), template, options).await }
+            }
+        }
+    };
+}
+
+pub(crate) use scope_render_methods;
 
 /// Renders `job`, checks the output against the job's Upload Budget and
 /// wraps it, measuring the accepted render.
@@ -186,7 +353,7 @@ impl Drop for InFlight {
 /// `OverBudget`, `SizeMismatch`, `UnknownImage`, `RemoteImage` and
 /// `UndeclaredImage` are handled like `Failed`: reported, with no
 /// rejected-metric reason (an `OverCap` for `RemoteImages` is `over_cap`).
-fn fail(inner: &CtxInner, app: &AppShared, error: RenderError) -> HandlerError {
+fn fail(site: &RenderSite<'_>, app: &AppShared, error: RenderError) -> HandlerError {
     let reason = match &error {
         RenderError::QueueFull => Some("queue_full"),
         RenderError::UnknownTemplate { .. } => Some("unknown_template"),
@@ -217,12 +384,12 @@ fn fail(inner: &CtxInner, app: &AppShared, error: RenderError) -> HandlerError {
             origin: ErrorOrigin::Render,
             kind,
             app: &app.app,
-            shard: Some(inner.shard),
-            guild_id: inner.guild_id,
-            module: Some(inner.module),
-            handler: Some(inner.path),
+            shard: site.shard,
+            guild_id: site.guild_id,
+            module: site.module,
+            handler: site.handler,
             event_type: None,
-            extensions: Some(inner.extensions()),
+            extensions: site.extensions,
             middleware: None,
         });
     }

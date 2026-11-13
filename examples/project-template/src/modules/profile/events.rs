@@ -10,7 +10,9 @@ use super::xp_key;
 /// +1 XP per message, at most once a minute per member. A `MessageCreate` handler
 /// derives the `GUILD_MESSAGES` intent: `build()` adds it to the App (not privileged, so
 /// no `.intents(..)` call; message content and DMs are not requested) and the gateway
-/// starts parsing `MESSAGE_CREATE`. Concurrent (not `ordered`), never droppable.
+/// starts parsing `MESSAGE_CREATE`. Concurrent (not `ordered`), never droppable. An event
+/// handler can render a Template too (`ctx.render(card).await?`, posted with
+/// `ctx.messages().send(channel, view)`), like every interaction context.
 #[derive(EventHandler, Debug)]
 #[event(module = "profile")]
 pub struct AwardXp;

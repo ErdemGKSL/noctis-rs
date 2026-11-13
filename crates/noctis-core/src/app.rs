@@ -755,6 +755,86 @@ impl App {
         self.shared.renderer.as_ref()
     }
 
+    /// Renders `template` through the App's Renderer outside any handler
+    /// (a task spawned before [`run`](App::run), a Shutdown Task), into an
+    /// [`Attachment`](noctis_ui::Attachment) named by its render digest. It
+    /// is the same render as `ctx.render`: the `noctis.render{app,
+    /// template}` span, the `noctis_render_*` metrics and the Render Error
+    /// Sink, with the Upload Budget `Limits::attachment_bytes`. The future
+    /// holds no borrow of the App, so it can be spawned; post the
+    /// attachment with [`messages`](App::messages)`().send(channel, view)`.
+    /// A scheduler started from an `AppStarted` hook renders with
+    /// `HookCtx::render` instead.
+    ///
+    /// ```no_run
+    /// use noctis_core::{App, HandlerError};
+    /// use noctis_ports::{AnimationSpec, ErasedView, Format, Size, Template};
+    ///
+    /// #[derive(serde::Serialize, serde::Deserialize)]
+    /// struct Board;
+    ///
+    /// impl Template for Board {
+    ///     const ID: &'static str = "board";
+    ///     const VERSION: u32 = 1;
+    ///     const SIZE: Size = Size::new(600, 400);
+    ///     const FORMAT: Format = Format::Png;
+    ///     const ANIMATION: Option<AnimationSpec> = None;
+    ///     fn view() -> ErasedView {
+    ///         ErasedView::new(())
+    ///     }
+    /// }
+    ///
+    /// # async fn run(app: &App) -> Result<(), HandlerError> {
+    /// let image = tokio::spawn(app.render(Board)).await.expect("joined")?;
+    /// assert!(image.name().ends_with(".png"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The errors of `CommandCtx::render`; [`RenderError::NoRenderer`](noctis_ports::RenderError::NoRenderer)
+    /// without a Renderer.
+    pub fn render<T: noctis_ports::Template>(
+        &self,
+        template: T,
+    ) -> impl Future<Output = HandlerResult<noctis_ui::Attachment>> + Send + 'static {
+        self.render_with(template, crate::RenderOptions::new())
+    }
+
+    /// [`render`](App::render) with per-call
+    /// [`RenderOptions`](crate::RenderOptions).
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`render`](App::render).
+    pub fn render_with<T: noctis_ports::Template>(
+        &self,
+        template: T,
+        options: crate::RenderOptions,
+    ) -> impl Future<Output = HandlerResult<noctis_ui::Attachment>> + Send + 'static {
+        let report = self.render_report(template, options);
+        async move { report.await.map(|report| report.attachment) }
+    }
+
+    /// [`render_with`](App::render_with), returning a
+    /// [`RenderReport`](crate::RenderReport): the attachment plus the
+    /// encoded `format` and the `settings_used`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`render`](App::render).
+    pub fn render_report<T: noctis_ports::Template>(
+        &self,
+        template: T,
+        options: crate::RenderOptions,
+    ) -> impl Future<Output = HandlerResult<crate::RenderReport>> + Send + 'static {
+        let app = Arc::clone(&self.shared);
+        async move {
+            crate::render::render_at(crate::render::RenderSite::app(&app), template, options).await
+        }
+    }
+
     /// The resolved ports.
     pub(crate) fn ports(&self) -> &Ports {
         &self.ports

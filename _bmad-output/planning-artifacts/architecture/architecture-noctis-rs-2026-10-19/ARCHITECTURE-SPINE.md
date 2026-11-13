@@ -1064,7 +1064,14 @@ list in CI.
     `attachment_size_limit`, else 20 MiB) and computes the edit diff: names already
     on the message are kept by id, new ones are uploaded, absent ones are dropped.
   - Views hold only ready attachments. Rendering is awaited inside the handler
-    (`ctx.render(template).await`), so the auto-defer covers it.
+    (`ctx.render(template).await`), so the auto-defer covers it. Renders are awaited
+    in handlers of every kind: the interaction contexts, event handlers (`EventCtx`),
+    Lifecycle Hooks (`HookCtx`) and the built `App` (`app.render(t)`, a `'static`
+    future for a spawned task), all through one core function with one span, one
+    metric set and the Render Error Sink. Outside an interaction the Upload Budget is
+    `Limits::attachment_bytes`. A render never gets its own lane or detached task:
+    dropping the awaiting future (a shutdown dropping in-flight handler work)
+    cancels it (amended by Story 20.1, maintainer decision §13).
   - `noctis-ports` owns the render contract, so core never depends on
     `noctis-image`:
     - `trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {

@@ -417,6 +417,22 @@ impl EventCtx {
     }
 }
 
+impl EventCtx {
+    /// Where `ctx.render` runs: the App's attachment limit, the event's
+    /// shard, guild, Module and frozen Extensions.
+    fn render_site(&self) -> crate::render::RenderSite<'_> {
+        crate::render::RenderSite {
+            shard: Some(self.0.shard),
+            guild_id: self.0.guild_id,
+            module: Some(self.0.module),
+            extensions: Some(crate::kind::__Extensions::__extensions(self)),
+            ..crate::render::RenderSite::app(&self.0.app)
+        }
+    }
+}
+
+crate::render::scope_render_methods!(EventCtx, "noctis_core::events::EventCtx");
+
 impl crate::kind::__Extensions for EventCtx {
     fn __extensions(&self) -> &crate::Extensions {
         match &self.0.run {

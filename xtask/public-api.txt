@@ -95,6 +95,9 @@ pub fn noctis::App::modules(&self) -> noctis::Modules
 pub fn noctis::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
+pub fn noctis::App::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + 'static
+pub fn noctis::App::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + 'static
+pub fn noctis::App::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + 'static
 pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::image::unstable::Renderer>>
 pub fn noctis::App::resume_sessions(&self) -> bool
 pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
@@ -2749,6 +2752,10 @@ pub fn noctis::events::EventCtx::modules(&self) -> noctis::Modules
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::events::EventCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::events::EventCtx
+pub fn noctis::events::EventCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::events::EventCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::events::EventCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::events::EventCtx
 pub fn noctis::events::EventCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventCtx
@@ -2768,6 +2775,10 @@ pub fn noctis::events::EventCtx::modules(&self) -> noctis::Modules
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::events::EventCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::events::EventCtx
+pub fn noctis::events::EventCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::events::EventCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::events::EventCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::events::EventCtx
 pub fn noctis::events::EventCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventCtx
@@ -4098,6 +4109,10 @@ pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
 pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::lifecycle::HookCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::lifecycle::HookCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::lifecycle::HookCtx
@@ -4115,6 +4130,10 @@ pub fn noctis::lifecycle::HookCtx::module(&self) -> &'static str
 pub fn noctis::lifecycle::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::lifecycle::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::lifecycle::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::lifecycle::HookCtx
+pub fn noctis::lifecycle::HookCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::lifecycle::HookCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::lifecycle::HookCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::lifecycle::HookCtx
 pub fn noctis::lifecycle::HookCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::lifecycle::HookCtx
@@ -5176,6 +5195,9 @@ pub fn noctis::prelude::App::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
+pub fn noctis::prelude::App::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + 'static
+pub fn noctis::prelude::App::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + 'static
+pub fn noctis::prelude::App::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + 'static
 pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::image::unstable::Renderer>>
 pub fn noctis::prelude::App::resume_sessions(&self) -> bool
 pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
@@ -5584,6 +5606,10 @@ pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
 pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::prelude::HookCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::prelude::HookCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::HookCtx
@@ -5601,6 +5627,10 @@ pub fn noctis::prelude::HookCtx::module(&self) -> &'static str
 pub fn noctis::prelude::HookCtx::modules(&self) -> noctis::Modules
 pub fn noctis::prelude::HookCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::HookCtx::webhooks(&self) -> noctis::webhook::Webhooks
+impl noctis::prelude::HookCtx
+pub fn noctis::prelude::HookCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
+pub fn noctis::prelude::HookCtx::render_report<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::image::RenderReport>> + core::marker::Send + '_
+pub fn noctis::prelude::HookCtx::render_with<T: noctis::image::Template>(&self, T, noctis::image::RenderOptions) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::HookCtx
 pub fn noctis::prelude::HookCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::HookCtx

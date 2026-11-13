@@ -763,20 +763,21 @@ If no attempt fits, the render fails with `RenderError::OverBudget { budget, sma
 }`. What was actually encoded is in `RenderOutput::settings_used`
 (`EncodeSettings { size, quality, fps, frames }`; `frames` is 1 for a still or the
 still fallback, whose `RenderOutput::format` is the still format), read through
-`app.renderer()`:
+`render_report` on any context or on the built `App`:
 
 ```rust
-use noctis::image::unstable::RenderJob;   // outside semver (§12)
+use noctis::image::RenderOptions;
 
-let job = RenderJob::of(&card)?;                                 // upload_budget 20 MiB
-let out = app.renderer().expect("a Renderer").render(job).await?;
-assert!(out.bytes.len() as u64 <= 2_097_152);                    // default size_target
-println!("{:?} {}", out.settings_used, out.format.extension());
+let report = app.render_report(card, RenderOptions::new()).await?;  // budget: Limits::attachment_bytes
+assert!(report.attachment.bytes().len() <= 2_097_152);              // default size_target
+println!("{:?} {:?}", report.settings_used, report.format);
 ```
 
 `ctx.render` returns only the `Attachment`; `ctx.render_report(t, RenderOptions::new())`
-returns the same through a handler as a `RenderReport` (`report.attachment`,
-`report.format`, `report.settings_used`).
+returns it as a `RenderReport` (`report.attachment`, `report.format`,
+`report.settings_used`). Every context renders the same way: `CommandCtx`,
+`ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx` (budget: the interaction's upload
+limit), `EventCtx`, `HookCtx` and `App` (budget: `Limits::attachment_bytes`).
 
 ## 9. Cache
 
@@ -854,8 +855,9 @@ texts, both client themes).
 
 ## 12. Unstable
 
-`noctis::image::unstable` holds the items **semver does not cover**; normal bots never
-need them:
+`noctis::image::unstable` holds the items **semver does not cover**; it is the seam
+for a custom Renderer only, and normal bots never need it (every context and `App`
+render with `render`, `render_with` and `render_report`):
 - the renderer-facing contract: `Renderer`, `RendererPorts`, `RenderJob` (with
   `RenderJob::key`), `RenderOutput`, `TemplateDescriptor`, `ErasedView` and
   `decode_template` (no stable path re-exports them);

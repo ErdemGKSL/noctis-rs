@@ -42,6 +42,9 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
 - **Image Templates.** `#[derive(Template)]`, `view!` and `tw!` with Tailwind classes
   checked at compile time, the Theme, PNG, WebP and animated output rendered by takumi
   in a bounded render pool with a render cache, and a font and asset registry.
+  Event handlers, Lifecycle Hooks and the built `App` render too (`ctx.render`,
+  `render_with` and `render_report` on `EventCtx` and `HookCtx`, `app.render(..)` for
+  background tasks), with the same errors, metrics and Render Error Sink.
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,
