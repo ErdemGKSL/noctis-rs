@@ -34,7 +34,9 @@ enough for almost everything, with these moves:
 | A value as an angle | a square wrapper rotated with `Style::new().rotate_deg(a)`; its child sits at the top centre, so it travels on a circle (§3) |
 | N of M | `for i in 0..m { .. }` with a class chosen per item: `tw={if i < n { tw!("..") } else { tw!("..") }}` |
 | Equal parts | `flex-1` children in a `flex gap-*` row, or `grid grid-cols-N` |
-| One thing over another | `relative` parent, `absolute` child with `inset-0`, `top-*`, `left-*`, `right-*`, `bottom-*` (literal or `top-[140px]`); a later sibling paints over an earlier one (there is no `z-*`) |
+| A value as a position | a `relative` track with an `absolute` marker: `style={Style::new().left_pct(v * 100.0).translate_px(-8, 0)}` (half the marker's width back, so it centres on the value) |
+| One thing over another | `relative` parent, `absolute` child with `inset-0`, `top-*`, `left-*`, `right-*`, `bottom-*` (literal or `top-[140px]`) or, when the offset is data, `Style::new().left_px(x).top_px(y)` (`_pct` for percent); a later sibling paints over an earlier one unless `Style::new().z_index(n)` lifts it |
+| A size, radius or border from data | `Style::new().scale(f)` (about the centre, no relayout), `.rounded_px(r)`, `.border_px(w)` |
 | A clipped shape | `overflow-hidden` plus `rounded-*` on the parent |
 | A circle, pill, ring | `rounded-full`; a ring is `rounded-full border-[12px]` with no background |
 | Overlap | negative margins: `-ml-6` |
@@ -42,9 +44,12 @@ enough for almost everything, with these moves:
 | Long text that must not break the layout | `truncate` on a `flex-1` span (one line, ellipsis) or `line-clamp-2` |
 | Depth | `shadow-lg`, `bg-white/10` overlays, `bg-linear-to-br from-indigo-600 to-fuchsia-500` (gradient stops take palette colours only, never theme tokens) |
 
-`Style` has exactly nine setters (`width_px`/`width_pct`, `height_px`/`height_pct`,
-`gap_px`, `bg_rgb`, `color_rgb`, `border_color_rgb`, `opacity`, `translate_px`,
-`rotate_deg`). Anything else that varies is a choice between literal class lists.
+`Style` has these setters (`images-engine.md` §4): `width_px`/`width_pct`,
+`height_px`/`height_pct`, `gap_px`, `bg_rgb`, `color_rgb`, `border_color_rgb`,
+`opacity`, `left_px`/`left_pct`, `top_px`/`top_pct`, `right_px`/`right_pct`,
+`bottom_px`/`bottom_pct`, `rounded_px`, `border_px`, `translate_px`, `rotate_deg`,
+`scale` and `z_index`. Anything else that varies is a choice between literal class
+lists.
 Percentages are clamped to `0..=100` and a NaN is ignored, so a division by zero cannot
 break a render; still, compute ratios with a guard (`max.max(1)`).
 
@@ -449,8 +454,9 @@ impl TemplateView for Sparkline {
 ```
 
 A connected line cannot be drawn (no paths); columns or dots are the sparkline. For
-dots, replace each column by a `flex-1 flex flex-col justify-end` cell holding a spacer
-with `height_pct` and a `w-2 h-2 rounded-full` dot above it.
+dots, replace each column by a `relative flex-1` cell holding an `absolute w-2 h-2
+rounded-full` dot placed with `Style::new().bottom_pct(*p as f32 / max as f32 * 90.0)` (90 so the
+top dot stays inside the cell).
 
 ## 5. Lists and cards
 

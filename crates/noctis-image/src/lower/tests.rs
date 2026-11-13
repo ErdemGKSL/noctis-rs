@@ -68,7 +68,7 @@ fn tailwind_values_parse_a_literal() {
 
 #[test]
 fn style_lowers_to_declarations() {
-    assert_eq!(style_css(&Style::new()), "");
+    assert_eq!(style_css(&Style::new(), &Classes::default()), "");
     let style = Style::new()
         .width_pct(42.5)
         .height_px(10)
@@ -80,16 +80,89 @@ fn style_lowers_to_declarations() {
         .translate_px(-3, 4)
         .rotate_deg(-720.0);
     assert_eq!(
-        style_css(&style),
+        style_css(&style, &Classes::default()),
         "width: 42.5%; height: 10px; gap: 4px; background-color: #00ff00; color: #0a0b0c; \
          border-color: #5865f2; opacity: 0.5; translate: -3px 4px; rotate: -720deg;"
     );
-    let parsed = inline_style("", &style).unwrap().unwrap();
+    let parsed = inline_style("", &style, &Classes::default())
+        .unwrap()
+        .unwrap();
     assert!(!parsed.declarations.is_empty());
-    assert!(inline_style("", &Style::new()).unwrap().is_none());
+    assert!(
+        inline_style("", &Style::new(), &Classes::default())
+            .unwrap()
+            .is_none()
+    );
     assert!(plain(&div(Classes::default()).style(style)).is_ok());
     // Styles apply to text nodes too.
     assert!(plain(&Node::text("t").style(Style::new().color_rgb(1))).is_ok());
+}
+
+#[test]
+fn new_setters_lower_to_declarations_takumi_parses() {
+    let none = Classes::default();
+    let cases: [(Style, &str); 14] = [
+        (Style::new().left_px(-4), "left: -4px;"),
+        (Style::new().top_px(7), "top: 7px;"),
+        (Style::new().right_px(0), "right: 0px;"),
+        (Style::new().bottom_px(i32::MIN), "bottom: -2147483648px;"),
+        (Style::new().left_pct(12.5), "left: 12.5%;"),
+        (Style::new().top_pct(150.0), "top: 100%;"),
+        (Style::new().right_pct(-3.0), "right: 0%;"),
+        (Style::new().bottom_pct(50.0), "bottom: 50%;"),
+        (Style::new().rounded_px(3), "border-radius: 3px;"),
+        (
+            Style::new().border_px(2),
+            "border-width: 2px; border-style: solid;",
+        ),
+        (Style::new().scale(1.5), "scale: 1.5;"),
+        (Style::new().scale(0.0), "scale: 0;"),
+        (Style::new().z_index(-2), "z-index: -2;"),
+        (Style::new().z_index(i32::MAX), "z-index: 2147483647;"),
+    ];
+    for (style, css) in cases {
+        assert_eq!(style_css(&style, &none), css);
+        let parsed = inline_style("", &style, &none).unwrap().unwrap();
+        assert!(!parsed.declarations.is_empty(), "{css}");
+    }
+    let all = Style::new()
+        .translate_px(1, 2)
+        .scale(2.0)
+        .left_px(1)
+        .bottom_pct(5.0)
+        .rounded_px(4)
+        .border_px(1)
+        .z_index(3);
+    assert_eq!(
+        style_css(&all, &none),
+        "translate: 1px 2px; scale: 2; left: 1px; bottom: 5%; border-radius: 4px; \
+         border-width: 1px; border-style: solid; z-index: 3;"
+    );
+    assert!(plain(&div(Classes::dynamic("absolute")).style(all)).is_ok());
+}
+
+#[test]
+fn a_border_style_class_keeps_its_style() {
+    let style = Style::new().border_px(3);
+    for classes in [
+        "border-dashed",
+        "p-1 md:border-dotted",
+        "!border-none",
+        "border-double!",
+    ] {
+        assert_eq!(
+            style_css(&style, &Classes::dynamic(classes)),
+            "border-width: 3px;",
+            "{classes}"
+        );
+    }
+    for classes in ["border", "border-4 border-red-500", "border-dashedx"] {
+        assert_eq!(
+            style_css(&style, &Classes::dynamic(classes)),
+            "border-width: 3px; border-style: solid;",
+            "{classes}"
+        );
+    }
 }
 
 /// A 1x1 PNG.

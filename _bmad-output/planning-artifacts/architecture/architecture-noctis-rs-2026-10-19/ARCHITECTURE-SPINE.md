@@ -761,7 +761,9 @@ list in CI.
     Runtime class strings use the same grammar: an unknown class warns once per
     distinct string, and is an error on an App whose `Runtime` is
     `Runtime::for_test()` (the testkit), so tests fail. Dynamic values use typed
-    style setters.
+    style setters (`Style`), lowered to inline declarations that beat a class of
+    the same property; transforms compose translate, rotate, scale (takumi's CSS
+    Transforms 2 order).
   - CI job `tw-crosscheck` compares the grammar with takumi's own parser. The oracle
     is `takumi-core`'s public `TailwindValues` (`FromStr`), which silently drops
     tokens it doesn't recognize: a class is recognized when parsing it alone yields

@@ -192,7 +192,22 @@ its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a 
   `Style::new()`, `.width_px(u32)`, `.width_pct(f32)` and `.height_pct(f32)` (clamped
   to `0..=100`), `.height_px(u32)`, `.gap_px(u32)`, `.bg_rgb(0xRRGGBB)`,
   `.color_rgb(..)`, `.border_color_rgb(..)` (the low 24 bits are used),
-  `.opacity(f32)` (clamped to `0..=1`), `.translate_px(i32, i32)`, `.rotate_deg(f32)`.
+  `.opacity(f32)` (clamped to `0..=1`), `.translate_px(i32, i32)`, `.rotate_deg(f32)`,
+  `.scale(f32)` (clamped to `0..=10`; `1.0` is natural size), `.left_px(i32)`,
+  `.top_px(i32)`, `.right_px(i32)`, `.bottom_px(i32)` (negative allowed),
+  `.left_pct(f32)`, `.top_pct(f32)`, `.right_pct(f32)`, `.bottom_pct(f32)` (percent of
+  the containing block, clamped to `0..=100`), `.rounded_px(u32)` (all four corners),
+  `.border_px(u32)` (all four sides; solid unless a class picks `border-dashed` and
+  the like; colour from `.border_color_rgb` or a `border-*` colour class) and
+  `.z_index(i32)` (higher draws on top among siblings). `rounded_px(3)` beats
+  `rounded-lg`, `left_px(40)` beats `left-4`.
+  - Insets move a positioned node only: give it `absolute` (or `relative`) in its
+    classes, inside a `relative` parent. `z_index` applies to positioned nodes and
+    flex or grid items.
+  - The transforms always compose in one order around the node's centre, whatever
+    order the setters are called in: translate, then rotate, then scale. The
+    translation is never scaled or rotated (`scale(2.0).translate_px(4, 0)` moves the
+    node 4 px), and `scale` grows the node about its centre without changing layout.
 
 ## 5. Theme (`noctis-theme.css`)
 

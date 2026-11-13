@@ -3921,16 +3921,28 @@ pub struct noctis::image::Style
 impl noctis::image::Style
 pub const fn noctis::image::Style::bg_rgb(self, u32) -> Self
 pub const fn noctis::image::Style::border_color_rgb(self, u32) -> Self
+pub const fn noctis::image::Style::border_px(self, u32) -> Self
+pub const fn noctis::image::Style::bottom_pct(self, f32) -> Self
+pub const fn noctis::image::Style::bottom_px(self, i32) -> Self
 pub const fn noctis::image::Style::color_rgb(self, u32) -> Self
 pub const fn noctis::image::Style::gap_px(self, u32) -> Self
 pub const fn noctis::image::Style::height_pct(self, f32) -> Self
 pub const fn noctis::image::Style::height_px(self, u32) -> Self
+pub const fn noctis::image::Style::left_pct(self, f32) -> Self
+pub const fn noctis::image::Style::left_px(self, i32) -> Self
 pub const fn noctis::image::Style::new() -> Self
 pub const fn noctis::image::Style::opacity(self, f32) -> Self
+pub const fn noctis::image::Style::right_pct(self, f32) -> Self
+pub const fn noctis::image::Style::right_px(self, i32) -> Self
 pub const fn noctis::image::Style::rotate_deg(self, f32) -> Self
+pub const fn noctis::image::Style::rounded_px(self, u32) -> Self
+pub const fn noctis::image::Style::scale(self, f32) -> Self
+pub const fn noctis::image::Style::top_pct(self, f32) -> Self
+pub const fn noctis::image::Style::top_px(self, i32) -> Self
 pub const fn noctis::image::Style::translate_px(self, i32, i32) -> Self
 pub const fn noctis::image::Style::width_pct(self, f32) -> Self
 pub const fn noctis::image::Style::width_px(self, u32) -> Self
+pub const fn noctis::image::Style::z_index(self, i32) -> Self
 impl core::clone::Clone for noctis::image::Style
 pub fn noctis::image::Style::clone(&self) -> Self
 impl core::cmp::PartialEq for noctis::image::Style

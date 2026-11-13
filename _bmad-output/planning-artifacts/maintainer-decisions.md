@@ -745,3 +745,15 @@ Planning decisions (2026-11-13, Epic 20):
   still `ProfileCard`), so "compiles against the new spec" holds trivially; the
   play-once animation is added by Story 20.12's sweep, and the Usage Skill's
   cookbook §2.5 example now uses `.once().hold_end(..)`.
+- (decision, Story 20.7) `Style::scale` clamps to `0..=10`: 0 is allowed (a pop-in
+  animation starts at nothing, and takumi draws `scale: 0` as an empty box), 10 is a
+  generous upper bound for a canvas of at most a few thousand pixels. The transform
+  order is takumi-core 0.31.0's `local_transform` (CSS Transforms 2: translate, then
+  rotate, then scale, around the transform origin, default the centre), documented
+  rather than configurable. `border_px` adds `border-style: solid` (Tailwind's
+  preflight default, and what takumi's own `border-*` width utilities add) unless one
+  of the node's classes is a `border-{solid,dashed,dotted,double,hidden,none}`
+  utility, because an inline `border-width` alone draws nothing in takumi (the
+  initial `border-style` is `none`). The pixel tests live in `noctis-image`'s
+  renderer tests (each setter against a class of the same property, with the class
+  alone as the control); the facade snapshot suite gains `style_setters.png`.

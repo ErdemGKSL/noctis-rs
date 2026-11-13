@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use super::style::Dimension;
+use super::style::{Dimension, Offset};
 use super::*;
 
 fn kids(node: &Node) -> &[Node] {
@@ -236,4 +236,66 @@ fn root_size_mismatch_reads_pixel_styles_and_arbitrary_classes() {
         mismatch("w-[9rem] w-[px] w-[1234567890px]", Style::new()),
         None
     );
+}
+
+#[test]
+fn style_insets_clamp_percentages_and_last_wins() {
+    let s = Style::new()
+        .left_px(-5)
+        .top_pct(150.0)
+        .right_pct(-1.0)
+        .bottom_pct(f32::NAN);
+    assert_eq!(s.left, Some(Offset::Px(-5)));
+    assert_eq!(s.top, Some(Offset::Percent(100.0)));
+    assert_eq!(s.right, Some(Offset::Percent(0.0)));
+    assert_eq!(s.bottom, None);
+    let last = Style::new()
+        .left_pct(20.0)
+        .left_px(3)
+        .top_px(1)
+        .top_pct(42.5);
+    assert_eq!(last.left, Some(Offset::Px(3)));
+    assert_eq!(last.top, Some(Offset::Percent(42.5)));
+    let kept = Style::new()
+        .bottom_px(9)
+        .bottom_pct(f32::INFINITY)
+        .right_px(2)
+        .right_pct(f32::NEG_INFINITY);
+    assert_eq!(kept.bottom, Some(Offset::Px(9)));
+    assert_eq!(kept.right, Some(Offset::Px(2)));
+}
+
+#[test]
+fn style_radius_border_scale_and_z() {
+    const CONST: Style = Style::new()
+        .rounded_px(3)
+        .border_px(2)
+        .scale(20.0)
+        .z_index(-1)
+        .left_pct(50.0);
+    assert_eq!(CONST.rounded, Some(3));
+    assert_eq!(CONST.border_width, Some(2));
+    assert_eq!(CONST.scale, Some(10.0));
+    assert_eq!(CONST.z_index, Some(-1));
+    assert_eq!(CONST.left, Some(Offset::Percent(50.0)));
+    let sc = |v: f32| Style::new().scale(v).scale;
+    assert_eq!(sc(-1.0), Some(0.0));
+    assert_eq!(sc(1.5), Some(1.5));
+    assert_eq!(sc(f32::NAN), None);
+    assert_eq!(
+        Style::new().scale(2.0).scale(f32::INFINITY).scale,
+        Some(2.0)
+    );
+    let last = Style::new()
+        .rounded_px(1)
+        .rounded_px(4)
+        .border_px(1)
+        .border_px(0)
+        .z_index(1)
+        .z_index(5);
+    assert_eq!(
+        (last.rounded, last.border_width, last.z_index),
+        (Some(4), Some(0), Some(5))
+    );
+    assert_ne!(Style::new().z_index(0), Style::new());
 }

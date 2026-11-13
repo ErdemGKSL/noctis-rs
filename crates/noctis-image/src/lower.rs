@@ -25,7 +25,7 @@ use takumi::prelude::{ImageData, ImageSourceInput};
 
 use crate::assets::StaticImages;
 use crate::emoji::{self, Piece};
-use crate::node::{Dimension, ImageSrc, Kind};
+use crate::node::{Dimension, ImageSrc, Kind, Offset};
 use crate::remote::{RemoteImage, Resolved};
 use crate::{Classes, Node, Style};
 
@@ -97,10 +97,12 @@ pub(crate) fn lower(
         Some(values) => lowered.with_tw(values),
         None => lowered,
     };
-    Ok(match inline_style(base_css, node.style_values())? {
-        Some(style) => lowered.with_style(style),
-        None => lowered,
-    })
+    Ok(
+        match inline_style(base_css, node.style_values(), node.class_list())? {
+            Some(style) => lowered.with_style(style),
+            None => lowered,
+        },
+    )
 }
 
 /// The children of a text node holding custom emoji: text runs and inline
@@ -146,10 +148,14 @@ fn tailwind(classes: &Classes) -> Result<Option<TailwindValues>, RenderError> {
         .map_err(RenderError::failed)
 }
 
-/// The inline declarations `base` followed by those of `style`; `None`
-/// when both are empty.
-fn inline_style(base: &str, style: &Style) -> Result<Option<takumi::prelude::Style>, RenderError> {
-    let own = style_css(style);
+/// The inline declarations `base` followed by those of `style` on a node
+/// with `classes`; `None` when both are empty.
+fn inline_style(
+    base: &str,
+    style: &Style,
+    classes: &Classes,
+) -> Result<Option<takumi::prelude::Style>, RenderError> {
+    let own = style_css(style, classes);
     let css = match (base.is_empty(), own.is_empty()) {
         (true, true) => return Ok(None),
         (true, false) => own,
@@ -161,8 +167,14 @@ fn inline_style(base: &str, style: &Style) -> Result<Option<takumi::prelude::Sty
         .map_err(RenderError::failed)
 }
 
-/// `style` as a CSS declaration list; empty for the default style.
-pub(crate) fn style_css(style: &Style) -> String {
+/// `style` as a CSS declaration list on a node with `classes`; empty for
+/// the default style.
+///
+/// A border width adds `border-style: solid` (Tailwind's preflight default,
+/// which takumi's `border-*` width utilities also add) unless a class picks
+/// a border style, so `border_px` draws without a class and keeps a
+/// `border-dashed`.
+pub(crate) fn style_css(style: &Style, classes: &Classes) -> String {
     let mut css = String::new();
     // Writing to a `String` cannot fail.
     let mut push = |args: std::fmt::Arguments<'_>| {
@@ -196,8 +208,58 @@ pub(crate) fn style_css(style: &Style) -> String {
     if let Some(rotate) = style.rotate {
         push(format_args!("rotate: {rotate}deg"));
     }
+    if let Some(scale) = style.scale {
+        push(format_args!("scale: {scale}"));
+    }
+    for (name, inset) in [
+        ("left", style.left),
+        ("top", style.top),
+        ("right", style.right),
+        ("bottom", style.bottom),
+    ] {
+        if let Some(inset) = inset {
+            push(format_args!("{name}: {}", offset(inset)));
+        }
+    }
+    if let Some(radius) = style.rounded {
+        push(format_args!("border-radius: {radius}px"));
+    }
+    if let Some(width) = style.border_width {
+        push(format_args!("border-width: {width}px"));
+        if !sets_border_style(classes) {
+            push(format_args!("border-style: solid"));
+        }
+    }
+    if let Some(z) = style.z_index {
+        push(format_args!("z-index: {z}"));
+    }
     css.truncate(css.trim_end().len());
     css
+}
+
+/// Whether a class of `classes` (with or without variants or `!`) is a
+/// Tailwind border style utility.
+fn sets_border_style(classes: &Classes) -> bool {
+    classes.as_str().split_whitespace().any(|class| {
+        let utility = class.rsplit(':').next().unwrap_or(class);
+        let utility = utility.trim_start_matches('!').trim_end_matches('!');
+        matches!(
+            utility,
+            "border-solid"
+                | "border-dashed"
+                | "border-dotted"
+                | "border-double"
+                | "border-hidden"
+                | "border-none"
+        )
+    })
+}
+
+fn offset(offset: Offset) -> String {
+    match offset {
+        Offset::Px(px) => format!("{px}px"),
+        Offset::Percent(pct) => format!("{pct}%"),
+    }
 }
 
 fn dimension(dimension: Dimension) -> String {

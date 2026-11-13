@@ -106,6 +106,103 @@ template!(Edge {}, "edge", Size::new(4, 1), Format::Png, |_| {
     ])
 });
 
+// Story 20.7: each typed setter against a class of the same property;
+// `styled: false` draws the class alone (the control).
+template!(
+    Rounded { styled: bool },
+    "rounded",
+    Size::new(16, 16),
+    Format::Png,
+    |t| {
+        let node = div(Classes::__literal("w-full h-full bg-red-500 rounded-lg"));
+        if t.styled {
+            node.style(Style::new().rounded_px(3))
+        } else {
+            node
+        }
+    }
+);
+template!(
+    Inset { styled: bool },
+    "inset",
+    Size::new(64, 8),
+    Format::Png,
+    |t| {
+        let marker = div(Classes::__literal(
+            "absolute top-0 left-4 w-2 h-2 bg-red-500",
+        ));
+        let marker = if t.styled {
+            marker.style(Style::new().left_px(40))
+        } else {
+            marker
+        };
+        div(Classes::__literal("relative w-full h-full")).child(marker)
+    }
+);
+template!(Insets {}, "insets", Size::new(20, 20), Format::Png, |_| {
+    div(Classes::__literal("relative w-full h-full")).child(
+        div(Classes::__literal("absolute bg-red-500")).style(
+            Style::new()
+                .left_pct(50.0)
+                .top_px(-2)
+                .right_px(2)
+                .bottom_pct(25.0),
+        ),
+    )
+});
+template!(
+    Bordered { class: bool },
+    "bordered",
+    Size::new(8, 8),
+    Format::Png,
+    |t| {
+        let classes = if t.class {
+            Classes::__literal("w-full h-full bg-red-500 border-4 border-brand")
+        } else {
+            Classes::__literal("w-full h-full bg-red-500")
+        };
+        div(classes).style(Style::new().border_px(2).border_color_rgb(0x00_FF00))
+    }
+);
+template!(
+    Stacked { styled: bool },
+    "stacked",
+    Size::new(8, 8),
+    Format::Png,
+    |t| {
+        let first = div(Classes::__literal("absolute w-full h-full bg-red-500"));
+        let first = if t.styled {
+            first.style(Style::new().z_index(1))
+        } else {
+            first
+        };
+        div(Classes::__literal("relative w-full h-full"))
+            .child(first)
+            .child(div(Classes::__literal("absolute w-full h-full bg-brand")))
+    }
+);
+template!(
+    Scaled { rotate: bool },
+    "scaled",
+    Size::new(32, 32),
+    Format::Png,
+    |t| {
+        // An 8x4 bar centred on (16, 16).
+        let style = Style::new()
+            .scale(2.0)
+            .translate_px(4, 0)
+            .left_px(12)
+            .top_px(14);
+        let style = if t.rotate {
+            style.rotate_deg(90.0)
+        } else {
+            style
+        };
+        div(Classes::__literal("relative w-full h-full"))
+            .child(div(Classes::__literal("absolute w-2 h-1 bg-red-500 scale-50")).style(style))
+    }
+);
+
 /// Where the `Where` view last ran: (thread name, outside tokio).
 static WHERE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
@@ -260,6 +357,12 @@ fn renderer_budget(
             TemplateDescriptor::of::<RootSized>(),
             TemplateDescriptor::of::<NarrowStill>(),
             TemplateDescriptor::of::<Steps>(),
+            TemplateDescriptor::of::<Rounded>(),
+            TemplateDescriptor::of::<Inset>(),
+            TemplateDescriptor::of::<Insets>(),
+            TemplateDescriptor::of::<Bordered>(),
+            TemplateDescriptor::of::<Stacked>(),
+            TemplateDescriptor::of::<Scaled>(),
         ])
         .unwrap();
     renderer
@@ -1561,3 +1664,4 @@ mod cache;
 mod emoji;
 mod plays;
 mod remote;
+mod setters;

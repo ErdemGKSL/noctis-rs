@@ -208,8 +208,9 @@ message keeps its file without an upload.
    fields change: the render cache keys on the data and the version, not on the code.
 2. **Numbers go through `Style`**, never into a class string:
    `style={Style::new().width_pct(p)}`, not `format!("w-[{p}%]")`. `Style` sets width,
-   height, gap, background, text and border colour, opacity, translation and rotation;
-   every technique in the cookbook is built from those nine setters.
+   height, gap, background, text and border colour, opacity, insets (`left`, `top`,
+   `right`, `bottom`), corner radius, border width, translation, rotation, scale and
+   z-index; every technique in the cookbook is built from those setters.
 3. **User text is a text child only** (`{&self.name}`), never a class, never a style.
 4. **Localized text is data.** Format labels in the handler from `Strings` and pass
    them as `String` fields; a Template never reads locale files.

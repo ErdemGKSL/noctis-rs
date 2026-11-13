@@ -50,7 +50,11 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   `n` times (`AnimationSpec::once`, `.plays(Plays::Times(n))`, `plays = n` on the
   attribute; written as total plays in WebP, APNG and GIF) and rest on its first or
   last frame (`hold_start`, `hold_end`) without drawing extra frames, and
-  pixel-identical consecutive frames are encoded as one.
+  pixel-identical consecutive frames are encoded as one. Data-driven values use typed
+  `Style` setters instead of formatted class strings: size, gap, colours, opacity,
+  insets (`left_px`/`left_pct` and the other three sides), `rounded_px`,
+  `border_px`, `translate_px`, `rotate_deg`, `scale` and `z_index`; a setter beats a
+  class of the same property, and the transforms compose as translate, rotate, scale.
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

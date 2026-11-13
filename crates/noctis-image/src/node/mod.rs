@@ -36,8 +36,8 @@ use crate::{RemoteImage, StaticImage};
 
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
-pub(crate) use style::Dimension;
 pub use style::Style;
+pub(crate) use style::{Dimension, Offset};
 
 use into_nodes::sealed::Sealed as _;
 
