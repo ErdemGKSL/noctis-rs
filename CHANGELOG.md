@@ -99,6 +99,8 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   `EmojiSync::replace_changed` (`AppBuilder::emoji_sync`), checks the 2000 limit before
   the first write (EMO-01), prints the plan in a dry run, and returns the diff as
   `PublishReport::emojis()` (`EmojiReport`). `--publish-clear` leaves emojis alone.
+  The [application emojis guide](docs/guides/application-emojis.md) covers the sync
+  policies, Clusters, test and production applications, and testing.
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,
@@ -120,7 +122,11 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
 - **Rules catalog.** Every v1 Discord limit of [`docs/discord-rules.md`](docs/discord-rules.md)
   is enforced by construction or checked at runtime, with a test per rule.
 - **Project template and Usage Skill.** `examples/project-template` is a ready bot
-  whose Usage Skill teaches coding agents the whole API.
+  whose Usage Skill teaches coding agents the whole API. Its `rank` feature posts an
+  animated level-up card from an event handler (plays once, a ring gauge) and renders
+  `/leaderboard` as an activity line chart and a leaderboard with nested avatar
+  assets; its emoji set has white pairs and a drawn `#[emoji(render)]` icon, each with
+  a View or pixel snapshot.
 
 ### Usage Skill (v1)
 

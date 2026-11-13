@@ -4,8 +4,8 @@ A ready-to-copy Discord bot built on [Noctis](https://crates.io/crates/noctis): 
 framework on twilight-rs with built-in sharding, a Components V2 UI kit and Tailwind
 image rendering.
 
-> **Status:** builds and passes its tests (flows, the profile card pixel snapshot, the
-> `BoundedCacheStore` conformance test) against this repository's `noctis`, with default
+> **Status:** builds and passes its tests (flows, View snapshots, the pixel snapshots
+> of every Template, the `BoundedCacheStore` conformance test) against this repository's `noctis`, with default
 > and all features. The noctis-rs CI job `template-build` gates it.
 
 ## What's inside
@@ -14,11 +14,13 @@ image rendering.
 | --- | --- | --- |
 | `/setup start` | `src/modules/setup/` | Hand-written three-step flow: the step in a Payload field, "Step n of 3" progress, pre-filled selects, Back/Next/Cancel, Finish |
 | `/dashboard` | `src/modules/dashboard/` | Hand-written tabs (a `PayloadEnum` field), a role list paginated with the budget helper, module toggles |
-| `/profile`, "Show profile" | `src/modules/profile/` | Rendered card (Template) in a Media Gallery, button → modal → re-render bio editing, XP event handler, user command |
+| `/profile`, "Show profile" | `src/modules/profile/` | Rendered card (Template) in a Media Gallery, button → modal → re-render bio editing, user command |
+| `/leaderboard`, level-up card | `src/modules/rank/` | XP from a `MessageCreate` event handler that renders and posts an animated level-up card (plays once, ring gauge); a line chart and a leaderboard with nested avatar assets (`#[derive(Assets)]`) in one Media Gallery |
+| Application emojis | `src/emoji.rs`, `assets/emoji/` | `#[derive(AppEmojis)]`: file emojis with white pairs and one drawn `#[emoji(render)]` icon, uploaded by Publish, used through `ctx.emojis()` on buttons, select options and in text |
 | `/join`, `/leave`, `/play`, `/skip`, `/stop` (cargo feature `voice`, off by default; needs a C compiler and cmake) | `src/modules/voice/` | Voice connections and the per-guild queue: `.voice(VoiceConfig::default())`, `ctx.voice().join(..)`/`leave(..)`, `call.enqueue(Track::url(..)?)`, a `TrackError` hook, typed `VoiceError` replies; build with `cargo build --features voice` |
 | Custom Adapter | `src/adapters/bounded_cache.rs` | Implementing the `CacheStore` port yourself |
 | Locales | `locales/en-US.yaml`, `locales/tr.yaml` | Typed strings, word-by-word command translation |
-| Tests | `tests/` | Testkit flows, Adapter conformance, pixel snapshot |
+| Tests | `tests/` | Testkit flows, View snapshots, Adapter conformance, pixel snapshots |
 | Agent setup | `AGENTS.md`, `.claude/skills/` | Noctis Usage Skill + rust-best-practices |
 
 Every feature folder has the same shape: `mod.rs` (the Module and its Routes),

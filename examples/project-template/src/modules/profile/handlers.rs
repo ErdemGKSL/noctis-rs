@@ -14,11 +14,9 @@ use noctis::{DiscordCacheReader, Kv, ResponderError};
 use super::view::{ProfileCard, ProfileData, render_profile};
 use super::{
     BioForm, BioFormOverrides, EditBio, Pronouns, RefreshProfile, StoredProfile, profile_key,
-    xp_key,
 };
+use crate::modules::rank::{XP_PER_LEVEL, xp_key};
 use crate::strings::{Strings, keys};
-
-const XP_PER_LEVEL: u64 = 100;
 
 /// `/profile [user]`: the struct's fields are the options (UD-3: fine for a quick
 /// lookup target). `Option<T>` makes this one optional. `rate_limit` lets each user run

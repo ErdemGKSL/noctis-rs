@@ -13,6 +13,10 @@ these guides link to its references for the details.
 - [Cluster deployment](cluster.md): running a bot as several processes that each own a
   Shard Range: the shared `IdentifyQueue`, the HTTP proxy, shared Adapters,
   `NOCTIS_PAYLOAD_KEY`, one publisher and a checklist.
+- [Application emojis](application-emojis.md): declaring an emoji set in code, drawn
+  icons, how Publish uploads it and the sync policies (replace changed, delete
+  undeclared), Clusters (only the publisher writes, the others re-list), test and
+  production applications with different ids, and testing.
 - [Voice and music bots](voice.md): enabling voice, joining the author's channel,
   tracks, the queue and its events, Opus passthrough and pre-encoding, idle leave,
   Cluster notes, limits, testing with the recording driver, and the `examples/music-bot`

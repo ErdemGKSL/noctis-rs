@@ -390,7 +390,7 @@ day per guild). One Publish:
    bulk-overwrite `PUT` only when the diff is not empty and this is not a dry run. The
    first HTTP error stops the rest;
 7. syncs the application emojis the App declares (`.emojis::<Icons>()`; not for
-   `clear`; `images-emoji.md` §5): `GET /applications/{id}/emojis`, then one create per
+   `clear`; `images-emoji.md` §4): `GET /applications/{id}/emojis`, then one create per
    declared name that is missing, one request at a time. A drawn emoji
    (`#[emoji(render)]`) needs a Renderer: without one the Publish fails with
    `PublishError::EmojiNeedsRenderer` before step 4.

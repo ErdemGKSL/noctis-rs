@@ -844,3 +844,28 @@ Planning decisions (2026-11-13, Epic 20):
   switches to the first required one, so the error names a required field.
 - (decision, Story 20.11) `#[derive(Assets)]` rejects enums, unions and generic
   structs, and applies the Template's `HashMap` / `HashSet` scan to its fields.
+- (decision, Story 20.12) XP moved from the `profile` feature to a new `rank` feature
+  (`src/modules/rank/`): `AwardXp` renders and posts the level-up card, `/leaderboard`
+  renders two images. The dashboard's `ModuleKey` gained `Rank` (appended, so old ids
+  still decode) and its module select allows 3 values; `profile` is now named
+  "Profiles". The leaderboard needs every member with XP but `Kv` cannot scan, so a
+  member's first XP takes a slot from an atomic `incr` and the id is stored as `u64`
+  under that slot (race-free, unlike a read-modify-write `Vec`); the board reads at most
+  250 slots, and the template says to query a database Adapter past that.
+- (decision, Story 20.12) The level-up card plays once with `hold_end_ms = 4000` as
+  animated WebP (the default, no `image-gif` feature in the template); its pixel
+  snapshot is the still (`Frame::STILL`, the held end state) and the test asserts
+  `ANIMATION` (`Plays::ONCE`, the hold, the format). The testkit has no gateway-event
+  run, so the event handler's message is covered by a View snapshot of the pure
+  `render_level_up` on an App built with `configure(..).build()?` (its emoji table never
+  listed, which also shows the degraded path) plus the card's pixel snapshot; the
+  leaderboard runs through `TestApp` (empty state, with the drawn emoji's fake id).
+- (decision, Story 20.12) The drawn emoji is `level_up` (`#[emoji(render)]`, art
+  `LevelUpGlyph`, coloured only: it is used in text, never on a coloured button), with
+  its own pixel snapshot. `images-emoji.md` is reordered around the three steps
+  (intro, then §3 declare, §4 Publish, §5 `ctx.emojis()`; the methodology stays §2; art
+  and drawing move to §6 and §7; new §11 on Clusters, several applications and tests),
+  and every cross-reference into it is renumbered. "Every code block compiles" was
+  checked by compiling each Template block of the five image references in a throwaway
+  crate against the template's Noctis (all compile; fragments that need a handler
+  context were skipped); it is not a gate.

@@ -101,16 +101,18 @@ pub struct TurnPage {
 pub enum ModuleKey {
     Setup,
     Profile,
+    Rank,
 }
 
 impl ModuleKey {
-    pub const ALL: [Self; 2] = [Self::Setup, Self::Profile];
+    pub const ALL: [Self; 3] = [Self::Setup, Self::Profile, Self::Rank];
 
     /// The id the Module was mounted with (`Module::new(..)`).
     pub fn module_id(self) -> &'static str {
         match self {
             Self::Setup => "setup",
             Self::Profile => "profile",
+            Self::Rank => "rank",
         }
     }
 
@@ -146,7 +148,7 @@ pub struct ToggleModule {
 #[string_select(
     "dash.on",
     permissions = MANAGE_GUILD,
-    defaults(placeholder = keys::DASHBOARD_ENABLED_PLACEHOLDER, min_values = 0, max_values = 2),
+    defaults(placeholder = keys::DASHBOARD_ENABLED_PLACEHOLDER, min_values = 0, max_values = 3),
     module = "dashboard",
 )]
 pub struct EnabledModules {

@@ -12,6 +12,7 @@ cmdword:
   play: çal
   skip: geç
   stop: durdur
+  leaderboard: sıralama
 
 cmd:
   setup:
@@ -56,6 +57,8 @@ cmd:
     description: Çalan parçayı geç
   stop:
     description: Çalmayı durdur ve sırayı temizle
+  leaderboard:
+    description: Sunucunun en iyi üyelerini ve etkinliğini göster
 
 ctxcmd:
   show_profile:
@@ -106,7 +109,8 @@ dashboard:
   enabled_placeholder: Açık modüller
   module:
     setup: Sunucu kurulumu
-    profile: Profiller ve XP
+    profile: Profiller
+    rank: XP ve sıralama
 
 profile:
   title: "{name} profili"
@@ -128,6 +132,18 @@ profile:
     she: o (kadın)
     they: onlar
     any: herhangi biri
+
+rank:
+  level_up: SEVİYE ATLADI
+  reached: "**{name}** {level}. seviyeye ulaştı!"
+  level_up_alt: "Seviye kartı: {name} {level}. seviyeye ulaştı"
+  board_title: Sıralama
+  board_empty: Henüz kimse XP kazanmadı. Biraz sohbet edip tekrar dene.
+  board_alt: "En iyi üyeler: {entries}"
+  score: "Seviye {level} · {xp} XP"
+  activity_title: Günlük mesajlar
+  activity_alt: Son iki haftadaki günlük mesajlar, çizgi grafik olarak
+  today: "Bugün: {count}"
 
 voice:
   joined: "{channel} kanalına katıldım."

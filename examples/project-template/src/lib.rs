@@ -5,6 +5,8 @@
 //!   hand and whose Modules tab toggles features (UD-5, UD-6).
 //! - `profile` — `/profile` and the "Show profile" user command render a card image into
 //!   a Media Gallery (UD-2), with a modal to edit the bio.
+//! - `rank` — XP per message; an event handler posts an animated level-up card, and
+//!   `/leaderboard` renders an activity line chart and the top members.
 //! - `voice` (template feature `voice`) — `/join channel`, `/leave`, `/play url`, `/skip`, `/stop` (FR-80).
 //!
 //! [`configure`] wires the Adapters and state onto an [`AppBuilder`] and discovers every

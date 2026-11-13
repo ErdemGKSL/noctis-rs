@@ -496,6 +496,11 @@ impl Welcome {
 }
 ```
 
+The Project Template's `AwardXp` handler (`src/modules/rank/events.rs`) does this on a
+`MessageCreate`: when a member reaches a new level it renders the animated
+`LevelUpCard` (played once, its last frame held) and posts `render_level_up(..)` in the
+channel, with the strings of `ctx.guild_locale()` (an event has no interaction locale).
+
 A scheduled leaderboard: start the loop from an `AppStarted` hook and render with the
 hook's context (`HookCtx` is a cheap clone, so move it into the task):
 

@@ -86,7 +86,7 @@ configured resources (`adapters.md` §1.2); a re-seeded id is fed again, and wit
 `DiscordCacheConfig::none()` nothing is fed. Users reach a `USER` cache from the
 interactions themselves (a DM run's invoker, resolved user options).
 
-**Application emojis** (`images-emoji.md` §6): every emoji the App declares
+**Application emojis** (`images-emoji.md` §5): every emoji the App declares
 (`.emojis::<Icons>()`) resolves in `ctx.emojis()` to a stable fake id, without a
 request; `noctis::testkit::fake_emoji_id("check")` is that id, so a test can assert a
 token such as `<:check:ID>`. `app.app_emojis(["check"])` (on the built `TestApp`, like a

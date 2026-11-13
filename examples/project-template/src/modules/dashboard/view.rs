@@ -227,6 +227,7 @@ pub(super) fn module_name(s: &Strings, module: ModuleKey) -> String {
     match module {
         ModuleKey::Setup => s.dashboard.module.setup(),
         ModuleKey::Profile => s.dashboard.module.profile(),
+        ModuleKey::Rank => s.dashboard.module.rank(),
     }
     .to_string()
 }

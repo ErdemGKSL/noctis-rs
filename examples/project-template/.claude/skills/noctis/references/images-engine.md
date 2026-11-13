@@ -701,8 +701,9 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     quality, or keep `still_fallback` on;
   - `UnknownImage { id, image }`: the view drew a `StaticImage` the App did not
     register with `ImageConfig::image` (§6);
-  - `RemoteImage { id, image, reason }`: an `#[asset(required)]` remote image could
-    not be used (§7);
+  - `RemoteImage { id, image, field, reason }`: an `#[asset(required)]` remote image
+    could not be used (§7); `field` is the path of the field that declared it
+    (`avatar`, `rows[3].avatar`), so a leaderboard error names the row;
   - `UndeclaredImage { id, image }`: the view drew a `RemoteImage` no `#[asset]` field
     declares (§7);
   - `NoFont`: only from `App::build` (a Template with no font registered, §6);

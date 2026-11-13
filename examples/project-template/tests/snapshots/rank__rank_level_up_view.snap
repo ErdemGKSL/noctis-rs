@@ -1,0 +1,36 @@
+---
+source: tests/rank.rs
+expression: render_json(&msg)?
+---
+{
+  "allowed_mentions": {
+    "parse": []
+  },
+  "components": [
+    {
+      "accent_color": 5793266,
+      "components": [
+        {
+          "content": "**De\\_niz** reached level 8!",
+          "id": 2,
+          "type": 10
+        },
+        {
+          "id": 3,
+          "items": [
+            {
+              "description": "Level-up card: De_niz reached level 8",
+              "media": {
+                "url": "attachment://e572dff82304700b.webp"
+              }
+            }
+          ],
+          "type": 12
+        }
+      ],
+      "id": 1,
+      "type": 17
+    }
+  ],
+  "flags": 32768
+}

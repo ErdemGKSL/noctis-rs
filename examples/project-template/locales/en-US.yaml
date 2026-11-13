@@ -50,6 +50,8 @@ cmd:
     description: Skip the current track
   stop:
     description: Stop playback and clear the queue
+  leaderboard:
+    description: Show the server's top members and its activity
 
 ctxcmd:
   show_profile:
@@ -101,7 +103,8 @@ dashboard:
   enabled_placeholder: Enabled modules
   module:
     setup: Server setup
-    profile: Profiles and XP
+    profile: Profiles
+    rank: XP and leaderboard
 
 profile:
   title: "{name}'s profile"
@@ -123,6 +126,18 @@ profile:
     she: she/her
     they: they/them
     any: any pronouns
+
+rank:
+  level_up: LEVEL UP
+  reached: "**{name}** reached level {level}!"
+  level_up_alt: "Level-up card: {name} reached level {level}"
+  board_title: Leaderboard
+  board_empty: Nobody has earned XP yet. Chat a little and try again.
+  board_alt: "Top members: {entries}"
+  score: "Level {level} · {xp} XP"
+  activity_title: Messages per day
+  activity_alt: Messages per day over the last two weeks, as a line chart
+  today: "Today: {count}"
 
 voice:
   joined: "Joined {channel}."

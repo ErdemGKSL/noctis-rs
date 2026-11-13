@@ -8,6 +8,7 @@
 pub mod dashboard;
 pub mod ops;
 pub mod profile;
+pub mod rank;
 pub mod setup;
 #[cfg(feature = "voice")]
 pub mod voice;

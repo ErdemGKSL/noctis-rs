@@ -206,7 +206,7 @@ development_status:
   19-3-ephemeral-emulation-for-prefix-runs: done
   epic-19-retrospective: optional
 
-  epic-20: in-progress
+  epic-20: done
   20-1-render-from-events-hooks-and-background-tasks: done
   20-2-per-call-render-size-budget: done
   20-3-application-emoji-rules-and-declared-sets: done
@@ -218,5 +218,5 @@ development_status:
   20-9-lines-and-areas: done
   20-10-theme-gradient-stops-tabular-nums-and-z-in-the-class-gramma: done
   20-11-asset-in-nested-template-data: done
-  20-12-project-template-cookbook-and-guide-on-the-new-image-and-em: backlog
+  20-12-project-template-cookbook-and-guide-on-the-new-image-and-em: done
   epic-20-retrospective: optional

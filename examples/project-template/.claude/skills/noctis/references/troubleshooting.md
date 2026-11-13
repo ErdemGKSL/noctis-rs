@@ -404,7 +404,7 @@ read what the rule means and apply the fix in the reference it names. Numeric li
 | IMG-04 | Discord emoji tokens only in data fields | move the `<:name:id>` token into a data field; `images-engine.md` §6 |
 | VC-01 | voice op 4 goes through the owning shard and GW-04 | use `ctx.voice()`; handle `VoiceError`; `voice.md` |
 | VC-02 | one voice connection per guild | one call per guild; a newer join replaces it; `voice.md` |
-| EMO-01 | at most 2000 emojis per application | declare fewer names (or drop `#[emoji(white)]` where no coloured button needs it); `BuildViolation::TooManyEmojis`; `images-emoji.md` §5.0 |
-| EMO-02 | an emoji image is at most 256 KiB | shrink or re-export the file (a flat 128×128 PNG is about 1 KB); `images-emoji.md` §3 |
-| EMO-03 | emoji name 2-32 of `[A-Za-z0-9_]`, unique per application | rename the variant or set `#[emoji(name = "..")]`; for `BuildViolation::DuplicateEmoji` rename one of the two sets' names; `images-emoji.md` §5.0 |
-| EMO-04 | emoji files are PNG, JPEG or GIF | add the missing `<dir>/<name>.png` (or `#[emoji(file = "..")]`), convert WebP/AVIF/SVG to PNG; `images-emoji.md` §5.0 |
+| EMO-01 | at most 2000 emojis per application | declare fewer names (or drop `#[emoji(white)]` where no coloured button needs it); `BuildViolation::TooManyEmojis`; `images-emoji.md` §3 |
+| EMO-02 | an emoji image is at most 256 KiB | shrink or re-export the file (a flat 128×128 PNG is about 1 KB); `images-emoji.md` §6 |
+| EMO-03 | emoji name 2-32 of `[A-Za-z0-9_]`, unique per application | rename the variant or set `#[emoji(name = "..")]`; for `BuildViolation::DuplicateEmoji` rename one of the two sets' names; `images-emoji.md` §3 |
+| EMO-04 | emoji files are PNG, JPEG or GIF | add the missing `<dir>/<name>.png` (or `#[emoji(file = "..")]`), convert WebP/AVIF/SVG to PNG; `images-emoji.md` §3 |

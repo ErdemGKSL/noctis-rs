@@ -17,7 +17,11 @@ use serde::{Deserialize, Serialize};
 ```
 
 and that the Template is registered: add `module = "<feature>"` to its `#[template(..)]`
-(discovered), as the first example of `images.md` does. Ids in this file use the prefix
+(discovered), as the first example of `images.md` does. The Project Template runs these
+techniques in its own code, each with a pixel snapshot in `tests/templates.rs`:
+`src/modules/profile/view.rs` (the profile card, §5.3) and `src/modules/rank/view.rs`
+(an animated level-up card with a ring gauge, §2.5 and §3.1; an activity line chart with
+a `left_pct`/`bottom_pct` marker, §6.3; a leaderboard with nested avatar assets, §5.1). Ids in this file use the prefix
 `ui.`; give yours the feature's name (`rank.progress`).
 
 ## 1. The toolbox
@@ -425,17 +429,25 @@ A Thumbnail is small everywhere: one shape, at most one short number, strong con
 #[template(id = "ui.badge", version = 1, size = (256, 256), format = Png)]
 pub struct LevelBadge {
     pub level: u32,
-    pub caption: String,   // "level"
-    pub tint: u32,         // tier colour
+    pub caption: String,          // "level"
+    pub tint: u32,                // tier colour
+    pub ribbon: Option<String>,   // "MAX" at the level cap
 }
 
 impl TemplateView for LevelBadge {
     fn view(&self, _frame: Frame) -> Node {
         view! {
-            <div tw="flex items-center justify-center w-full h-full">
-                <div tw="flex flex-col items-center justify-center w-60 h-60 rounded-full border-[12px] bg-slate-900 shadow-lg"
+            <div tw="relative flex items-center justify-center w-full h-full">
+                // Written before the disc but painted over it: `z-10` lifts it.
+                if let Some(ribbon) = &self.ribbon {
+                    <span tw="absolute bottom-3 z-10 px-5 py-1 rounded-full bg-brand text-2xl font-black text-white">
+                        {ribbon}
+                    </span>
+                }
+                // `shadow-brand` colours the glow with the theme's `--color-brand`.
+                <div tw="flex flex-col items-center justify-center w-60 h-60 rounded-full border-[12px] bg-slate-900 shadow-xl shadow-brand"
                      style={Style::new().border_color_rgb(self.tint)}>
-                    <span tw="text-8xl font-black text-white">{self.level}</span>
+                    <span tw="text-8xl font-black text-white tabular-nums">{self.level}</span>
                     <span tw="text-2xl font-semibold uppercase tracking-widest"
                           style={Style::new().color_rgb(self.tint)}>{&self.caption}</span>
                 </div>
@@ -447,7 +459,10 @@ impl TemplateView for LevelBadge {
 
 The root has no background, so the PNG is transparent around the disc and sits on any
 client theme. A four-digit level needs `text-6xl`: choose the class from the digit
-count with a `tw!` branch.
+count with a `tw!` branch. Tree order decides painting: without `z-10` the disc, written
+later, would cover the ribbon. When the order depends on data, use
+`Style::new().z_index(n)` instead of the class. Theme colours work wherever Tailwind
+takes a colour: `shadow-brand`, `from-brand via-brand/50 to-brand-soft`.
 
 ### 4.2 Avatar with a status dot
 
@@ -582,6 +597,9 @@ impl TemplateView for Leaderboard {
 - One page per image; page with buttons (`images-ui.md` §5). The viewer's own row,
   highlighted, is one more `tw!` branch on `row.rank == self.me`.
 - The alt text names the top entries: "Top members: 1. Deniz 9 000 XP, 2. …".
+- The Project Template's `/leaderboard` (`src/modules/rank/`) is this recipe end to
+  end: the handler loads the rows, renders the board and the activity chart at once
+  with `tokio::try_join!` and shows both in one Media Gallery.
 
 ### 5.2 Avatar stack
 
@@ -1044,7 +1062,7 @@ impl TemplateView for Loading {
 - **Unicode emoji** (`"🔥 Streak"`) draw in colour only with the `image-emoji` feature;
   without it they are boxes. Credit Twemoji when you ship it (`images-engine.md` §6).
 - **Discord custom emoji** in a data field (`"gg <:pepe:123456789012345678>"`) draw
-  inline automatically, application emojis included (`images-emoji.md` §6); never
+  inline automatically, application emojis included (`images-emoji.md` §5); never
   write such a token in literal `view!` text.
 - **Avatars and icons**: `#[asset] avatar: RemoteImage` on the Template, built in the
   handler:

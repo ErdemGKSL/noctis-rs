@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 116 of 125" src="https://img.shields.io/badge/stories-116%20%2F%20125-3B2F8F">
+  <img alt="Stories done: 123 of 125" src="https://img.shields.io/badge/stories-123%20%2F%20125-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,16 +25,14 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–13 and 15–19 are done
+> **Noctis is under active development and not yet published.** Epics 1–13 and 15–20 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
 > module operations, opt-in extras, event pipeline throughput, voice and music bots,
-> registrations defined anywhere, prefix commands that emulate slash Commands).
-> Epic 20 (application emojis and image engine additions) is in progress (5 of 12 stories
-> done): emojis declared in code, looked up by a typed name and uploaded by Publish, and
-> renders from events, hooks and background tasks with a per-call size budget.
+> registrations defined anywhere, prefix commands that emulate slash Commands,
+> application emojis and image engine additions).
 > Epic 14 (launch readiness) is in progress (7 of 9 stories done): the release pipeline is
 > ready and CI runs again; the last two stories (repository settings and release secrets,
 > then publishing 0.1.0) wait on the maintainer ([release runbook](docs/guides/release.md)).
@@ -79,7 +77,7 @@ Noctis provides all of that as one layer with sensible defaults:
 | **Commands** | `"settings logs channel"` becomes command, group and subcommand. Patterns like `"config (set\|get) (prefix\|welcome)"` are supported, with typed option structs, autocomplete, context menus, localized names, and Publish only when something changed |
 | **Interaction routing** | O(1) dispatch by Route, typed Payloads with a compile-time length proof, Refs (11-char, ≥64-bit random keys) for large state, expiry handling, middleware with typed extensions, automatic defer before the 3 s deadline |
 | **Components V2 UI kit** | Typed builders for every V2 and modal component with placement checked by the type system, compile-time and runtime limit validation, cost and "how many rows fit" budget helpers, Route-built components with length-proven `custom_id`s, an ergonomic Responder (`ctx.respond`, `ctx.update`, `ctx.reply_text`), attachment tracking. No widget layer: tabs, pagination and step flows are short recipes you own |
-| **Images and GIFs** | `view!` / `tw!` templates with Tailwind v4 classes validated at compile time, a bounded render pool, render cache with request de-duplication, font and asset registry, renders from any context with a per-call size budget |
+| **Images and GIFs** | `view!` / `tw!` templates with Tailwind v4 classes validated at compile time, typed shapes for rings, gauges, pies, line and area charts, animations that play once and hold their last frame, a bounded render pool, render cache with request de-duplication, font and asset registry, renders from any context with a per-call size budget |
 | **Application emojis** | Emoji sets declared in code (`#[derive(AppEmojis)]`, files checked at compile time or drawn from a Template), uploaded by Publish, and looked up by a typed name (`ctx.emojis().on(style, Icons::Check)`) |
 | **Adapters** | RefStore, SessionStore, RateLimitStore, RenderCache, AssetStore, LocaleSource, CacheStore, ModuleStateStore, IdentifyQueue. In-memory defaults ship, and a conformance test suite checks your own implementations |
 | **Localization** | Locale files compiled into typed accessors, word-by-word command name translation, User and Guild Locale on every context |
@@ -236,6 +234,7 @@ Read the full design:
 | [Coming from tescord, dbi, serenity or poise](docs/guides/concept-map.md) | What each concept you know is called in Noctis, and what Noctis does not do |
 | [Registrations defined anywhere](docs/guides/discovery.md) | `module = ".."` on any Command, component, handler, hook or Template, `#[noctis::module]` and `AppBuilder::discover()`: no central registration list |
 | [Cluster deployment](docs/guides/cluster.md) | Running one bot as several processes: Shard Ranges, the shared `IdentifyQueue`, the HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, one publisher |
+| [Application emojis](docs/guides/application-emojis.md) | Declaring an emoji set in code, Publish and its sync policies, Clusters (only the publisher writes), test and production applications, testing |
 | [Voice and music bots](docs/guides/voice.md) | The `voice` feature: joining, tracks and the queue, Opus passthrough, Cluster notes, testing |
 | [Releasing Noctis](docs/guides/release.md) | The maintainer's release runbook: release-plz, the release PR, the protected `release` environment, publishing 0.1.0, troubleshooting |
 
@@ -280,7 +279,7 @@ done. Live per-story status is in
 | 17 | Voice and music bots | P1 | ✅ Done |
 | 18 | Registrations defined anywhere | P1 | ✅ Done |
 | 19 | Prefix commands emulate slash Commands | P2 | ✅ Done |
-| 20 | Application emojis and image engine additions | P1 | 🔨 In progress (5 / 12) |
+| 20 | Application emojis and image engine additions | P1 | ✅ Done |
 
 **What already works**
 
@@ -365,6 +364,17 @@ done. Live per-story status is in
     (types under `noctis::image::unstable`), with the Upload Budget checked at the render boundary.
   - `render` on `EventCtx`, `HookCtx` and the built `App` (background tasks), and a
     per-call size cap, `RenderOptions::max_bytes(..)`.
+  - Animation play count and holds (`plays = 1, hold_end_ms = ..`, `Plays`,
+    `AnimationSpec::once()`), with identical frames merged in every format.
+  - Typed shape nodes: `shape::Arc` (rings and gauges with round caps), `shape::Pie`,
+    `shape::Line` and `shape::Area` (up to 512 points), drawn with inline CSS takumi
+    already parses.
+  - More typed `Style` setters (positions in px and percent, `rounded_px`,
+    `border_px`, `translate_px`, `rotate_deg`, `scale`, `z_index`), theme colours as
+    gradient stops and shadow colours (`from-brand`, `shadow-brand`), `tabular-nums`
+    and `z-*` in the class grammar.
+  - `#[derive(Assets)]` for rows that hold their own avatars (`#[asset] rows:
+    Vec<Row>`), with errors naming the field path (`rows[3].avatar`).
 - **Application emojis.**
   - `#[derive(AppEmojis)]` sets: names, files, formats and the 256 KiB cap checked at
     `cargo check` (EMO-02..04), the 2000-emoji limit and duplicate names at `App::build`,
@@ -460,13 +470,15 @@ done. Live per-story status is in
 - Official Redis and SQL adapter crates
 - Zero-downtime resharding and a cross-process request bus
 - A library of reusable Views and image templates (cards, leaderboards, charts)
-- Locale scaffolding CLI, a named-emoji registry, runtime-loaded templates
+- Locale scaffolding CLI, runtime-loaded templates
 
 ## Project template
 
 [`examples/project-template/`](examples/project-template/) is a ready-to-copy bot. It
-includes a hand-written setup flow, a tabbed dashboard with pagination, and a rendered
-profile card. It ships with:
+includes a hand-written setup flow, a tabbed dashboard with pagination, a rendered
+profile card, a level-up card posted from an event handler (animated, plays once, ring
+gauge), a leaderboard with an activity line chart and nested avatar assets, and an
+application emoji set with white pairs and a drawn icon. It ships with:
 
 - an `AGENTS.md` for AI coding agents;
 - **the Noctis Usage Skill**, a detailed skill that documents the whole public API,

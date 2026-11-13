@@ -1,12 +1,11 @@
 //! Profiles: a rendered card in a Media Gallery (UD-2), a button → modal → re-render
 //! chain to edit the bio (FR-29, FR-63), a user context-menu command (FR-12), a badge
-//! lookup with autocomplete (FR-10) and an XP event handler (FR-6).
+//! lookup with autocomplete (FR-10). XP and levels live in the `rank` feature.
 //!
 //! Layout: `mod.rs` (Module, component structs, the modal form, storage keys),
 //! `view.rs` (the card Template and `render_profile`), `handlers.rs` (Command structs
-//! and every `#[handler]` impl), `events.rs` (gateway events; tescord's "trigger" file).
+//! and every `#[handler]` impl).
 
-mod events;
 mod handlers;
 pub mod view;
 
@@ -133,8 +132,4 @@ pub struct StoredProfile {
 
 pub(crate) fn profile_key(guild: Id<GuildMarker>, user: Id<UserMarker>) -> String {
     format!("profile:{guild}:{user}")
-}
-
-pub(crate) fn xp_key(guild: Id<GuildMarker>, user: Id<UserMarker>) -> String {
-    format!("xp:{guild}:{user}")
 }

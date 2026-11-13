@@ -305,7 +305,7 @@ async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Resu
     let suggestions = auto.suggestions();
     assert_eq!(suggestions.len(), 1);
     assert_eq!(suggestions[0].0, "profile");
-    assert!(suggestions[0].1.starts_with("Profiles and XP"));
+    assert!(suggestions[0].1.starts_with("Profiles"));
 
     // A picked module opens the Modules tab; an unknown value falls back to Overview.
     let modules = app

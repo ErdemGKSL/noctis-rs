@@ -534,7 +534,7 @@ replacement `Renderer` may cache its own way or ignore the render cache.
 | `OutputFormat` | `Png`, `Jpeg`, `Webp`, `Gif`, `Apng`; `extension()` → `"png"`, `"jpg"`, `"webp"`, `"gif"`, `"png"` (Discord shows APNG as `.png`); `From<Format>`, `From<AnimatedFormat>` |
 | `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }`; `digest` names the attachment (a custom Renderer uses `RenderJob::key`; the takumi Renderer uses its render cache key, except a degraded (uncached) render, which is named by its bytes) |
 | `EncodeSettings` | `{ size: Size, quality: Option<u8>, fps: Option<u16>, frames: u32 }` |
-| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, `OverBudget { budget, smallest }`, `NoRenderer`, …, `RemoteImage { id, image, reason }`, `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
+| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, `OverBudget { budget, smallest }`, `NoRenderer`, …, `RemoteImage { id, image, field, reason }` (`field` is the path of the declaring field, `rows[3].avatar`), `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
 
 The render enums are closed (exhaustive `match` is fine); the render structs have
 public fields, except `Size`, which validates.
