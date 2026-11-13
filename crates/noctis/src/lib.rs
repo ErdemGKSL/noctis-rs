@@ -2501,9 +2501,13 @@ pub mod image {
     //!   for rings and 270° gauges, with optional round caps) are children
     //!   like any node (`{Pie::new([(3, 0x5865F2), (1, 0x57F287)])}`), fill
     //!   their box (`w-full h-full` unless their `classes` size them) and
-    //!   draw a circle of its smaller side, clockwise from 12 o'clock. A
-    //!   shape with more than [`shape::MAX_SLICES`] (64) slices fails its
-    //!   render with `RenderError::Unsupported`.
+    //!   draw a circle of its smaller side, clockwise from 12 o'clock.
+    //!   [`shape::Line`] (a connected line, a band of `stroke_px` pixels with
+    //!   bevel joins) and [`shape::Area`] (filled down to the bottom edge)
+    //!   draw over their whole box from `(x, y)` points in fractions of it
+    //!   (y up) or from a series (`Line::series(values)`). A shape with more
+    //!   than [`shape::MAX_SLICES`] (64) slices or [`shape::MAX_POINTS`]
+    //!   (512) points fails its render with `RenderError::Unsupported`.
     //! - The Theme: [`Theme`], parsed from `noctis-theme.css` ([`ThemeError`],
     //!   [`ThemeErrorKind`], `[TW-02]`); [`theme!`] embeds it. Its tokens are
     //!   read through [`ThemeTokens`] by [`ThemeNamespace`].

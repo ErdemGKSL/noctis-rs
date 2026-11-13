@@ -1,19 +1,22 @@
-//! Shape nodes: [`Pie`] and [`Arc`], drawn as one node each.
+//! Shape nodes: [`Pie`], [`Arc`], [`Line`] and [`Area`], drawn as one node
+//! each.
 //!
 //! A shape is a child like any other (`{Pie::new(..)}` in `view!`) and fills
 //! its box: by default it is `w-full h-full` of its parent, and
 //! [`classes`](Pie::classes) / [`style`](Pie::style) size and place it like
 //! any node (`size-32`, `absolute inset-0`, ..). The drawing is a circle of
 //! the box's smaller side, centred in the box. Angles are in degrees,
-//! clockwise from 12 o'clock.
+//! clockwise from 12 o'clock. A [`Line`] or an [`Area`] draws over the
+//! whole box instead, its points in fractions of the box (y up).
 //!
 //! The Renderer lowers a shape to CSS that takumi draws (a `conic-gradient`
 //! background on a round, square box, with a `radial-gradient` mask for an
-//! arc's hole); no SVG is involved. A shape is built from Template data in
+//! arc's hole; a box clipped to a `clip-path: polygon(..)` for a line or an
+//! area); no SVG is involved. A shape is built from Template data in
 //! the view, so its values are part of the render key through that data.
 //!
 //! ```
-//! use noctis_image::shape::{Arc, Pie};
+//! use noctis_image::shape::{Arc, Area, Line, Pie};
 //!
 //! let pie = Pie::new([(3, 0x5865F2), (1, 0x57F287)]).start_deg(90.0);
 //! let gauge = Arc::new(0.72, 0x5865F2)
@@ -22,12 +25,18 @@
 //!     .sweep_deg(270.0)
 //!     .thickness_pct(18.0)
 //!     .round_caps(true);
-//! # let _ = (pie, gauge);
+//! let line = Line::series([3, 5, 4, 8, 6], 0x5865F2).stroke_px(3.0);
+//! let area = Area::series([3, 5, 4, 8, 6], 0x2B2D31);
+//! # let _ = (pie, gauge, line, area);
 //! ```
 
 use std::fmt::Write as _;
 
 use super::{Classes, Node, Style, rgb24};
+
+mod line;
+
+pub use line::{Area, Line, MAX_POINTS};
 
 /// The most slices one shape draws; a [`Pie`] with more fails its render
 /// with `RenderError::Unsupported`.
@@ -204,6 +213,8 @@ impl Arc {
 pub(crate) enum Shape {
     Pie(Pie),
     Arc(Arc),
+    Line(Line),
+    Area(Area),
 }
 
 impl Shape {
@@ -212,23 +223,58 @@ impl Shape {
         match self {
             Self::Pie(_) => "Pie",
             Self::Arc(_) => "Arc",
+            Self::Line(_) => "Line",
+            Self::Area(_) => "Area",
         }
     }
 
-    /// The number of slices the shape draws.
-    pub(crate) fn slice_count(&self) -> usize {
+    /// Why the shape is over its cap: [`MAX_SLICES`] slices or
+    /// [`MAX_POINTS`] points.
+    pub(crate) fn over_cap(&self) -> Option<String> {
+        let (count, cap, what) = match self {
+            Self::Pie(pie) => (pie.drawn().count(), MAX_SLICES, "slices"),
+            Self::Arc(arc) => (arc_segments(arc).len(), MAX_SLICES, "slices"),
+            Self::Line(Line { points, .. }) | Self::Area(Area { points, .. }) => {
+                (line::drawn(points).count(), MAX_POINTS, "points")
+            }
+        };
+        (count > cap).then(|| {
+            format!(
+                "shape `{}` draws {count} {what}, more than the cap of {cap}",
+                self.name()
+            )
+        })
+    }
+
+    /// The inline CSS of a pie's or an arc's round, square box and of each
+    /// of its round caps; `None` for a line or an area.
+    pub(crate) fn css(&self) -> Option<(String, Vec<String>)> {
         match self {
-            Self::Pie(pie) => pie.drawn().count(),
-            Self::Arc(arc) => arc_segments(arc).len(),
+            Self::Pie(pie) => Some((pie_css(pie), Vec::new())),
+            Self::Arc(arc) => Some(arc_css(arc)),
+            Self::Line(_) | Self::Area(_) => None,
         }
     }
 
-    /// The inline CSS of the shape's round, square box and of each of its
-    /// round caps.
-    pub(crate) fn css(&self) -> (String, Vec<String>) {
+    /// The `clip-path` of a line drawn in a box of `width` x `height`
+    /// pixels, or of an area; `None` when nothing is drawn.
+    pub(crate) fn polygon(&self, size: Option<(f64, f64)>) -> Option<String> {
         match self {
-            Self::Pie(pie) => (pie_css(pie), Vec::new()),
-            Self::Arc(arc) => arc_css(arc),
+            Self::Line(line) => {
+                let (width, height) = size?;
+                line::line_polygon(&line.points, f64::from(line.stroke_px), width, height)
+            }
+            Self::Area(area) => line::area_polygon(&area.points),
+            Self::Pie(_) | Self::Arc(_) => None,
+        }
+    }
+
+    /// The `0xRRGGBB` colour of a line or an area.
+    pub(crate) fn fill(&self) -> Option<u32> {
+        match self {
+            Self::Line(line) => Some(line.color),
+            Self::Area(area) => Some(area.color),
+            Self::Pie(_) | Self::Arc(_) => None,
         }
     }
 }
@@ -244,6 +290,20 @@ impl From<Arc> for Node {
     fn from(arc: Arc) -> Self {
         let (classes, style) = (arc.classes.clone(), arc.style);
         Node::shape(Shape::Arc(arc)).classes(classes).style(style)
+    }
+}
+
+impl From<Line> for Node {
+    fn from(line: Line) -> Self {
+        let (classes, style) = (line.classes.clone(), line.style);
+        Node::shape(Shape::Line(line)).classes(classes).style(style)
+    }
+}
+
+impl From<Area> for Node {
+    fn from(area: Area) -> Self {
+        let (classes, style) = (area.classes.clone(), area.style);
+        Node::shape(Shape::Area(area)).classes(classes).style(style)
     }
 }
 

@@ -59,6 +59,11 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   (a value over an optional track, `thickness_pct`, `start_deg`, `sweep_deg` for a
   270° gauge, `round_caps`) and `shape::Pie` (slices proportional to their values,
   clockwise from 12 o'clock), drawn with CSS gradients, no SVG; at most 64 slices.
+- Line charts and sparklines are real lines: `noctis::image::shape::Line` draws a
+  connected line as a band of `stroke_px` pixels with bevel joins and
+  `shape::Area` fills under it, from `(x, y)` points in fractions of the node's box
+  (y up) or from a series (`Line::series(values)`, spread on x and scaled to the
+  values' range); NaN points are skipped, at most 512 points (`shape::MAX_POINTS`).
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

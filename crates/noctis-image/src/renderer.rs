@@ -37,7 +37,7 @@ use crate::cache::{self, AssetPairs, KeyInputs, RenderKey};
 use crate::caps::RenderCaps;
 use crate::flight::{self, Flights};
 use crate::fonts::FontRegistry;
-use crate::lower::lower;
+use crate::lower::{LineBoxes, lower, lower_with};
 use crate::pool::{Lane, RenderPool, Requester};
 use crate::remote::{AssetFetcher, Declared, RemoteImage, Resolved};
 use crate::tw::Theme;
@@ -600,17 +600,29 @@ impl Shared {
         self.check
             .check(&node, &self.theme)
             .map_err(RenderError::failed)?;
-        let root = lower(&node, &self.images, resolved, job.template_id)?;
         let (width, height) = (job.size.width(), job.size.height());
-        let options = RenderOptions::builder()
-            .viewport(Viewport::new((width, height)))
-            .fonts(self.fonts.fonts())
-            .node(root)
-            .stylesheet(Arc::clone(&self.stylesheet))
-            .time_ms(time_ms)
-            .font_families(self.fonts.chain().cloned())
-            .build();
-        let bitmap = takumi::render(options).map_err(RenderError::failed)?;
+        let options = |root| {
+            RenderOptions::builder()
+                .viewport(Viewport::new((width, height)))
+                .fonts(self.fonts.fonts())
+                .node(root)
+                .stylesheet(Arc::clone(&self.stylesheet))
+                .time_ms(time_ms)
+                .font_families(self.fonts.chain().cloned())
+                .build()
+        };
+        let root = if node.has_line() {
+            // A line's band needs its box's pixel size: a probe pass lays
+            // the frame out once to measure it.
+            let mut probe = LineBoxes::probe();
+            let tree = lower_with(&node, &self.images, resolved, job.template_id, &mut probe)?;
+            let measured = takumi::measure(options(tree)).map_err(RenderError::failed)?;
+            let mut lines = LineBoxes::measured(&measured, probe.count());
+            lower_with(&node, &self.images, resolved, job.template_id, &mut lines)?
+        } else {
+            lower(&node, &self.images, resolved, job.template_id)?
+        };
+        let bitmap = takumi::render(options(root)).map_err(RenderError::failed)?;
         if (bitmap.width(), bitmap.height()) != (width, height) {
             return Err(RenderError::failed(format!(
                 "takumi drew {}x{} pixels for a {width}x{height} Template",

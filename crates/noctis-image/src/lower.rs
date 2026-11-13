@@ -13,7 +13,11 @@
 //! `flex items-center justify-center w-full h-full` before the node's own)
 //! holding one round, square box whose inline style draws the shape: a
 //! `conic-gradient` background, a `radial-gradient` mask for an arc's hole,
-//! and absolutely placed circles for round caps.
+//! and absolutely placed circles for round caps. A line or an area becomes
+//! a `flex w-full h-full` container holding one box that fills it, filled
+//! with the colour and clipped to a `clip-path: polygon(..)`: an area's in
+//! percent of the box, a line's band in pixels of the box size a probe
+//! pass measured ([`LineBoxes`]).
 //!
 //! A text node holding Discord custom emoji tokens (IMG-04) becomes an
 //! inline container carrying the node's classes and style, whose children
@@ -32,7 +36,7 @@ use takumi::prelude::{ImageData, ImageSourceInput};
 
 use crate::assets::StaticImages;
 use crate::emoji::{self, Piece};
-use crate::node::shape::{MAX_SLICES, Shape};
+use crate::node::shape::Shape;
 use crate::node::{Dimension, ImageSrc, Kind, Offset};
 use crate::remote::{RemoteImage, Resolved};
 use crate::{Classes, Node, Style};
@@ -59,6 +63,17 @@ pub(crate) fn lower(
     remote: &Resolved,
     template: &str,
 ) -> Result<takumi::prelude::Node, RenderError> {
+    lower_with(node, images, remote, template, &mut LineBoxes::probe())
+}
+
+/// [`lower`], drawing each line in the box size of `lines`.
+pub(crate) fn lower_with(
+    node: &Node,
+    images: &StaticImages,
+    remote: &Resolved,
+    template: &str,
+    lines: &mut LineBoxes,
+) -> Result<takumi::prelude::Node, RenderError> {
     // The declarations that go before the node's own style.
     let mut base_css = "";
     // The classes that go before the node's own.
@@ -67,7 +82,7 @@ pub(crate) fn lower(
         Kind::Element { children, .. } => takumi::prelude::Node::container(
             children
                 .iter()
-                .map(|child| lower(child, images, remote, template))
+                .map(|child| lower_with(child, images, remote, template, lines))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         Kind::Text(text) => {
@@ -103,8 +118,12 @@ pub(crate) fn lower(
             })
         }
         Kind::Shape(shape) => {
-            shape_prefix = SHAPE_CLASSES;
-            lower_shape(shape, template)?
+            shape_prefix = if shape.fill().is_some() {
+                LINE_CLASSES
+            } else {
+                SHAPE_CLASSES
+            };
+            lower_shape(shape, template, lines)?
         }
     };
     let lowered = match tailwind(shape_prefix, node.class_list())? {
@@ -154,38 +173,139 @@ fn inline_text(
 /// A shape's box: centred, filling its parent unless its classes size it.
 const SHAPE_CLASSES: &str = "flex items-center justify-center w-full h-full";
 
-/// The children of a shape node: one round, square box drawing the shape,
-/// holding its round caps.
+/// A line's or an area's box: filling its parent unless its classes size
+/// it.
+const LINE_CLASSES: &str = "flex w-full h-full";
+
+/// The box a line or an area draws in, filling the shape node.
+const LINE_BOX: &str = "position: relative; width: 100%; height: 100%; flex-shrink: 0";
+
+/// A probe marker's width is this plus the line's index; nothing a view
+/// draws is that wide and zero pixels high.
+const MARKER_BASE: f32 = 1_000_000.0;
+
+/// The box sizes of the lines in a view, in the order [`lower_with`] meets
+/// them.
+///
+/// A probe ([`LineBoxes::probe`]) gives each line's box a marker: an
+/// absolute, zero-high child whose width encodes the line's index, found in
+/// takumi's measured tree by [`LineBoxes::measured`]. A line is drawn in
+/// the pixel size measured for its box (its band's normals depend on the
+/// box's aspect ratio, which percentages cannot express); a probe draws no
+/// line, and an area needs no size.
+#[derive(Debug)]
+pub(crate) struct LineBoxes {
+    /// `None` while probing.
+    sizes: Option<Vec<Option<(f64, f64)>>>,
+    next: usize,
+}
+
+impl LineBoxes {
+    /// A probe pass: lines get markers and draw nothing.
+    pub(crate) const fn probe() -> Self {
+        Self {
+            sizes: None,
+            next: 0,
+        }
+    }
+
+    /// How many lines a pass met.
+    pub(crate) const fn count(&self) -> usize {
+        self.next
+    }
+
+    /// The box sizes of `count` lines, read from the markers in
+    /// `measured`; a line whose marker is missing (in a hidden subtree)
+    /// draws nothing.
+    pub(crate) fn measured(measured: &takumi::prelude::MeasuredNode, count: usize) -> Self {
+        let mut sizes = vec![None; count];
+        let mut stack = vec![measured];
+        while let Some(node) = stack.pop() {
+            for child in &node.children {
+                if child.height == 0.0 && child.width >= MARKER_BASE && child.children.is_empty() {
+                    // An index fits an f32 exactly below 2^24.
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let index = (child.width - MARKER_BASE).round() as usize;
+                    if let Some(size) = sizes.get_mut(index) {
+                        *size = Some((f64::from(node.width), f64::from(node.height)));
+                    }
+                }
+                stack.push(child);
+            }
+        }
+        Self {
+            sizes: Some(sizes),
+            next: 0,
+        }
+    }
+
+    /// The next line's index and, after a probe, its box size.
+    fn next(&mut self) -> (usize, Option<(f64, f64)>) {
+        let index = self.next;
+        self.next += 1;
+        let size = self
+            .sizes
+            .as_ref()
+            .and_then(|sizes| sizes.get(index).copied().flatten());
+        (index, size)
+    }
+}
+
+/// The children of a shape node: one round, square box drawing a pie or an
+/// arc, holding its round caps, or one box drawing a line or an area.
 ///
 /// # Errors
 ///
 /// [`RenderError::Unsupported`] for a shape with more than
-/// [`MAX_SLICES`] slices; [`RenderError::Failed`] when takumi rejects its
-/// CSS.
-fn lower_shape(shape: &Shape, template: &str) -> Result<takumi::prelude::Node, RenderError> {
-    let slices = shape.slice_count();
-    if slices > MAX_SLICES {
+/// [`MAX_SLICES`](crate::shape::MAX_SLICES) slices or
+/// [`MAX_POINTS`](crate::shape::MAX_POINTS) points; [`RenderError::Failed`]
+/// when takumi rejects its CSS.
+fn lower_shape(
+    shape: &Shape,
+    template: &str,
+    lines: &mut LineBoxes,
+) -> Result<takumi::prelude::Node, RenderError> {
+    if let Some(why) = shape.over_cap() {
         return Err(RenderError::Unsupported {
             id: template.to_owned(),
-            why: format!(
-                "shape `{}` draws {slices} slices, more than the cap of {MAX_SLICES}",
-                shape.name()
-            )
-            .into(),
+            why: why.into(),
         });
     }
-    let (css, caps) = shape.css();
+    let parse = |css: &str| takumi::prelude::Style::from_str(css).map_err(RenderError::failed);
+    let Some((css, caps)) = shape.css() else {
+        let mut css = LINE_BOX.to_owned();
+        let mut children = Vec::new();
+        let size = if let Shape::Line(_) = shape {
+            let (index, size) = lines.next();
+            if lines.sizes.is_none() {
+                // Index is at most the number of lines in one view.
+                #[allow(clippy::cast_precision_loss)]
+                let width = MARKER_BASE + index as f32;
+                children.push(
+                    takumi::prelude::Node::container(Vec::new()).with_style(parse(&format!(
+                        "position: absolute; left: 0; top: 0; width: {width}px; height: 0"
+                    ))?),
+                );
+            }
+            size
+        } else {
+            None
+        };
+        if let (Some(polygon), Some(rgb)) = (shape.polygon(size), shape.fill()) {
+            let _ = write!(css, "; background-color: #{rgb:06x}; clip-path: {polygon}");
+        }
+        return Ok(takumi::prelude::Node::container(vec![
+            takumi::prelude::Node::container(children).with_style(parse(&css)?),
+        ]));
+    };
     let caps = caps
         .iter()
         .map(|cap| {
-            takumi::prelude::Style::from_str(cap)
-                .map(|style| takumi::prelude::Node::container(Vec::new()).with_style(style))
-                .map_err(RenderError::failed)
+            parse(cap).map(|style| takumi::prelude::Node::container(Vec::new()).with_style(style))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let style = takumi::prelude::Style::from_str(&css).map_err(RenderError::failed)?;
     Ok(takumi::prelude::Node::container(vec![
-        takumi::prelude::Node::container(caps).with_style(style),
+        takumi::prelude::Node::container(caps).with_style(parse(&css)?),
     ]))
 }
 

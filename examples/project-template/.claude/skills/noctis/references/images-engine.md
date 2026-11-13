@@ -120,16 +120,17 @@ view! {
 - Children: elements, string literals, `{expr}`, `if cond { .. }` with `else if` /
   `else`, and `for pat in expr { .. }`. `{expr}` takes any `IntoNodes`: `Node`,
   `Vec<Node>`, `&str`, `String`, `&String`, `Cow<'static, str>`, integers, `f32`/`f64`
-  (as text), a shape (`Arc`, `Pie`, §3.1) and `Option<T>` (`None` adds nothing). Text
+  (as text), a shape (`Arc`, `Pie`, `Line`, `Area`, §3.1) and `Option<T>` (`None` adds nothing). Text
   children are always text: `"<b>"` renders the characters, never markup.
 - **User text enters only as a text child** (FR-32), never as classes or styles.
 
-### 3.1 Shapes: `Arc` and `Pie`
+### 3.1 Shapes: `Arc`, `Pie`, `Line` and `Area`
 
-`noctis::image::shape` has two typed shape nodes, drawn as one node each (no SVG, no
-free paths). Both are children like any node (`{Pie::new(..)}`), fill their box
-(`w-full h-full` unless `.classes(tw!(..))` sizes them; `.style(Style)` works too) and
-draw a circle of the box's smaller side, centred. Angles are degrees clockwise from
+`noctis::image::shape` has four typed shape nodes, drawn as one node each (no SVG, no
+free paths). All are children like any node (`{Pie::new(..)}`) and fill their box
+(`w-full h-full` unless `.classes(tw!(..))` sizes them; `.style(Style)` works too).
+`Arc` and `Pie` draw a circle of the box's smaller side, centred; `Line` and `Area`
+draw over the whole box. Angles are degrees clockwise from
 12 o'clock; a NaN or infinite argument leaves a setter's value unchanged.
 
 - `Pie::new([(value, 0xRRGGBB), ..])`: slices proportional to the values (any type
@@ -143,8 +144,26 @@ draw a circle of the box's smaller side, centred. Angles are degrees clockwise f
   `.start_deg(225.0).sweep_deg(270.0)`), `.round_caps(true)` adds two circles at the
   value's ends (none for 0; the track's ends stay square). A label goes in the hole
   with a `relative` parent and an `absolute` child.
-- At most `shape::MAX_SLICES` (64) slices per shape; more fail the render with
-  `RenderError::Unsupported` naming the shape and the cap.
+- `Line::new([(x, y), ..], 0xRRGGBB)`: a connected line through points given in
+  fractions of the box, `(0, 0)` the bottom-left corner and `(1, 1)` the top-right one
+  (y up; any `Into<f64>`), drawn as a band of `.stroke_px(f32)` pixels (default 2,
+  clamped to `0..=256`, 0 draws nothing) with bevel joins, measured across the line
+  whatever the box's aspect ratio. Points outside `0..=1` are allowed: the band is
+  clipped to the box, so a point on the top or bottom edge shows half the stroke (keep
+  data in `0.05..=0.95` for the whole band). `Line::series(values, rgb)` spreads the
+  values evenly on x (first at the left edge, last at the right) and scales y to their
+  finite minimum (bottom) and maximum (top); a flat series sits at mid-height.
+- `Area::new(points, rgb)` / `Area::series(values, rgb)`: the same points, filled down
+  to the bottom edge. An area under its line is two stacked nodes in one `relative`
+  box, the `Area` first, both `.classes(tw!("absolute inset-0"))`.
+- `Line` and `Area` skip NaN and infinite points (a skipped series value keeps its place
+  on x); fewer than two finite points draw nothing. A view holding a `Line` is laid out
+  twice per frame (once to measure the line's box), which costs about a layout; a
+  512-point zigzag over a 934 × 282 frame draws in about 15 ms.
+- At most `shape::MAX_SLICES` (64) slices per `Pie` or `Arc` and `shape::MAX_POINTS`
+  (512) finite points per `Line` or `Area`; more fail the render with
+  `RenderError::Unsupported` naming the shape and the cap. Downsample a longer series in
+  the handler.
 - Shapes are built from Template data, so they change the render key through that
   data like any other value.
 
@@ -627,7 +646,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     version skew);
   - `Unsupported { id, why }`: an animation with `fps` 0 or a duration under 1 ms, or
     GIF/APNG output without `image-gif` (a hand-built `RenderJob`; the derive already
-    refuses both at compile time), or a shape with more than 64 slices (§3.1);
+    refuses both at compile time), or a shape with more than 64 slices or 512 points (§3.1);
   - `OverCap { id, cap, limit, actual }`: the job is over one of the App's per-job
     caps (below) or its animation over the format's fps cap; `cap` is a `RenderCap`
     (`JobPixels`, `FramePixels`, `Frames`, `Duration`, `Fps`, `RemoteImages`;

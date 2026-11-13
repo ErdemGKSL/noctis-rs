@@ -226,7 +226,17 @@ impl Node {
         &self.style
     }
 
-    /// The element's children; empty for a text or image node.
+    /// Whether the tree holds a [`shape::Line`] (which needs its box
+    /// measured before it is drawn).
+    pub(crate) fn has_line(&self) -> bool {
+        match &self.kind {
+            Kind::Shape(Shape::Line(_)) => true,
+            Kind::Element { children, .. } => children.iter().any(Node::has_line),
+            Kind::Text(_) | Kind::Image(_) | Kind::Shape(_) => false,
+        }
+    }
+
+    /// The element's children; empty for a text, image or shape node.
     pub(crate) fn child_nodes(&self) -> &[Node] {
         match &self.kind {
             Kind::Element { children, .. } => children,

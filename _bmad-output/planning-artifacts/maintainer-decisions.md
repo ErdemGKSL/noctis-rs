@@ -778,3 +778,32 @@ Planning decisions (2026-11-13, Epic 20):
   count); an `Arc` has at most two. The render key is unchanged (shape values reach it
   as Template data); `noctis-rules` gains nothing, as the cap is a Noctis engine
   limit, not a Discord rule.
+- (decision, Story 20.9) The pixel proof passed: takumi-core 0.31.0 clips a box to an
+  inline `clip-path: polygon(..)` with percentage, pixel and `calc()` coordinates and
+  fills it with the `nonzero` rule, sub-polygons joined by edges walked both ways
+  included (`renderer/tests/lines.rs`), so nothing is cut. A band's normals depend on
+  the box's aspect ratio, which percentages and takumi's linear `calc()` cannot
+  express, so a `Line` is drawn in pixels of its box: when a frame's view holds a
+  `Line`, the Renderer lowers it once as a probe (each line box gets an absolute,
+  zero-high marker child whose width is 1 000 000 px plus the line's index),
+  `takumi::measure`s that tree, reads each box's size from the markers and lowers it
+  again with the polygons. The extra layout per frame is paid only by views with a
+  line; a line in a hidden subtree draws nothing. An `Area` needs no size (percent
+  polygon). Rejected: a stroke in percent (wrong width off the diagonal of a non-square
+  box), matching takumi's measured tree to Noctis's by position (absolute children are
+  hoisted to their containing block, so positions do not match).
+- (decision, Story 20.9) The band is the union of one rectangle per segment and one
+  bevel triangle per joint, wound alike: the outline walks the rectangles' left halves
+  forward and their right halves back, touching the centre line at each point, so the
+  joining edges cancel under `nonzero` and only the band's long sides cross many rows
+  (a first version joined every piece through the first point and drew twice as
+  slowly). Consecutive equal points are dropped; points outside `0..=1` are kept and
+  clipped by the box. `Line::series`/`Area::series` place value `i` of `n` at
+  `x = i / (n - 1)` and scale y to the finite min and max (a flat series at 0.5); a
+  non-finite value keeps its x and is skipped. The 512-point cap (`shape::MAX_POINTS`)
+  counts finite points, like the slice cap. `stroke_px` defaults to 2 and clamps to
+  `0..=256`. Timing note: a 512-point full-height zigzag in a 934 x 282 PNG renders in
+  about 15 to 25 ms on the cloud container (lowering, measuring, drawing and encoding),
+  inside the 50 ms p99 per-render budget of NFR-3; a release test asserts a median
+  under 50 ms. The Project Template code gains no line until Story 20.12's sweep; the
+  Usage Skill's sparkline (§4.3) and a new line and area chart (§6.3) use them.

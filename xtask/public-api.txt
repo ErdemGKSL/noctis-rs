@@ -3651,6 +3651,10 @@ pub fn noctis::image::InvalidClasses::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl core::marker::StructuralPartialEq for noctis::image::InvalidClasses
 impl core::convert::From<noctis::image::shape::Arc> for noctis::image::Node
 pub fn noctis::image::Node::from(noctis::image::shape::Arc) -> Self
+impl core::convert::From<noctis::image::shape::Area> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Area) -> Self
+impl core::convert::From<noctis::image::shape::Line> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Line) -> Self
 impl core::convert::From<noctis::image::shape::Pie> for noctis::image::Node
 pub fn noctis::image::Node::from(noctis::image::shape::Pie) -> Self
 pub struct noctis::image::Node
@@ -3668,6 +3672,10 @@ impl core::cmp::PartialEq for noctis::image::Node
 pub fn noctis::image::Node::eq(&self, &Self) -> bool
 impl core::convert::From<noctis::image::shape::Arc> for noctis::image::Node
 pub fn noctis::image::Node::from(noctis::image::shape::Arc) -> Self
+impl core::convert::From<noctis::image::shape::Area> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Area) -> Self
+impl core::convert::From<noctis::image::shape::Line> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Line) -> Self
 impl core::convert::From<noctis::image::shape::Pie> for noctis::image::Node
 pub fn noctis::image::Node::from(noctis::image::shape::Pie) -> Self
 impl core::fmt::Debug for noctis::image::Node
@@ -4203,6 +4211,33 @@ pub fn noctis::image::shape::Arc::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::image::shape::Arc
 pub fn noctis::image::shape::Arc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::shape::Arc
+pub struct noctis::image::shape::Area
+impl noctis::image::shape::Area
+pub fn noctis::image::shape::Area::classes(self, noctis::image::Classes) -> Self
+pub fn noctis::image::shape::Area::new<I, X, Y>(I, u32) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (X, Y)>, X: core::convert::Into<f64>, Y: core::convert::Into<f64>
+pub fn noctis::image::shape::Area::series<I, V>(I, u32) -> Self where I: core::iter::traits::collect::IntoIterator<Item = V>, V: core::convert::Into<f64>
+pub const fn noctis::image::shape::Area::style(self, noctis::image::Style) -> Self
+impl core::clone::Clone for noctis::image::shape::Area
+pub fn noctis::image::shape::Area::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::shape::Area
+pub fn noctis::image::shape::Area::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::shape::Area
+pub fn noctis::image::shape::Area::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::shape::Area
+pub struct noctis::image::shape::Line
+impl noctis::image::shape::Line
+pub fn noctis::image::shape::Line::classes(self, noctis::image::Classes) -> Self
+pub fn noctis::image::shape::Line::new<I, X, Y>(I, u32) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (X, Y)>, X: core::convert::Into<f64>, Y: core::convert::Into<f64>
+pub fn noctis::image::shape::Line::series<I, V>(I, u32) -> Self where I: core::iter::traits::collect::IntoIterator<Item = V>, V: core::convert::Into<f64>
+pub const fn noctis::image::shape::Line::stroke_px(self, f32) -> Self
+pub const fn noctis::image::shape::Line::style(self, noctis::image::Style) -> Self
+impl core::clone::Clone for noctis::image::shape::Line
+pub fn noctis::image::shape::Line::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::shape::Line
+pub fn noctis::image::shape::Line::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::shape::Line
+pub fn noctis::image::shape::Line::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::shape::Line
 pub struct noctis::image::shape::Pie
 impl noctis::image::shape::Pie
 pub fn noctis::image::shape::Pie::classes(self, noctis::image::Classes) -> Self
@@ -4216,6 +4251,7 @@ pub fn noctis::image::shape::Pie::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::image::shape::Pie
 pub fn noctis::image::shape::Pie::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::shape::Pie
+pub const noctis::image::shape::MAX_POINTS: usize
 pub const noctis::image::shape::MAX_SLICES: usize
 pub fn noctis::image::span(noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::image::Classes) -> noctis::image::Node

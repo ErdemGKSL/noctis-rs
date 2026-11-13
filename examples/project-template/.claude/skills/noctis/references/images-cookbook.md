@@ -23,7 +23,8 @@ and that the Template is registered: add `module = "<feature>"` to its `#[templa
 ## 1. The toolbox
 
 There is no canvas API, no free path drawing and no `<svg>`. A picture is a tree of
-boxes, text, images and two typed shapes (`shape::Arc`, `shape::Pie`), laid out with
+boxes, text, images and four typed shapes (`shape::Arc`, `shape::Pie`, `shape::Line`,
+`shape::Area`), laid out with
 flexbox or grid and painted in tree order. That is enough for almost everything, with
 these moves:
 
@@ -34,6 +35,7 @@ these moves:
 | A value as intensity | one colour with `Style::new().opacity(v)` over a dark cell |
 | A value as an arc | `{Arc::new(v, tint).track(0x1E_293B)}` (`noctis::image::shape::Arc`): a ring, or a 270° gauge with `.start_deg(225.0).sweep_deg(270.0)`, `.thickness_pct(..)`, `.round_caps(true)` (§3.1) |
 | Shares of a whole | `{Pie::new([(value, rgb), ..])}` (`shape::Pie`): slices clockwise from 12 o'clock, `.start_deg(..)` turns it (§3.2) |
+| A trend | `{Line::series(values, rgb).stroke_px(2.0)}` (`shape::Line`), over `{Area::series(values, rgb)}` (`shape::Area`) for a filled chart (§4.3, §6.2) |
 | A value as an angle | a square wrapper rotated with `Style::new().rotate_deg(a)`; its child sits at the top centre, so it travels on a circle (§3.3) |
 | N of M | `for i in 0..m { .. }` with a class chosen per item: `tw={if i < n { tw!("..") } else { tw!("..") }}` |
 | Equal parts | `flex-1` children in a `flex gap-*` row, or `grid grid-cols-N` |
@@ -477,29 +479,29 @@ an avatar. Building the `RemoteImage` (and what happens when the fetch fails): �
 
 ### 4.3 Sparkline tile
 
-A trend in a Thumbnail: one large figure, a row of thin columns.
+A trend in a Thumbnail: one large figure and a connected line over a soft area.
 
 ```rust
+use noctis::image::shape::{Area, Line};
+
 #[derive(Template, Serialize, Deserialize, Debug)]
 #[template(id = "ui.spark", version = 1, size = (256, 256), format = Png)]
 pub struct Sparkline {
     pub label: String,       // "+12%"
-    pub points: Vec<u32>,    // oldest first; 8 to 30 points
+    pub points: Vec<f64>,    // oldest first; 8 to 120 points (at most 512)
     pub up: bool,
 }
 
 impl TemplateView for Sparkline {
     fn view(&self, _frame: Frame) -> Node {
-        let max = self.points.iter().copied().max().unwrap_or(0).max(1);
-        let tint = if self.up { 0x34_D399 } else { 0xF4_3F5E };
+        let (tint, fill) = if self.up { (0x34_D399, 0x14_3D33) } else { (0xF4_3F5E, 0x45_1A26) };
+        let values = self.points.iter().copied();
         view! {
             <div tw="flex flex-col gap-3 w-full h-full p-5 bg-surface rounded-3xl">
                 <span tw="text-5xl font-black" style={Style::new().color_rgb(tint)}>{&self.label}</span>
-                <div tw="flex flex-1 items-end gap-1">
-                    for p in &self.points {
-                        <div tw="flex-1 rounded-sm"
-                             style={Style::new().height_pct(*p as f32 / max as f32 * 100.0).bg_rgb(tint)} />
-                    }
+                <div tw="relative flex flex-1 py-2">
+                    {Area::series(values.clone(), fill).classes(tw!("absolute inset-0"))}
+                    {Line::series(values, tint).stroke_px(4.0).classes(tw!("absolute inset-0"))}
                 </div>
             </div>
         }
@@ -507,10 +509,12 @@ impl TemplateView for Sparkline {
 }
 ```
 
-A connected line cannot be drawn (no paths); columns or dots are the sparkline. For
-dots, replace each column by a `relative flex-1` cell holding an `absolute w-2 h-2
-rounded-full` dot placed with `Style::new().bottom_pct(*p as f32 / max as f32 * 90.0)` (90 so the
-top dot stays inside the cell).
+`series` puts the lowest value on the bottom edge and the highest on the top one, so
+the band is half clipped there; to keep it whole, map the values yourself into
+`0.05..=0.95` and use `Line::new(points)` with `(i / (n - 1), y)` points. A flat series
+draws a level line at mid-height. Missing samples are `f64::NAN`: the line skips them
+and joins their neighbours. Columns (a `flex items-end gap-1` row of `height_pct`
+children) still suit counts per day better than a line.
 
 ## 5. Lists and cards
 
@@ -692,11 +696,59 @@ impl TemplateView for Heatmap {
 140 cells (20 weeks) are 280 nodes and still render in a few milliseconds. Quantize the
 values in the handler (five steps) so that near-equal data hits the render cache.
 
-### 6.3 What not to chart
+### 6.3 Line and area chart
 
-Pie and donut charts are `Pie` and `Arc` (§3). Line and area charts need paths: use
-columns. If a real plot is required, draw it with a plotting crate and attach the
-bytes with `Attachment::new(bytes, "png")`; it then needs no Template.
+Activity over time: one `relative` plot box with grid lines, an `Area` and a `Line`.
+
+```rust
+use noctis::image::shape::{Area, Line};
+
+#[derive(Template, Serialize, Deserialize, Debug)]
+#[template(id = "ui.activity", version = 1, size = (900, 420), format = Png)]
+pub struct Activity {
+    pub title: String,
+    pub messages: Vec<u32>,   // per hour, oldest first; at most 512
+    pub joins: Vec<u32>,      // per hour, same length
+}
+
+impl TemplateView for Activity {
+    fn view(&self, _frame: Frame) -> Node {
+        // One scale for both series, so they compare: y = v / max, kept below the top edge.
+        let max = self.messages.iter().chain(&self.joins).copied().max().unwrap_or(0).max(1);
+        let last = self.messages.len().saturating_sub(1).max(1) as f64;
+        let points = |s: &[u32]| -> Vec<(f64, f64)> {
+            s.iter().enumerate().map(|(i, v)| (i as f64 / last, f64::from(*v) / f64::from(max) * 0.95)).collect()
+        };
+        view! {
+            <div tw="flex flex-col gap-4 w-full h-full p-8 bg-surface rounded-3xl">
+                <span tw="text-3xl font-bold text-white">{&self.title}</span>
+                <div tw="relative flex flex-1 border-b-2 border-slate-700">
+                    for i in 1..4 {
+                        <div tw="absolute left-0 right-0 h-px bg-slate-800"
+                             style={Style::new().top_pct(i as f32 * 25.0)} />
+                    }
+                    {Area::new(points(&self.messages), 0x31_2E81).classes(tw!("absolute inset-0"))}
+                    {Line::new(points(&self.messages), 0x81_8CF8).stroke_px(3.0).classes(tw!("absolute inset-0"))}
+                    {Line::new(points(&self.joins), 0x34_D399).stroke_px(3.0).classes(tw!("absolute inset-0"))}
+                </div>
+            </div>
+        }
+    }
+}
+```
+
+Later nodes paint over earlier ones: areas first, then lines, then markers (an
+`absolute` dot placed with `left_pct`/`bottom_pct` on the last value). Two series
+share one `max`, or each would fill the plot alone. More than 512 samples: average
+them into buckets in the handler.
+
+### 6.4 What not to chart
+
+Pie and donut charts are `Pie` and `Arc` (§3), line and area charts `Line` and `Area`
+(§6.3). Axes with many tick labels, scatter plots of thousands of points and smooth
+curves are not drawn by the engine (a `Line` has straight segments): draw such a plot
+with a plotting crate and attach the bytes with `Attachment::new(bytes, "png")`; it
+then needs no Template.
 
 ## 7. Banners and dividers
 

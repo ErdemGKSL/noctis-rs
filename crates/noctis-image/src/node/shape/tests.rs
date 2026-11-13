@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn pie_css_is_proportional_and_ends_at_360() {
     let pie = Pie::new([(1, 0xFF_0000), (0, 0x00_FF00), (3, 0x00_00FF)]).start_deg(-90.0);
-    let css = Shape::Pie(pie).css().0;
+    let css = Shape::Pie(pie).css().unwrap().0;
     assert!(
         css.ends_with(
             "background-image: conic-gradient(from 270.000deg, #ff0000 0.000deg 90.000deg, \
@@ -17,9 +17,12 @@ fn pie_css_is_proportional_and_ends_at_360() {
 
 #[test]
 fn an_empty_pie_has_no_background() {
-    let css = Shape::Pie(Pie::new([(0.0, 1), (f64::NAN, 2)])).css().0;
+    let css = Shape::Pie(Pie::new([(0.0, 1), (f64::NAN, 2)]))
+        .css()
+        .unwrap()
+        .0;
     assert_eq!(css, BOX);
-    assert_eq!(Shape::Pie(Pie::new([(0.0, 1)])).slice_count(), 0);
+    assert_eq!(Pie::new([(0.0, 1)]).drawn().count(), 0);
 }
 
 #[test]
@@ -45,8 +48,8 @@ fn arc_setters_clamp_and_ignore_non_finite_values() {
 #[test]
 fn an_arc_has_a_value_a_track_and_a_hole() {
     let arc = Arc::new(0.25, 0xFF_0000).track(0x00_FF00).sweep_deg(270.0);
-    assert_eq!(Shape::Arc(arc.clone()).slice_count(), 2);
-    let (css, caps) = Shape::Arc(arc).css();
+    assert_eq!(arc_segments(&arc).len(), 2);
+    let (css, caps) = Shape::Arc(arc).css().unwrap();
     assert!(
         css.contains(
             "conic-gradient(from 0.000deg, #ff0000 0.000deg 67.500deg, \
@@ -64,7 +67,7 @@ fn an_arc_has_a_value_a_track_and_a_hole() {
 #[test]
 fn round_caps_sit_on_the_middle_radius_at_both_ends() {
     let arc = Arc::new(0.5, 0xFF_0000).round_caps(true);
-    let (_, caps) = Shape::Arc(arc).css();
+    let (_, caps) = Shape::Arc(arc).css().unwrap();
     // Thickness 20 % of the radius = 10 % of the box; middle radius 45 %.
     assert_eq!(caps.len(), 2);
     assert!(
@@ -78,7 +81,7 @@ fn round_caps_sit_on_the_middle_radius_at_both_ends() {
         caps[1]
     );
     assert!(caps[1].ends_with("background-color: #ff0000"));
-    let (_, none) = Shape::Arc(Arc::new(0.0, 0).round_caps(true)).css();
+    let (_, none) = Shape::Arc(Arc::new(0.0, 0).round_caps(true)).css().unwrap();
     assert!(none.is_empty());
 }
 

@@ -122,6 +122,29 @@ template!(
     |t| shapes::shape_view(&t.case)
 );
 
+// Story 20.9: a line or an area in a flex box (see `lines`).
+template!(
+    Lined { case: lines::Case },
+    "lined",
+    Size::new(100, 100),
+    Format::Png,
+    |t| lines::line_view(&t.case)
+);
+template!(
+    LinedWide { case: lines::Case },
+    "lined.wide",
+    Size::new(100, 60),
+    Format::Png,
+    |t| lines::line_view(&t.case)
+);
+template!(
+    LinedCard { case: lines::Case },
+    "lined.card",
+    Size::new(934, 282),
+    Format::Png,
+    |t| lines::line_view(&t.case)
+);
+
 // Story 20.7: each typed setter against a class of the same property;
 // `styled: false` draws the class alone (the control).
 template!(
@@ -381,6 +404,9 @@ fn renderer_budget(
             TemplateDescriptor::of::<Scaled>(),
             TemplateDescriptor::of::<Shaped>(),
             TemplateDescriptor::of::<ShapedWide>(),
+            TemplateDescriptor::of::<Lined>(),
+            TemplateDescriptor::of::<LinedWide>(),
+            TemplateDescriptor::of::<LinedCard>(),
         ])
         .unwrap();
     renderer
@@ -1680,6 +1706,7 @@ fn img_01_register_without_font_fails() {
 
 mod cache;
 mod emoji;
+mod lines;
 mod plays;
 mod remote;
 mod setters;

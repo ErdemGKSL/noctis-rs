@@ -20,8 +20,9 @@ use sealed::Sealed;
 /// A value that yields 0..n child nodes (sealed).
 ///
 /// - a [`Node`] (one), or a `Vec<Node>` (each);
-/// - a shape ([`Pie`](crate::shape::Pie), [`Arc`](crate::shape::Arc)): one
-///   shape node;
+/// - a shape ([`Pie`](crate::shape::Pie), [`Arc`](crate::shape::Arc),
+///   [`Line`](crate::shape::Line), [`Area`](crate::shape::Area)): one shape
+///   node;
 /// - `&str`, `String`, `&String` and `Cow<'static, str>`: one text node,
 ///   drawn as is and never parsed;
 /// - the integer primitives, `f32` and `f64`: one text node of their
@@ -46,6 +47,18 @@ impl Sealed for super::shape::Pie {
 }
 
 impl Sealed for super::shape::Arc {
+    fn push_into(self, out: &mut Vec<Node>) {
+        out.push(self.into());
+    }
+}
+
+impl Sealed for super::shape::Line {
+    fn push_into(self, out: &mut Vec<Node>) {
+        out.push(self.into());
+    }
+}
+
+impl Sealed for super::shape::Area {
     fn push_into(self, out: &mut Vec<Node>) {
         out.push(self.into());
     }

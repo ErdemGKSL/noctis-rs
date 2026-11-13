@@ -20,7 +20,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `3ddafde92c6634280b46b9d6b92669fe6d3cb687624ac2a8b296a16e2b2a4e71` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `2cab66f73ed4502f42cfd5ec5cf7317f4115a37e69a378ccb5ec8fc70a5642fd` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -507,7 +507,7 @@ Read only what the task touches.
 | `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | start any image work: the mental model, which surface (single-item Media Gallery as a full-width canvas, gallery grid, Thumbnail, File, emoji), canvas sizes, text or image, a complete first example (a progress strip under text) |
-| `references/images-cookbook.md` | draw something: progress bars (still, segmented, animated fill, GIF), stat sheets, ring and 270° gauges (`Arc`), pie and donut charts (`Pie`), dials, level badges, status avatars, sparklines, leaderboards, avatar stacks, column charts, heatmaps, banners, drawn dividers, game boards, step indicators, countdowns, loading states; text, emoji and avatars inside images |
+| `references/images-cookbook.md` | draw something: progress bars (still, segmented, animated fill, GIF), stat sheets, ring and 270° gauges (`Arc`), pie and donut charts (`Pie`), line and area charts and sparklines (`Line`, `Area`), dials, level badges, status avatars, leaderboards, avatar stacks, column charts, heatmaps, banners, drawn dividers, game boards, step indicators, countdowns, loading states; text, emoji and avatars inside images |
 | `references/images-ui.md` | compose images into a V2 screen: layouts, component and attachment cost, the load → render → View flow, re-rendering on a click and kept attachments, paginated image pages, animation in a UI, dark and light clients, limits, performance and caching, rendering outside an interaction, when not to use an image, snapshot strategy, image troubleshooting |
 | `references/images-emoji.md` | use application emojis: Discord's limits (2000 per app, 256 KiB, 128×128; EMO-01..04), the emoji methodology (vector style, transparent, white on coloured buttons), drawing glyphs with the engine, declaring the set with `#[derive(AppEmojis)]` and `.emojis::<Icons>()`, uploading by Publish (`EmojiSync`, `report.emojis()`), typed lookups with `ctx.emojis()` (`get`, `on(style, ..)`, `text`) and what a missing emoji does, emoji progress bars, animated emojis |
 | `references/images-engine.md` | need the exact engine rule: `#[template(..)]` keys, `view!`/`tw!` syntax, the Tailwind v4 class grammar, `Style`, theme, fonts, static and remote images, emoji in images, animation, render errors, pool, caps, size budget, cache, unstable items |

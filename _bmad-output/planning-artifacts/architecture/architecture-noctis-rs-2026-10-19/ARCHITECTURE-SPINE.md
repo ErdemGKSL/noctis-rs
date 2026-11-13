@@ -765,7 +765,10 @@ list in CI.
     the same property; transforms compose translate, rotate, scale (takumi's CSS
     Transforms 2 order). Shapes (`noctis_image::shape::{Arc, Pie}`) are a
     node kind lowered to a `conic-gradient` background and a `radial-gradient` mask
-    on a round, square box, with absolutely placed caps; `svg-source` stays off.
+    on a round, square box, with absolutely placed caps; `Line` and `Area` lower to a
+    box clipped to an inline `clip-path: polygon(..)` (an area in percent; a line's
+    bevel-joined band in pixels of its box, measured by a `takumi::measure` probe pass
+    over the frame first); `svg-source` stays off.
   - CI job `tw-crosscheck` compares the grammar with takumi's own parser. The oracle
     is `takumi-core`'s public `TailwindValues` (`FromStr`), which silently drops
     tokens it doesn't recognize: a class is recognized when parsing it alone yields
