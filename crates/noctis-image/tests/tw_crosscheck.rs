@@ -2,13 +2,16 @@
 //!
 //! The oracle parses each class alone with takumi-core's
 //! `TailwindValues::from_str` and reads its `Debug` form: no value is Empty, a
-//! `VarUtility` whose fallbacks are all `None` only reads a variable
-//! (`VarOnly`), anything else is Builtin. The grammar must agree on every
+//! `VarUtility` whose fallbacks are all `None`, or a `TwVarColor` (gradient
+//! stop or shadow colour) reading a `var(--color-*)` without a fallback, only
+//! reads a variable (`VarOnly`), anything else is Builtin. The grammar must agree on every
 //! sample and corpus class (Builtin <-> Builtin, Theme <-> `VarOnly`,
 //! Unknown <-> Empty, and a theme or arbitrary animation <-> a Builtin
 //! animation naming the same token or keyframes), on the variant kind and on
 //! `!important`; a corpus line
 //! marked `narrowed=` must be Unknown to the grammar while takumi accepts it.
+//! A Noctis-lowered utility (`z-10`, `tabular-nums`) must be Empty to takumi:
+//! takumi does not parse it, Noctis turns it into inline CSS.
 //! Every sample also renders once, and must not panic.
 #![cfg(feature = "render")]
 #![allow(clippy::expect_used, reason = "tests panic with the failing case")]
@@ -30,6 +33,8 @@ enum Verdict {
     Animation,
     /// `animate-[<keyframes>_…]`: takumi plays `@keyframes <keyframes>`.
     Keyframes,
+    /// A Noctis-lowered utility: takumi must not know it.
+    Lowered,
     Unknown,
 }
 
@@ -55,9 +60,10 @@ fn oracle(class: &str) -> Oracle {
     let debug = format!("{values:?}");
     let verdict = if debug.contains("inner: []") {
         Verdict::Unknown
-    } else if debug.contains("VarUtility(")
+    } else if (debug.contains("VarUtility(")
         && debug.contains("fallback: None")
-        && !debug.contains("fallback: Some(")
+        && !debug.contains("fallback: Some("))
+        || var_color_only(&debug)
     {
         Verdict::Theme
     } else {
@@ -78,6 +84,22 @@ fn oracle(class: &str) -> Oracle {
     }
 }
 
+/// Whether a `TwVarColor` in `debug` reads `var(--color-*)` without a
+/// fallback (`from-brand`), where a built-in colour has one
+/// (`var(--color-red-500, rgb(..))`).
+fn var_color_only(debug: &str) -> bool {
+    debug.match_indices("TwVarColor(\"").any(|(at, marker)| {
+        let value = debug[at + marker.len()..]
+            .split("\")")
+            .next()
+            .unwrap_or_default();
+        value
+            .split("var(--color-")
+            .skip(1)
+            .any(|rest| !rest.split(')').next().unwrap_or_default().contains(','))
+    })
+}
+
 fn grammar(class: &str) -> Option<Class<'_>> {
     tw::classify(class)
 }
@@ -88,6 +110,7 @@ fn verdict_of(class: Option<&Class<'_>>) -> Verdict {
         Some(Utility::Builtin) => Verdict::Builtin,
         Some(Utility::Animation { .. }) => Verdict::Animation,
         Some(Utility::Keyframes { .. }) => Verdict::Keyframes,
+        Some(Utility::Lowered) => Verdict::Lowered,
         Some(_) => Verdict::Theme,
     }
 }
@@ -102,6 +125,9 @@ fn compare(class: &str) -> Option<String> {
         Some(Utility::Keyframes { name }) => Some(format!("name: Some(\"{name}\")")),
         _ => None,
     };
+    if verdict == Verdict::Lowered {
+        return (theirs.verdict != Verdict::Unknown).then(|| lowered_known(class, &theirs));
+    }
     if let Some(needle) = &animation {
         if theirs.verdict != Verdict::Builtin || !theirs.debug.contains(needle.as_str()) {
             return Some(format!(
@@ -146,6 +172,15 @@ fn compare(class: &str) -> Option<String> {
     })
 }
 
+/// The failure for a lowered utility takumi now parses.
+fn lowered_known(class: &str, theirs: &Oracle) -> String {
+    format!(
+        "`{class}`: takumi now parses this Noctis-lowered utility ({:?}); delete its entry \
+         from crates/noctis-image/src/tw/lowered.rs and let takumi draw it",
+        theirs.verdict
+    )
+}
+
 /// Checks every corpus line; returns one message per failure.
 fn check_corpus(corpus: &str) -> Vec<String> {
     let mut failures = Vec::new();
@@ -164,6 +199,7 @@ fn check_corpus(corpus: &str) -> Vec<String> {
             "theme" => Verdict::Theme,
             "animation" => Verdict::Animation,
             "keyframes" => Verdict::Keyframes,
+            "lowered" => Verdict::Lowered,
             "unknown" => Verdict::Unknown,
             other => {
                 failures.push(format!(
@@ -205,6 +241,35 @@ fn oracle_markers_are_pinned() {
     assert!(!builtin.important);
     assert_eq!(builtin.variant, VariantKind::None);
     assert_eq!(oracle("flx").verdict, Verdict::Unknown);
+    assert_eq!(oracle("from-brand").verdict, Verdict::Theme);
+    assert_eq!(oracle("via-brand/50").verdict, Verdict::Theme);
+    assert_eq!(oracle("from-red-500").verdict, Verdict::Builtin);
+    assert_eq!(oracle("from-current").verdict, Verdict::Builtin);
+}
+
+#[test]
+fn lowered_utilities_are_unknown_to_takumi() {
+    let samples = tw::__crosscheck::lowered();
+    assert!(samples.len() >= 10, "only {} samples", samples.len());
+    let failures: Vec<String> = samples
+        .iter()
+        .filter_map(|class| {
+            if verdict_of(grammar(class).as_ref()) != Verdict::Lowered {
+                return Some(format!("`{class}`: the grammar does not lower it"));
+            }
+            compare(class)
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_lowered_utility_takumi_knows_fails_naming_the_table() {
+    let message = lowered_known("flex", &oracle("flex"));
+    assert!(
+        message.contains("lowered.rs") && message.contains("delete"),
+        "{message}"
+    );
 }
 
 #[test]

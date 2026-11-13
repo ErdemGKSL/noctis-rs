@@ -49,6 +49,13 @@ pub(crate) fn check_names(ex: &Extracted) -> Result<(), GrammarError> {
             ));
         }
     }
+    if !namespaces.contains("Color") && !var_color_prefixes(ex).is_empty() {
+        return Err(GrammarError::new(
+            NAMESPACE_RS,
+            "enum Namespace",
+            format!("has no `Color` variant, which every `{VAR_COLOR}` prefix reads"),
+        ));
+    }
     for parser in &ex.parsers {
         for ns in parser.namespaces.iter().flatten() {
             if !namespaces.contains(ns.as_str()) {
@@ -306,10 +313,11 @@ fn render_lookup_tables(w: &mut String, ex: &Extracted) {
 
     let _ = writeln!(
         w,
-        "/// `VAR_TARGETS`, sorted by prefix: the namespaces a theme token is read from.\n\
+        "/// `VAR_TARGETS` plus `Color` for every [`VAR_COLOR_PREFIXES`] entry, sorted by\n\
+         /// prefix: the namespaces a theme token is read from.\n\
          pub(crate) const VAR_TARGETS: &[(&str, &[ThemeNamespace])] = &["
     );
-    for (prefix, list) in &ex.var_targets {
+    for (prefix, list) in &var_targets(ex) {
         let list: Vec<String> = list
             .iter()
             .map(|n| format!("ThemeNamespace::{n}"))
@@ -317,6 +325,52 @@ fn render_lookup_tables(w: &mut String, ex: &Extracted) {
         let _ = writeln!(w, "    ({prefix:?}, &[{}]),", list.join(", "));
     }
     let _ = writeln!(w, "];\n");
+
+    let colors: Vec<&str> = var_color_prefixes(ex).into_iter().collect();
+    let _ = writeln!(
+        w,
+        "/// The prefixes with a `{VAR_COLOR}` parser, sorted: takumi reads any token it\n\
+         /// accepts as `var(--color-<token>)` there.\n\
+         pub(crate) const VAR_COLOR_PREFIXES: &[&str] = &[{}];\n",
+        quoted(&colors)
+    );
+}
+
+/// The parse type whose `parse_tw` reads any colour token as
+/// `var(--color-<token>)` (gradient stops, shadow colours).
+pub(crate) const VAR_COLOR: &str = "TwVarColor";
+
+/// The prefixes with a [`VAR_COLOR`] parser.
+pub(crate) fn var_color_prefixes(ex: &Extracted) -> BTreeSet<&str> {
+    let var_color: BTreeSet<&str> = ex
+        .parsers
+        .iter()
+        .filter(|p| p.parse_type == VAR_COLOR)
+        .map(|p| p.variant.as_str())
+        .collect();
+    ex.prefixes
+        .iter()
+        .filter(|(_, parsers)| {
+            parsers
+                .iter()
+                .any(|p| var_color.contains(p.variant.as_str()))
+        })
+        .map(|(prefix, _)| prefix.as_str())
+        .collect()
+}
+
+/// takumi's `VAR_TARGETS`, with `Color` first for every [`VAR_COLOR`] prefix
+/// that lacks it: such a parser reads the colour variable itself, before
+/// any `VAR_TARGETS` group.
+pub(crate) fn var_targets(ex: &Extracted) -> BTreeMap<String, Vec<String>> {
+    let mut out = ex.var_targets.clone();
+    for prefix in var_color_prefixes(ex) {
+        let list = out.entry(prefix.to_owned()).or_default();
+        if !list.iter().any(|n| n == "Color") {
+            list.insert(0, "Color".to_owned());
+        }
+    }
+    out
 }
 
 /// The renames and hints, sorted.

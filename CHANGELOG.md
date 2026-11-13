@@ -64,6 +64,12 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   `shape::Area` fills under it, from `(x, y)` points in fractions of the node's box
   (y up) or from a series (`Line::series(values)`, spread on x and scaled to the
   values' range); NaN points are skipped, at most 512 points (`shape::MAX_POINTS`).
+- Theme colours work as gradient stops and shadow colours (`bg-linear-to-r from-brand
+  via-brand/50 to-surface`, `shadow-brand`, `text-shadow-brand`), and `tw` accepts
+  `z-<n>`, `-z-<n>`, `z-[<n>]`, `z-auto` and the numeric font utilities
+  (`tabular-nums`, `proportional-nums`, `lining-nums`, `oldstyle-nums`,
+  `slashed-zero`, `normal-nums`), which Noctis lowers to inline CSS so a `Style`
+  value still wins; a breakpoint variant or `!` on them is `[TW-01]`.
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

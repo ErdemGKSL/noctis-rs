@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::emit::{check, check_fingerprints, check_names, check_parse_types};
+use super::emit::{
+    check, check_fingerprints, check_names, check_parse_types, var_color_prefixes, var_targets,
+};
 use super::extract::{
     Extracted, MAP_RS, extract, extract_breakpoints, extract_map, extract_namespaces,
     extract_try_neg,
@@ -143,6 +145,40 @@ fn map_fixture_extracts_every_table() {
         ex.fingerprints
             .contains_key("macro_rules! property_parsers")
     );
+}
+
+#[test]
+fn var_color_prefixes_read_the_color_namespace() {
+    let mut ex = Extracted::default();
+    extract_map(&file(MAP_FIXTURE), &mut ex).expect("fixture extracts");
+    assert_eq!(
+        var_color_prefixes(&ex).into_iter().collect::<Vec<_>>(),
+        ["from"]
+    );
+    let targets = var_targets(&ex);
+    assert_eq!(
+        targets["from"],
+        ["Color"],
+        "a stop colour reads `--color-*`"
+    );
+    assert_eq!(
+        targets["text"],
+        ["Text", "Color"],
+        "existing entries are kept"
+    );
+    assert_eq!(targets.len(), 3);
+}
+
+#[test]
+fn var_color_prefix_without_a_color_namespace_fails() {
+    let mut ex = Extracted::default();
+    extract_map(&file(MAP_FIXTURE), &mut ex).expect("fixture extracts");
+    ex.namespaces = vec![("Spacing".into(), "--spacing-".into())];
+    ex.var_targets.clear();
+    let err = check_names(&ex)
+        .expect_err("`from` needs `Color`")
+        .to_string();
+    assert!(err.contains("Color") && err.contains("TwVarColor"), "{err}");
 }
 
 #[test]

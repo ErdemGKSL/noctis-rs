@@ -221,6 +221,52 @@ template!(
     }
 );
 template!(
+    StopGradient {},
+    "stop-gradient",
+    Size::new(32, 8),
+    Format::Png,
+    |_| div(Classes::__literal(
+        "w-full h-full bg-linear-to-r from-brand via-brand/50 to-brand"
+    ))
+);
+template!(
+    Overlap { styled: bool },
+    "overlap",
+    Size::new(8, 8),
+    Format::Png,
+    |t| {
+        // The `z-10` node comes first in tree order, so without z-index the
+        // later `z-0` node would paint over it.
+        let top = div(Classes::__literal("absolute w-full h-full bg-red-500 z-10"));
+        let top = if t.styled {
+            top.style(Style::new().z_index(-1))
+        } else {
+            top
+        };
+        div(Classes::__literal("relative w-full h-full"))
+            .child(top)
+            .child(div(Classes::__literal(
+                "absolute w-full h-full bg-brand z-0",
+            )))
+    }
+);
+template!(
+    Digits { tabular: bool },
+    "digits",
+    Size::new(160, 64),
+    Format::Png,
+    |t| {
+        let column = if t.tabular {
+            Classes::__literal("flex flex-col items-start w-full h-full tabular-nums")
+        } else {
+            Classes::__literal("flex flex-col items-start w-full h-full")
+        };
+        div(column)
+            .child(div(Classes::__literal("bg-red-500 text-transparent text-2xl")).child("1111"))
+            .child(div(Classes::__literal("bg-red-500 text-transparent text-2xl")).child("0000"))
+    }
+);
+template!(
     Scaled { rotate: bool },
     "scaled",
     Size::new(32, 32),
@@ -402,6 +448,9 @@ fn renderer_budget(
             TemplateDescriptor::of::<Bordered>(),
             TemplateDescriptor::of::<Stacked>(),
             TemplateDescriptor::of::<Scaled>(),
+            TemplateDescriptor::of::<StopGradient>(),
+            TemplateDescriptor::of::<Overlap>(),
+            TemplateDescriptor::of::<Digits>(),
             TemplateDescriptor::of::<Shaped>(),
             TemplateDescriptor::of::<ShapedWide>(),
             TemplateDescriptor::of::<Lined>(),
@@ -1706,6 +1755,7 @@ fn img_01_register_without_font_fails() {
 
 mod cache;
 mod emoji;
+mod grammar;
 mod lines;
 mod plays;
 mod remote;

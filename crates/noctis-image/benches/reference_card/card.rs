@@ -39,11 +39,11 @@ pub const SUBTITLE: &str = "text-xl text-muted";
 /// The level and XP row.
 pub const LEVEL_ROW: &str = "flex justify-between text-2xl text-white";
 /// The XP label.
-pub const XP: &str = "text-muted";
+pub const XP: &str = "text-muted tabular-nums";
 /// The progress track.
 pub const TRACK: &str = "flex w-full h-6 rounded-full bg-slate-700";
 /// The progress fill.
-pub const FILL: &str = "h-full rounded-full bg-linear-to-r from-indigo-500 to-violet-400";
+pub const FILL: &str = "h-full rounded-full bg-linear-to-r from-brand to-brand-soft";
 
 /// Every class string of the view.
 pub const CLASS_STRINGS: [&str; 9] = [

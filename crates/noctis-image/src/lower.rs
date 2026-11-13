@@ -7,7 +7,9 @@
 //! classes become takumi Tailwind values; a non-default [`Style`] becomes
 //! inline style declarations, which takumi's cascade applies after the
 //! (non-`!important`) Tailwind layer, so a `Style` value wins over a class
-//! of the same property.
+//! of the same property. A Noctis-lowered utility (`z-10`, `tabular-nums`,
+//! [`crate::tw::lowered`]) is taken out of the classes and becomes an inline
+//! declaration before the `Style` ones, so a `Style` value wins there too.
 //!
 //! A shape node ([`crate::shape`]) becomes a centred container (classes
 //! `flex items-center justify-center w-full h-full` before the node's own)
@@ -39,7 +41,7 @@ use crate::emoji::{self, Piece};
 use crate::node::shape::Shape;
 use crate::node::{Dimension, ImageSrc, Kind, Offset};
 use crate::remote::{RemoteImage, Resolved};
-use crate::{Classes, Node, Style};
+use crate::{Classes, Node, Style, tw};
 
 /// The inline style of a text node that holds custom emoji.
 const INLINE_TEXT: &str = "display: inline";
@@ -74,7 +76,8 @@ pub(crate) fn lower_with(
     template: &str,
     lines: &mut LineBoxes,
 ) -> Result<takumi::prelude::Node, RenderError> {
-    // The declarations that go before the node's own style.
+    // The declarations that go before the lowered utilities and the node's
+    // own style.
     let mut base_css = "";
     // The classes that go before the node's own.
     let mut shape_prefix = "";
@@ -126,12 +129,18 @@ pub(crate) fn lower_with(
             lower_shape(shape, template, lines)?
         }
     };
-    let lowered = match tailwind(shape_prefix, node.class_list())? {
+    let split = tw::lowered::split(node.class_list().as_str());
+    let lowered = match tailwind(shape_prefix, &split.classes)? {
         Some(values) => lowered.with_tw(values),
         None => lowered,
     };
+    let base_css = match (base_css.is_empty(), split.css.is_empty()) {
+        (_, true) => Cow::Borrowed(base_css),
+        (true, false) => Cow::Owned(split.css),
+        (false, false) => Cow::Owned(format!("{base_css}; {}", split.css)),
+    };
     Ok(
-        match inline_style(base_css, node.style_values(), node.class_list())? {
+        match inline_style(&base_css, node.style_values(), node.class_list())? {
             Some(style) => lowered.with_style(style),
             None => lowered,
         },
@@ -309,10 +318,9 @@ fn lower_shape(
     ]))
 }
 
-/// The Tailwind values of `prefix` followed by `classes`; `None` when both
-/// are blank.
-fn tailwind(prefix: &str, classes: &Classes) -> Result<Option<TailwindValues>, RenderError> {
-    let own = classes.as_str();
+/// The Tailwind values of `prefix` followed by `own`; `None` when both are
+/// blank.
+fn tailwind(prefix: &str, own: &str) -> Result<Option<TailwindValues>, RenderError> {
     let text = match (prefix.is_empty(), own.trim().is_empty()) {
         (true, true) => return Ok(None),
         (true, false) => Cow::Borrowed(own),

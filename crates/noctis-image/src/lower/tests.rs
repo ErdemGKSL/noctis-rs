@@ -58,12 +58,12 @@ fn blank_classes_and_default_style_set_nothing() {
 
 #[test]
 fn tailwind_values_parse_a_literal() {
-    let values = tailwind("", &Classes::dynamic("w-full bg-red-500")).unwrap();
+    let values = tailwind("", "w-full bg-red-500").unwrap();
     assert_eq!(
         values,
         Some(TailwindValues::from_str("w-full bg-red-500").unwrap())
     );
-    assert_eq!(tailwind("", &Classes::default()).unwrap(), None);
+    assert_eq!(tailwind("", "").unwrap(), None);
 }
 
 #[test]

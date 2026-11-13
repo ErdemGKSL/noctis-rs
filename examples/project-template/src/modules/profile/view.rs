@@ -72,7 +72,7 @@ pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message
 #[derive(Template, Serialize, Deserialize, Debug)]
 #[template(
     id = "profile.card",
-    version = 1,
+    version = 2,
     size = (934, 282),
     format = Png,
     module = "profile"
@@ -98,7 +98,8 @@ impl TemplateView for ProfileCard {
     fn view(&self, _frame: Frame) -> Node {
         // Literal classes are checked at compile time ([TW-01]) against the Tailwind v4
         // grammar and the tokens in noctis-theme.css (bg-surface, text-muted, border-brand).
-        // Gradient stops take palette colours only, never theme tokens.
+        // Theme colours work as gradient stops too (from-brand to-brand-soft), and
+        // tabular-nums gives every digit one width so the XP label does not jitter.
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
                 // A remote `<img>` draws only a declared `#[asset]` field.
@@ -108,11 +109,11 @@ impl TemplateView for ProfileCard {
                     <span tw="text-xl text-muted">{&self.subtitle}</span>
                     <div tw="flex justify-between text-2xl text-white">
                         <span>{&self.level_label}</span>
-                        <span tw="text-muted">{&self.xp_label}</span>
+                        <span tw="text-muted tabular-nums">{&self.xp_label}</span>
                     </div>
                     <div tw="flex w-full h-6 rounded-full bg-slate-700">
                         <div
-                            tw="h-full rounded-full bg-linear-to-r from-indigo-500 to-violet-400"
+                            tw="h-full rounded-full bg-linear-to-r from-brand to-brand-soft"
                             style={Style::new().width_pct(self.progress * 100.0)}
                         />
                     </div>

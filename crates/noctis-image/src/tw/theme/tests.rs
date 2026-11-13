@@ -450,13 +450,14 @@ fn theme_tokens_satisfy_validate() {
         )
         .is_ok()
     );
-    let bad = validate("bg-nope from-brand", &theme).unwrap_err();
+    assert!(validate("from-brand via-brand/50 shadow-brand", &theme).is_ok());
+    let bad = validate("bg-nope from-nope", &theme).unwrap_err();
     let names: Vec<&str> = bad
         .classes()
         .iter()
         .map(crate::tw::UnknownClass::class)
         .collect();
-    assert_eq!(names, ["bg-nope", "from-brand"]);
+    assert_eq!(names, ["bg-nope", "from-nope"]);
     let bp = Theme::parse("@theme { --breakpoint-hover: 1px; }").unwrap();
     assert!(validate("hover:flex", &bp).is_ok());
 }

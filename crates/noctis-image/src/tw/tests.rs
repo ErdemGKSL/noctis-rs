@@ -128,10 +128,65 @@ fn v3_hints() {
 
 #[test]
 fn unknown_prefix_has_no_suggestion() {
-    for class in ["ring-2", "divide-y", "z-10", "flx"] {
+    for class in ["ring-2", "divide-y", "z-1.5", "flx"] {
         assert_eq!(classify(class), None, "{class}");
         assert_eq!(only_suggestion(class), None, "{class}");
     }
+}
+
+#[test]
+fn lowered_utilities_take_no_variant_or_important() {
+    for class in [
+        "z-10",
+        "-z-10",
+        "z-[5]",
+        "z-auto",
+        "tabular-nums",
+        "slashed-zero",
+    ] {
+        let parsed = classify(class).unwrap_or_else(|| panic!("{class}"));
+        assert_eq!(parsed.utility, Utility::Lowered, "{class}");
+        assert!(validate(class, &NoTheme).is_ok(), "{class}");
+    }
+    for class in [
+        "sm:z-10",
+        "!z-10",
+        "z-10!",
+        "md:tabular-nums",
+        "!tabular-nums",
+    ] {
+        assert_eq!(classify(class), None, "{class}");
+        assert!(validate(class, &NoTheme).is_err(), "{class}");
+    }
+}
+
+#[test]
+fn theme_colours_as_gradient_stops_and_shadow_colours() {
+    for class in [
+        "from-brand",
+        "via-brand/50",
+        "to-brand",
+        "shadow-brand",
+        "text-shadow-brand",
+    ] {
+        assert_eq!(
+            theme(class),
+            (&[ThemeNamespace::Color][..], "brand"),
+            "{class}"
+        );
+    }
+    let brand = Tokens(&[(ThemeNamespace::Color, "brand")]);
+    assert!(validate("bg-linear-to-r from-brand via-brand/50 to-brand", &brand).is_ok());
+    assert!(
+        validate("from-nope", &brand).is_err(),
+        "an undefined token is TW-01"
+    );
+    // takumi's stop colour takes no `.` or `_`, so it moves on and reads nothing.
+    assert_eq!(classify("from-a.b"), None);
+    assert_eq!(
+        classify("from-red-500").map(|c| c.utility),
+        Some(Utility::Builtin)
+    );
 }
 
 #[test]

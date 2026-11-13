@@ -1,5 +1,5 @@
 # Near-miss corpus for tests/tw_crosscheck.rs.
-# One class per line: `<class> <builtin|theme|animation|keyframes|unknown> [narrowed=<reason>]`.
+# One class per line: `<class> <builtin|theme|animation|keyframes|lowered|unknown> [narrowed=<reason>]`.
 # A line without `narrowed=` must agree with takumi; a `narrowed=` line must be
 # unknown to the grammar while takumi accepts it.
 
@@ -14,7 +14,7 @@ overflow-ellipsis unknown
 space-x-4 unknown
 space-y-2 unknown
 flex-grow-0 builtin
-shadow-outline unknown narrowed=stop-color-variable
+shadow-outline theme
 decoration-clone theme
 
 # Typos and unknown prefixes.
@@ -24,7 +24,6 @@ itmes-center unknown
 justify-centre unknown
 ring-2 unknown
 divide-y unknown
-z-10 unknown
 cursor-pointer unknown
 transition unknown
 duration-300 unknown
@@ -105,7 +104,7 @@ animate-5 unknown narrowed=numeric-token
 animate-[wiggle] unknown narrowed=needs-duration
 animate-[wiggle_1s_cubic-bezier(0,0,1,1)] unknown narrowed=animation-functions
 animate-[a_1s,b_1s] unknown narrowed=single-animation
-from-rebeccapurple unknown narrowed=palette-only
+from-rebeccapurple theme
 bg-(--brand) unknown narrowed=var-shorthand
 bg-inf unknown narrowed=numeric-token
 bg-1e3 unknown narrowed=numeric-token
@@ -115,3 +114,40 @@ bg-brand- unknown narrowed=trailing-dash
 text-sm/6 builtin
 bg-current/50.5 unknown narrowed=fractional-opacity
 bg-current/50 builtin
+
+# Theme colours as gradient stops and shadow colours (Story 20.10).
+from-brand theme
+via-brand/50 theme
+to-surface theme
+shadow-brand theme
+shadow-brand/25 theme
+text-shadow-brand theme
+from-brand-500 theme
+from-a.b unknown
+from-a_b unknown
+text-shadow-a_b theme
+-from-brand unknown
+from-Brand unknown narrowed=uppercase-token
+from-brand/50.5 unknown narrowed=fractional-opacity
+from-5 unknown narrowed=numeric-token
+from-brand- unknown narrowed=trailing-dash
+
+# Noctis-lowered utilities (Story 20.10): takumi must not know them.
+z-10 lowered
+-z-10 lowered
+z-[5] lowered
+z-[-5] lowered
+z-auto lowered
+tabular-nums lowered
+proportional-nums lowered
+lining-nums lowered
+oldstyle-nums lowered
+slashed-zero lowered
+normal-nums lowered
+sm:z-10 unknown
+!z-10 unknown
+z-10! unknown
+sm:tabular-nums unknown
+z-01 unknown
+z-1.5 unknown
+-z-[5] unknown

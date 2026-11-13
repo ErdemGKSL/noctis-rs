@@ -205,20 +205,22 @@ its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a 
   `w-*`, `h-*`, `size-*`, `min-w-*`, `max-w-*`, `min-h-*`, `max-h-*`, `aspect-*`;
   spacing `p*-*`, `m*-*` (negative `-ml-6` too); colour `bg-*`, `text-*`,
   `border-*`, `from-*`/`via-*`/`to-*` with `bg-linear-to-*`, `bg-radial`, `bg-conic`
-  (gradient stops take palette colours only, never theme tokens: `from-brand` is
-  `[TW-01]`); shape `rounded-*`, `border`, `border-t-*`, `outline-*`, `shadow-*`,
+  (stops take palette colours or theme colours: `from-brand via-brand/50 to-surface`;
+  an undefined token is `[TW-01]`); shape `rounded-*`, `border`, `border-t-*`, `outline-*`, `shadow-*`,
   `inset-shadow-*`, `drop-shadow-*`, `overflow-hidden`; text `text-<size>`,
   `font-<weight>`, `leading-*`, `tracking-*`, `uppercase`, `italic`, `underline`,
   `truncate`, `line-clamp-*`, `text-center`, `whitespace-*`, `text-shadow-*`;
   effects `opacity-*`, `blur-*`, `brightness-*`, `grayscale`, `mix-blend-*`,
-  `backdrop-blur-*`; transforms `rotate-*`, `scale-*`, `translate-*`, `origin-*`; `object-cover`/`object-contain` for `<img>`; `animate-*` (§8). Arbitrary
+  `backdrop-blur-*`; stacking `z-<n>`, `-z-<n>`, `z-[<n>]`, `z-auto`; numbers
+  `tabular-nums`, `proportional-nums`, `lining-nums`, `oldstyle-nums`, `slashed-zero`,
+  `normal-nums` (these two groups take no breakpoint variant and no `!`: `sm:z-10` is
+  `[TW-01]`; a `Style` value still wins over them); transforms `rotate-*`, `scale-*`, `translate-*`, `origin-*`; `object-cover`/`object-contain` for `<img>`; `animate-*` (§8). Arbitrary
   values work where a literal fits: `w-[148px]`, `border-[12px]`, `top-[140px]`,
   `bg-[#ff0000]`, `rotate-[45deg]` (no `calc()`, no `url()`).
 - **Not in the grammar** (each is `[TW-01]`): `ring-*`, `divide-*`, `space-x-*`/
-  `space-y-*`, `z-*`, `order-*`, `skew-*`, `tabular-nums`, `cursor-*`, `transition`,
-  `duration-*`. Paint order is tree order:
-  a later sibling draws over an earlier one, so order the nodes instead of using `z-*`;
-  use `border` or `outline` for a ring and `gap-*` for spacing.
+  `space-y-*`, `order-*`, `skew-*`, `cursor-*`, `transition`, `duration-*`. Paint
+  order is tree order: a later sibling draws over an earlier one unless `z-*` (on a
+  positioned node) lifts it; use `border` or `outline` for a ring and `gap-*` for spacing.
 - Layout is flexbox/grid (taffy): use `flex`, `flex-col`, `items-*`, `justify-*`,
   `gap-*`, `grid grid-cols-*`. Set explicit sizes on the root (`w-full h-full`).
 - Classes chosen at run time: `Classes::dynamic(text)` (a known class name from your
@@ -243,7 +245,7 @@ its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a 
   `.border_px(u32)` (all four sides; solid unless a class picks `border-dashed` and
   the like; colour from `.border_color_rgb` or a `border-*` colour class) and
   `.z_index(i32)` (higher draws on top among siblings). `rounded_px(3)` beats
-  `rounded-lg`, `left_px(40)` beats `left-4`.
+  `rounded-lg`, `left_px(40)` beats `left-4`, `z_index(-1)` beats `z-10`.
   - Insets move a positioned node only: give it `absolute` (or `relative`) in its
     classes, inside a `relative` parent. `z_index` applies to positioned nodes and
     flex or grid items.

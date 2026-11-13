@@ -10,7 +10,9 @@
 //! - [`classify`] tells a built-in utility ([`Utility::Builtin`]) from one
 //!   that only reads a theme token ([`Utility::Theme`]), a theme animation
 //!   ([`Utility::Animation`], `animate-<token>`) or a theme `@keyframes`
-//!   ([`Utility::Keyframes`], `animate-[<keyframes>_1s_…]`);
+//!   ([`Utility::Keyframes`], `animate-[<keyframes>_1s_…]`), and a utility
+//!   Noctis lowers to inline CSS itself ([`Utility::Lowered`], `z-10`,
+//!   `tabular-nums`) from a small hand-written table beside the generated one;
 //! - [`validate`] accepts a class list when every class is built in or every
 //!   token it reads is defined by the [`ThemeTokens`];
 //! - [`suggest`] names the Tailwind v4 replacement of a known v3 class;
@@ -30,6 +32,7 @@
 
 mod animation;
 mod generated;
+pub(crate) mod lowered;
 mod suffix;
 #[cfg(test)]
 mod tests;
@@ -41,7 +44,10 @@ use std::fmt;
 pub use generated::{TAKUMI_CORE_VERSION, ThemeNamespace};
 pub use theme::{Theme, ThemeError, ThemeErrorKind};
 
-use generated::{BREAKPOINTS, EXACT_RENAMES, FIXED, HINTS, PREFIX_RENAMES, PREFIXES, VAR_TARGETS};
+use generated::{
+    BREAKPOINTS, EXACT_RENAMES, FIXED, HINTS, PREFIX_RENAMES, PREFIXES, VAR_COLOR_PREFIXES,
+    VAR_TARGETS,
+};
 use suffix::{Negation, Parser};
 
 /// The longest class the grammar accepts, in bytes.
@@ -98,6 +104,12 @@ pub enum Utility<'a> {
         /// The keyframes name the animation plays.
         name: &'a str,
     },
+    /// A utility takumi has no Tailwind class for, which Noctis turns into an
+    /// inline declaration before the node's `Style`: `z-<n>`, `-z-<n>`,
+    /// `z-[<n>]`, `z-auto`, `tabular-nums`, `proportional-nums`,
+    /// `lining-nums`, `oldstyle-nums`, `slashed-zero` and `normal-nums`.
+    /// It takes no breakpoint variant and no `!`.
+    Lowered,
 }
 
 /// The theme tokens a class list may read.
@@ -219,6 +231,14 @@ pub fn classify(class: &str) -> Option<Class<'_>> {
     if let Some(stripped) = token.strip_suffix('!') {
         important = true;
         token = stripped;
+    }
+    if lowered::parse(token).is_some() {
+        // A lowered utility is an inline declaration: no breakpoint, no `!`.
+        return (variant.is_none() && !important).then_some(Class {
+            variant,
+            important,
+            utility: Utility::Lowered,
+        });
     }
     Some(Class {
         variant,
@@ -370,7 +390,7 @@ fn classify_utility(token: &str) -> Option<Utility<'_>> {
             return animation_utility(suffix);
         }
         if let Some(namespaces) = lookup(VAR_TARGETS, prefix)
-            && takumi_reads_var(namespaces, suffix)
+            && takumi_reads_var(prefix, namespaces, suffix)
         {
             // takumi stops at this prefix, so a shorter one is never tried.
             return theme_utility(namespaces, suffix).filter(|_| !negative);
@@ -402,9 +422,14 @@ fn match_parsers(parsers: &[Parser], suffix: &str) -> Option<bool> {
     })
 }
 
-/// Whether takumi-core's `var_expression` yields a variable for `suffix` in
-/// at least one namespace group, which ends its prefix search.
-fn takumi_reads_var(namespaces: &[ThemeNamespace], suffix: &str) -> bool {
+/// Whether takumi reads a variable for `suffix` after `prefix`, which ends
+/// its prefix search: a stop or shadow colour when its `TwVarColor` parser
+/// accepts the token, otherwise when `var_expression` yields a variable in
+/// at least one namespace group.
+fn takumi_reads_var(prefix: &str, namespaces: &[ThemeNamespace], suffix: &str) -> bool {
+    if VAR_COLOR_PREFIXES.binary_search(&prefix).is_ok() {
+        return takumi_var_color(suffix);
+    }
     if suffix.starts_with('[') {
         return false;
     }
@@ -414,6 +439,18 @@ fn takumi_reads_var(namespaces: &[ThemeNamespace], suffix: &str) -> bool {
         }
         None => !namespaces.is_empty(),
     }
+}
+
+/// Whether takumi-core's `TwVarColor::parse_tw` accepts `suffix`: a token of
+/// ASCII letters, digits and `-`, with an optional opacity modifier.
+fn takumi_var_color(suffix: &str) -> bool {
+    let (base, modifier) = match suffix.split_once('/') {
+        Some((base, modifier)) => (base, Some(modifier)),
+        None => (suffix, None),
+    };
+    !base.is_empty()
+        && base.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && modifier.is_none_or(parse_opacity_modifier)
 }
 
 /// takumi-core's `var_expression` over a `VAR_TARGETS` entry, narrowed.
@@ -482,6 +519,12 @@ pub mod __crosscheck {
     use super::ThemeNamespace;
     use super::generated::{FIXED, PREFIXES, VAR_TARGETS};
     use super::suffix::Negation;
+
+    /// Every Noctis-lowered utility sample: the cross-check asserts takumi's
+    /// own parser knows none of them.
+    pub fn lowered() -> Vec<String> {
+        super::lowered::samples()
+    }
 
     /// Every class the cross-check compares with takumi: each fixed utility,
     /// each (prefix, parser, rule) sample, a negative sample per negatable

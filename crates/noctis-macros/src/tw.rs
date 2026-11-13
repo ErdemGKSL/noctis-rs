@@ -154,9 +154,15 @@ mod tests {
             )
             .is_empty()
         );
+        assert!(errors("bg-linear-to-r from-brand via-brand/50 to-brand", &theme).is_empty());
+        assert!(errors("shadow-brand text-shadow-brand z-10 tabular-nums", &theme).is_empty());
         assert_eq!(
-            errors("from-brand", &theme),
-            ["[TW-01] unknown Tailwind class `from-brand`"]
+            errors("from-nope sm:z-10", &theme),
+            [
+                "[TW-01] unknown Tailwind class `from-nope`; or declare `--color-nope` in \
+                 noctis-theme.css",
+                "[TW-01] unknown Tailwind class `sm:z-10`"
+            ]
         );
     }
 

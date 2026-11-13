@@ -605,15 +605,15 @@ async fn stats_images_match_their_snapshots() -> anyhow::Result<()> {
 | `RenderError::NoRenderer` | no `.theme(..)` / `.image(..)` on the builder | add one in `configure` |
 | `RenderError::UnknownTemplate` | the Template is not registered | `module = ".."` in `#[template(..)]`, or `Module::template::<T>()` |
 | the picture did not change after editing `view` | the cache served the old render | bump `version` in `#[template(..)]` |
-| `[TW-01] unknown Tailwind class` | a class outside the grammar (`ring-2`, `z-10`, `space-x-4`, a v3 name) or a missing theme token | `images-engine.md` §4; add the token to `noctis-theme.css` |
-| a gradient stop with a theme colour fails (`from-brand`) | gradient stops take palette colours only | `from-indigo-500`; or a solid `bg-brand` |
+| `[TW-01] unknown Tailwind class` | a class outside the grammar (`ring-2`, `space-x-4`, `sm:z-10`, a v3 name) or a missing theme token | `images-engine.md` §4; add the token to `noctis-theme.css` |
+| a gradient stop with a theme colour fails (`from-brand`) | the token is not in `noctis-theme.css` | declare `--color-brand` there |
 | text draws as boxes | no glyph: emoji without `image-emoji`, a script the fonts lack | enable the feature, or register a font (`images-engine.md` §6) |
 | `[IMG-01] no font is registered` at build | Templates but no font | the `default-font` feature or `ImageConfig::font` |
 | an avatar is a grey square | the fetch fell back (a warning on target `noctis::image` says why), or `RemoteImage::placeholder()` | check the origin allow-list and the URL; in tests this is expected |
 | `RenderError::UndeclaredImage` | the view draws a `RemoteImage` no `#[asset]` field holds (often one inside a nested struct) | move it into an `#[asset]` field of the Template |
 | a child is stretched or squashed | a flex parent stretches children without a size | give the `<img>` or box `w-*`/`h-*`, or put it in an `items-center` row |
 | the fill overflows its rounded track | no clipping | `overflow-hidden` on the track |
-| an overlay is hidden | painted before the thing it should cover | move the node later among its siblings (there is no `z-*`) |
+| an overlay is hidden | painted before the thing it should cover | `z-10` on it (it must be `relative` or `absolute`), or move it later among its siblings |
 | long names break the row | unbounded text | `truncate` on a `flex-1` span, or `line-clamp-2` |
 | the layout is empty or collapsed | the root has no size | `w-full h-full` on the root |
 | `RenderError::SizeMismatch` | an animation frame's root has an explicit pixel size | keep the root `w-full h-full` |

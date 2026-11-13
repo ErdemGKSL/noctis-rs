@@ -40,14 +40,15 @@ these moves:
 | N of M | `for i in 0..m { .. }` with a class chosen per item: `tw={if i < n { tw!("..") } else { tw!("..") }}` |
 | Equal parts | `flex-1` children in a `flex gap-*` row, or `grid grid-cols-N` |
 | A value as a position | a `relative` track with an `absolute` marker: `style={Style::new().left_pct(v * 100.0).translate_px(-8, 0)}` (half the marker's width back, so it centres on the value) |
-| One thing over another | `relative` parent, `absolute` child with `inset-0`, `top-*`, `left-*`, `right-*`, `bottom-*` (literal or `top-[140px]`) or, when the offset is data, `Style::new().left_px(x).top_px(y)` (`_pct` for percent); a later sibling paints over an earlier one unless `Style::new().z_index(n)` lifts it |
+| One thing over another | `relative` parent, `absolute` child with `inset-0`, `top-*`, `left-*`, `right-*`, `bottom-*` (literal or `top-[140px]`) or, when the offset is data, `Style::new().left_px(x).top_px(y)` (`_pct` for percent); a later sibling paints over an earlier one unless `z-10` (or `Style::new().z_index(n)` when the order is data) lifts it |
 | A size, radius or border from data | `Style::new().scale(f)` (about the centre, no relayout), `.rounded_px(r)`, `.border_px(w)` |
 | A clipped shape | `overflow-hidden` plus `rounded-*` on the parent |
 | A circle, pill, ring | `rounded-full`; a plain ring is `rounded-full border-[12px]` with no background, a ring with a value is an `Arc` |
 | Overlap | negative margins: `-ml-6` |
 | A reusable part | a function `fn row(r: &Row) -> Node { view! { .. } }` called as `{row(r)}` |
 | Long text that must not break the layout | `truncate` on a `flex-1` span (one line, ellipsis) or `line-clamp-2` |
-| Depth | `shadow-lg`, `bg-white/10` overlays, `bg-linear-to-br from-indigo-600 to-fuchsia-500` (gradient stops take palette colours only, never theme tokens) |
+| Depth | `shadow-lg`, `bg-white/10` overlays, `bg-linear-to-br from-indigo-600 to-fuchsia-500`, or theme colours: `from-brand via-brand/50 to-surface`, `shadow-brand` |
+| Numbers in a column, counters | `tabular-nums` (every digit one width, so values line up and do not jitter between renders) |
 
 `Style` has these setters (`images-engine.md` §4): `width_px`/`width_pct`,
 `height_px`/`height_pct`, `gap_px`, `bg_rgb`, `color_rgb`, `border_color_rgb`,
@@ -964,7 +965,7 @@ impl TemplateView for Countdown {
 Show days, hours and minutes, never seconds: the picture is as old as the last
 interaction. Round `elapsed` to whole percent so that refreshes within the same minute
 hit the cache. The fixed-width tiles (`w-40`) keep the layout still when digits change
-(the grammar has no `tabular-nums`).
+(`tabular-nums` on the digits does the same for the numbers inside a tile).
 
 ## 10. Motion
 

@@ -807,3 +807,22 @@ Planning decisions (2026-11-13, Epic 20):
   inside the 50 ms p99 per-render budget of NFR-3; a release test asserts a median
   under 50 ms. The Project Template code gains no line until Story 20.12's sweep; the
   Usage Skill's sparkline (§4.3) and a new line and area chart (§6.3) use them.
+- (decision, Story 20.10) The generator gives every prefix whose takumi parser has the
+  `TwVarColor` parse type (`from`, `via`, `to`, `shadow`, `text-shadow` in 0.31.0)
+  the `Color` namespace in Noctis's `VAR_TARGETS`, and emits them as
+  `VAR_COLOR_PREFIXES`. There the grammar follows `TwVarColor::parse_tw` (letters,
+  digits and `-` only): a token with `.` or `_` falls through to shorter prefixes as
+  in takumi, instead of being a theme token. The cross-check oracle reads a
+  `TwVarColor("var(--color-x)")` without a fallback as a theme read, so
+  `shadow-outline` and `from-rebeccapurple` are now theme utilities (they draw only
+  with a defined token) instead of narrowed corpus lines.
+- (decision, Story 20.10) A lowered utility classifies as the new
+  `noctis_image::tw::Utility::Lowered` (the enum is `#[non_exhaustive]`; the facade's
+  public API snapshot is unchanged). Lowering joins the node's `font-variant-numeric`
+  classes per feature (figure, spacing, slashed zero; the later class wins, and
+  `normal-nums` clears the ones before it) and keeps the last `z-*`. `z-<n>` takes a
+  canonical decimal `i32` (no sign, no leading zero); `z-[<n>]` also takes `-<n>`
+  inside the brackets, `-z-[<n>]` is `[TW-01]`.
+- (decision, Story 20.10) The Project Template's profile card uses
+  `from-brand to-brand-soft` and `tabular-nums` now (its pixel snapshot is
+  regenerated), so the template shows the new classes before Story 20.12's sweep.

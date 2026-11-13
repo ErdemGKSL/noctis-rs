@@ -1985,7 +1985,8 @@ pub(crate) const PREFIXES: &[(&str, &[Parser])] = &[
     ),
 ];
 
-/// `VAR_TARGETS`, sorted by prefix: the namespaces a theme token is read from.
+/// `VAR_TARGETS` plus `Color` for every [`VAR_COLOR_PREFIXES`] entry, sorted by
+/// prefix: the namespaces a theme token is read from.
 pub(crate) const VAR_TARGETS: &[(&str, &[ThemeNamespace])] = &[
     ("aspect", &[ThemeNamespace::Aspect]),
     ("basis", &[ThemeNamespace::Spacing]),
@@ -2000,6 +2001,7 @@ pub(crate) const VAR_TARGETS: &[(&str, &[ThemeNamespace])] = &[
     ("bottom", &[ThemeNamespace::Spacing]),
     ("decoration", &[ThemeNamespace::Color]),
     ("font", &[ThemeNamespace::Font, ThemeNamespace::FontWeight]),
+    ("from", &[ThemeNamespace::Color]),
     ("gap", &[ThemeNamespace::Spacing]),
     ("gap-x", &[ThemeNamespace::Spacing]),
     ("gap-y", &[ThemeNamespace::Spacing]),
@@ -2045,12 +2047,20 @@ pub(crate) const VAR_TARGETS: &[(&str, &[ThemeNamespace])] = &[
     ("rounded-t", &[ThemeNamespace::Radius]),
     ("rounded-tl", &[ThemeNamespace::Radius]),
     ("rounded-tr", &[ThemeNamespace::Radius]),
+    ("shadow", &[ThemeNamespace::Color]),
     ("size", &[ThemeNamespace::Spacing]),
     ("text", &[ThemeNamespace::Text, ThemeNamespace::Color]),
+    ("text-shadow", &[ThemeNamespace::Color]),
+    ("to", &[ThemeNamespace::Color]),
     ("top", &[ThemeNamespace::Spacing]),
     ("tracking", &[ThemeNamespace::Tracking]),
+    ("via", &[ThemeNamespace::Color]),
     ("w", &[ThemeNamespace::Spacing]),
 ];
+
+/// The prefixes with a `TwVarColor` parser, sorted: takumi reads any token it
+/// accepts as `var(--color-<token>)` there.
+pub(crate) const VAR_COLOR_PREFIXES: &[&str] = &["from", "shadow", "text-shadow", "to", "via"];
 
 /// v3 -> v4 prefix renames: `(v3 prefix, v4 prefix, renamed suffixes)`.
 pub(crate) const PREFIX_RENAMES: &[(&str, &str, &[&str])] = &[(
