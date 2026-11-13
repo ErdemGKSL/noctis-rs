@@ -1,0 +1,7 @@
+error: [EMO-03] emoji `check` is declared twice in this set (also by `Check`)
+         = help: an application emoji name is unique: rename one with #[emoji(name = "..")]
+ --> tests/ui/emo/EMO-03_duplicate_name.rs:7:5
+  |
+7 | /     #[emoji(name = "check")]
+8 | |     Tick,
+  | |________^

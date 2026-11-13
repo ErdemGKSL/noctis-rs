@@ -1,0 +1,5 @@
+error: `art` is set but no variant is `#[emoji(render)]`: remove `art`, or mark the drawn variants with #[emoji(render)]
+ --> tests/types/emoji_art_without_render.rs:8:43
+  |
+8 | #[emojis(dir = "../fixtures/emoji", art = art, __dir_from_source_file)]
+  |                                           ^^^

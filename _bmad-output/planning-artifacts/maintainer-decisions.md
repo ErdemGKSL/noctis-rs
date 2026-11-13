@@ -644,3 +644,27 @@ Planning decisions (2026-11-13, Epic 20):
   under a larger budget was not added (it would need a second lookup per miss).
   `max_bytes(0)` is `RenderError::Unsupported` for the Template, counted under the
   `unsupported` rejected reason and reported like any `Unsupported`.
+- (decision, Story 20.3) `#[emojis(dir)]` defaults to `assets/emoji`; `#[emoji(file)]`
+  is relative to `dir` (not the crate root), and its white file is
+  `<stem>_white.<ext>` beside it. Without `file`, exactly one of `<name>.png`, `.gif`,
+  `.jpg` may exist: two are an `[EMO-04]` "several image files" error rather than a
+  silent pick. A declaration is `EmojiDecl` (name, `EmojiImage`, optional white
+  pair); a rendered image is `EmojiImage::Render(fn(EmojiTone) -> EmojiArt)`, a
+  per-variant fn pointer the derive generates around the set's `art` function, so the
+  art signature is type-checked at `cargo check`. `EmojiArt` keeps the Template's
+  descriptor and its `RenderJob` for Story 20.5; core still never names
+  `noctis-image`.
+- (decision, Story 20.3) Registering one set twice with `AppBuilder::emojis` is
+  idempotent (deduplicated by type), so plugins and `configure` can both register a
+  shared set. `BuildViolation::InvalidEmoji` (EMO-03) exists for hand-written
+  `AppEmojis` impls, which skip the derive's checks; the fold checks names, then
+  uniqueness, then the count against `Limits::application_emojis`.
+- (decision, Story 20.3) `render` without `art`, `art` without a `render` variant and
+  a wrong `art` signature are plain compile errors with no rule id (they are API
+  shape, not Discord rules), covered by `tests/types/emoji_*` fixtures; the EMO
+  fixtures live in `tests/ui/emo/` and read `tests/fixtures/emoji/` through the hidden
+  `__dir_from_source_file` flag, as `i18n!` fixtures do. The emoji validators of
+  `noctis_rules::emoji` return `Box<Violation>` (clippy `result_large_err`).
+- (decision, Story 20.3) `#[emoji(render)]` and `EmojiArt` were kept in this story (no
+  move to 20.5): the declaration side is small; only the rendering at Publish is
+  Story 20.5's.

@@ -2113,6 +2113,63 @@ pub mod webhook {
 /// ```
 pub use twilight_model::id;
 
+pub mod emoji {
+    //! Application emojis declared in code (FR-82, AD-33; EMO-01..04).
+    //!
+    //! A set is a fieldless enum with `#[derive(AppEmojis)]`, one variant
+    //! per icon, registered with [`AppBuilder::emojis`](crate::AppBuilder::emojis):
+    //!
+    //! - Each variant is one emoji named in `snake_case` (`StOnline` is
+    //!   `st_online`); `#[emoji(name = "..")]` overrides the name.
+    //! - Its image is `<dir>/<name>.png`, `.gif` or `.jpg` (exactly one of
+    //!   them), with `#[emojis(dir = "..")]` relative to the crate root
+    //!   (default `assets/emoji`); `#[emoji(file = "..")]`, relative to
+    //!   `dir`, overrides it. The file is embedded with `include_bytes!`, so
+    //!   an edit rebuilds the crate. A GIF is an animated emoji.
+    //! - `#[emoji(white)]` also declares `<name>_white` from
+    //!   `<stem>_white.<ext>`: the variant for `Primary`, `Success` and
+    //!   `Danger` buttons.
+    //! - `#[emoji(render)]` reads no file: the image is drawn at Publish by
+    //!   the set's art function, `#[emojis(art = path::to::fn)]`, a
+    //!   `fn(Self, EmojiTone) -> EmojiArt` (`EmojiArt::template(..)` of an
+    //!   image Template); `render` without `art`, and `art` without a
+    //!   `render` variant, do not compile.
+    //!
+    //! `cargo check` rejects a bad or repeated name (`[EMO-03]`), a missing
+    //! file or one that is not PNG, JPEG or GIF by its magic bytes
+    //! (`[EMO-04]`) and a file over 256 KiB (`[EMO-02]`). `App::build` folds
+    //! every registered set once ([`App::emoji_declarations`](crate::App::emoji_declarations)):
+    //! a name two sets declare is `BuildViolation::DuplicateEmoji`
+    //! (`[EMO-03]`), more than 2000 names `BuildViolation::TooManyEmojis`
+    //! (`[EMO-01]`). An App without a set makes no emoji request.
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //!
+    //! #[derive(AppEmojis, Clone, Copy, Debug, PartialEq, Eq)]
+    //! # #[emojis(dir = "tests/fixtures/emoji")]
+    //! enum Icons {
+    //!     #[emoji(white)]
+    //!     Check, // assets/emoji/check.png and check_white.png
+    //!     #[emoji(name = "st_online")]
+    //!     Online, // assets/emoji/st_online.png
+    //! }
+    //!
+    //! # #[tokio::main(flavor = "current_thread")] async fn main() {
+    //! let app = App::builder().emojis::<Icons>().build().unwrap();
+    //! let names: Vec<_> = app.emoji_declarations().all().iter().map(|e| e.name()).collect();
+    //! assert_eq!(names, ["check", "check_white", "st_online"]);
+    //! assert_eq!(Icons::Check.declaration().white_name(), Some("check_white"));
+    //! # }
+    //! ```
+
+    pub use noctis_core::emoji::{
+        AppEmojis, DeclaredEmoji, EmojiArt, EmojiDecl, EmojiDeclarations, EmojiFormat, EmojiImage,
+        EmojiTone,
+    };
+    pub use noctis_macros::AppEmojis;
+}
+
 pub mod twilight {
     //! The twilight crates Noctis builds on, for the Discord endpoints and
     //! models Noctis does not wrap.
@@ -2709,6 +2766,7 @@ pub mod prelude {
     //!   [`AppBuilder`]) and `VoiceExt` (`.voice()` on the App and every
     //!   context).
 
+    pub use crate::emoji::{AppEmojis, EmojiArt, EmojiTone};
     /// `.theme(..)` and `.image(..)` on the [`AppBuilder`] (feature `image`).
     #[cfg(feature = "image")]
     pub use crate::image::AppBuilderImageExt;
@@ -3862,6 +3920,8 @@ pub mod rules {
     //!   [`crate::BootFlagError`]) of `flags = [..]`, `Module::flags` and
     //!   `--features`.
     //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
+    //! - [`emoji`]: application emoji names, upload formats and sizes
+    //!   (EMO-01..04), checked by `#[derive(AppEmojis)]` and `App::build`.
     //! - [`command`]: Command Pattern expansion ([`command::expand`]), the
     //!   command name and tree rules ([`command::validate_name`],
     //!   [`command::validate_tree`], [`command::validate_merge`]), the option
@@ -3954,7 +4014,9 @@ pub mod rules {
         Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,
         Violation,
     };
-    pub use noctis_rules::{app_id, attachment, boot_flag, command, component, message, modal};
+    pub use noctis_rules::{
+        app_id, attachment, boot_flag, command, component, emoji, message, modal,
+    };
 }
 
 #[cfg(feature = "testkit")]

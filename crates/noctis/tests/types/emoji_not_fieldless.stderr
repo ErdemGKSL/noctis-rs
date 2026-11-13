@@ -1,0 +1,6 @@
+error: an AppEmojis variant has no fields
+         = help: an AppEmojis set is a fieldless enum: #[emojis(dir = "assets/emoji", art = path::to::fn)] on the enum, #[emoji(name = "..", file = "..", white, render)] on a variant
+ --> tests/types/emoji_not_fieldless.rs:5:5
+  |
+5 |     Check(u8),
+  |     ^^^^^^^^^

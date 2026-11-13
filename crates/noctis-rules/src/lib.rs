@@ -33,6 +33,8 @@
 //! - [`cid`]: the route id grammar ([`cid::validate_route_id`]) and the
 //!   `custom_id` codec caps shared by the codec and the kind derives
 //!   (CID-01, CID-03).
+//! - [`emoji`]: application emoji names, upload formats, the image byte cap
+//!   and the per-application count (EMO-01..04).
 //!
 //! The crate is sync and does no I/O.
 
@@ -43,6 +45,7 @@ mod check;
 pub mod cid;
 pub mod command;
 pub mod component;
+pub mod emoji;
 mod key;
 pub mod len;
 mod limits;

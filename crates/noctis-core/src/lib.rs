@@ -183,6 +183,7 @@ mod command;
 mod component;
 mod discord_cache;
 mod edge;
+pub mod emoji;
 mod error;
 pub mod events;
 pub mod gateway {

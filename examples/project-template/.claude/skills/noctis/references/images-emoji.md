@@ -7,12 +7,12 @@ icons, currency symbols, the pieces of a text progress bar.
 
 Covers: what Discord guarantees (§1), the emoji methodology, the defaults to follow
 unless the user says otherwise (§2), making the art (§3), drawing glyphs with the image
-engine (§4), uploading (§5), using them from code (§6), emoji progress bars (§7),
-animated emojis (§8), emoji or attachment (§9).
+engine (§4), declaring the set in code and uploading (§5), using them from code (§6),
+emoji progress bars (§7), animated emojis (§8), emoji or attachment (§9).
 
-**Noctis 0.1 has no application-emoji API of its own.** Uploading and listing go
-through the twilight client that `ctx.http()` returns (§5); using an emoji needs only
-its name and id (§6).
+**Declare the set in code** with `#[derive(AppEmojis)]` (§5.0): names, files, formats
+and sizes are checked at `cargo check`. Uploading and the name → id lookup still go
+through the twilight client that `ctx.http()` returns (§5.2, §6).
 
 ## 1. What Discord guarantees
 
@@ -36,9 +36,12 @@ From Discord's Emoji resource (`developers/resources/emoji` in the API docs), se
   `<a:NAME:ID>` (API Reference, "Message Formatting"). Buttons and select options take
   a partial emoji object (`id`, `name`, `animated`).
 
-Not stated in those docs, so treat as conventions: the characters allowed in a name
-(use 2 to 32 of `[A-Za-z0-9_]`, the form Noctis itself parses, `[IMG-04]`), and the size
-an emoji is displayed at (text height; much smaller than 128 px, client behaviour).
+Noctis enforces these as `[EMO-01]` (2000 per application), `[EMO-02]` (256 KiB =
+262,144 bytes), `[EMO-03]` (a name is 2 to 32 of `[A-Za-z0-9_]`, the form Noctis also
+parses in images, `[IMG-04]`, and unique per application) and `[EMO-04]` (Noctis
+uploads PNG, JPEG or GIF only: "Image Data" names only those three; a GIF is
+animated). 128×128 is a recommendation, not a check. The size an emoji is displayed at
+is client behaviour (text height; much smaller than 128 px).
 
 ## 2. Emoji methodology (defaults)
 
@@ -209,7 +212,80 @@ async fn emoji_glyphs() -> anyhow::Result<()> {
 
 Upload those PNGs in the Developer Portal, or let the bot upload its own renders (§5).
 
-## 5. Uploading
+## 5. Declaring and uploading
+
+### 5.0 Declaring the set (`#[derive(AppEmojis)]`)
+
+The set is a fieldless enum, one variant per icon, registered on the App builder:
+
+```rust
+use noctis::prelude::*;
+
+#[derive(AppEmojis, Clone, Copy, Debug, PartialEq, Eq)]
+#[emojis(dir = "assets/emoji")]            // the default; relative to the crate root
+pub enum Icons {
+    #[emoji(white)]
+    Check,                                  // check (check.png) and check_white (check_white.png)
+    #[emoji(white)]
+    Cross,
+    StOnline,                               // st_online (st_online.png)
+    #[emoji(name = "coin", file = "money/coin.gif")]
+    Coin,                                   // a GIF is an animated emoji
+}
+
+// in configure(builder):
+builder.emojis::<Icons>();
+```
+
+- **Names**: the variant in `snake_case` (`StOnline` → `st_online`);
+  `#[emoji(name = "..")]` overrides it. `#[emoji(white)]` also declares
+  `<name>_white` (rule 4 of §2). Names are an API: renaming a variant renames the emoji.
+- **Files**: `<dir>/<name>.png`, `.gif` or `.jpg` (exactly one may exist);
+  `#[emoji(file = "..")]` is relative to `dir`, and its white file is
+  `<stem>_white.<ext>` beside it. Files are embedded with `include_bytes!`, so the
+  binary carries them and an edit rebuilds the crate.
+- **Checked at `cargo check`**, each error on the variant: a bad name or a name the set
+  declares twice (`<name>_white` included) is `[EMO-03]`; a missing file, or one that
+  is not PNG, JPEG or GIF by its first bytes (WebP and AVIF are not uploaded), is
+  `[EMO-04]`; a file over 256 KiB is `[EMO-02]`.
+- **Checked at `build()`**: a name two registered sets declare is
+  `BuildViolation::DuplicateEmoji` (`[EMO-03]`); more than 2000 names, `_white`
+  included, is `BuildViolation::TooManyEmojis` (`[EMO-01]`). Registering one set twice
+  is harmless; an App without a set makes no emoji request.
+- **Drawn icons**: mark a variant `#[emoji(render)]` (no file is read) and give the set
+  one art function, `#[emojis(art = glyph_art)]` with
+  `fn glyph_art(icon: Icons, tone: EmojiTone) -> EmojiArt`, returning
+  `EmojiArt::template(EmojiGlyph { .. })` (§4; `EmojiTone::{Colour, White}` picks the
+  tint). `render` without `art`, or `art` with no `render` variant, does not compile.
+- **Reading the set**: `Icons::Check.declaration()` gives `name()`, `white_name()`,
+  `image()` (`EmojiImage::File { bytes, format }` or `EmojiImage::Render(f)`), and
+  `Icons::DECLARATIONS` lists them all; `app.emoji_declarations()` lists every name the
+  App declares. Upload them with §5.1 or §5.2.
+
+The items, all in `noctis::emoji` (`AppEmojis`, `EmojiArt` and `EmojiTone` are also in
+the prelude):
+
+| Item | What it is |
+| --- | --- |
+| `AppEmojis` | the derive, and the trait it implements: `DECLARATIONS` (one `EmojiDecl` per variant, in order) and `declaration(self)` |
+| `EmojiDecl` | one variant: `name()`, `image()`, `white_name()`, `white_image()`, `name_in(EmojiTone)` (`None` for `White` without a white variant) |
+| `EmojiImage` | `File { bytes, format }` (embedded, already checked) or `Render(fn(EmojiTone) -> EmojiArt)`; `animated()` is `Some(true)` for a GIF, `None` for a drawn one |
+| `EmojiFormat` | `Png`, `Jpeg`, `Gif`: `sniff(bytes)` by magic bytes, `is_animated()`, `mime()`, and `EXTENSIONS` (`png`, `gif`, `jpg`, the order files are looked up in) |
+| `EmojiTone` | `Colour` or `White` |
+| `EmojiArt` | `EmojiArt::template(t)` for a drawn icon; `template_id()` |
+| `EmojiDeclarations` | what `app.emoji_declarations()` returns: `len()`, `is_empty()`, `all()` (a slice, in fold order), `get(name)` |
+| `DeclaredEmoji` | one declared name of the App: `name()`, `image()`, `tone()`, `set()` (the set's type name) |
+
+`BuildViolation::DuplicateEmoji { name, first_set, second_set }` and
+`BuildViolation::TooManyEmojis { count, limit }` are the `build()` errors;
+`BuildViolation::InvalidEmoji { set, violation }` appears only for a hand-written
+`AppEmojis` impl (the derive rejects a bad name at `cargo check`).
+
+To check names or files built at run time (an admin uploading a picture), use
+`noctis::rules::emoji`: `validate_emoji_name(name)` (EMO-03, `NAME_MIN` 2 to
+`NAME_MAX` 32), `validate_emoji_image(name, bytes, &limits)` (EMO-04 then EMO-02,
+returning the `EmojiFormat`) and `validate_emoji_set(names, &limits)` (EMO-03
+uniqueness and EMO-01); each returns the `Violation` with its rule id.
 
 ### 5.1 By hand
 
@@ -280,8 +356,10 @@ impl EmojiSync {
 - A changed picture needs a new upload: delete the old emoji
   (`delete_application_emoji(app, id)`) or, better, upload under a new name and keep
   the old one for messages already sent. `update_application_emoji` only renames.
-- Files that do not come from a Template (generated art in `assets/emoji/`) upload the
-  same way from `include_bytes!` data instead of a render.
+- The files of a declared set (§5.0) upload the same way: iterate `Icons::DECLARATIONS`
+  and, for `EmojiImage::File { bytes, format }`, build the data URI from `bytes` with
+  `format.mime()` (`image/png`, `image/gif`, `image/jpeg`); upload `white_image()`
+  under `white_name()` too.
 - After a sync, restart the bot or reload the table (§6) so the new ids are known.
 
 ## 6. Using them from code
@@ -297,11 +375,11 @@ use noctis::lifecycle::{AppStarted, HookCtx};
 use noctis::prelude::*;
 use noctis::ui::{ButtonStyle, Emoji};
 
-/// name → id of this application's emojis. Registered with `.state(AppEmojis::default())`.
+/// name → id of this application's emojis. Registered with `.state(EmojiIds::default())`.
 #[derive(Debug, Default)]
-pub struct AppEmojis(OnceLock<BTreeMap<String, Id<EmojiMarker>>>);
+pub struct EmojiIds(OnceLock<BTreeMap<String, Id<EmojiMarker>>>);
 
-impl AppEmojis {
+impl EmojiIds {
     fn id(&self, name: &str) -> Option<Id<EmojiMarker>> {
         self.0.get()?.get(name).copied()
     }
@@ -332,7 +410,7 @@ pub struct LoadEmojis;
 impl LoadEmojis {
     #[handler]
     async fn handle(self, ctx: HookCtx, _started: AppStarted) -> HandlerResult<()> {
-        let Some(table) = ctx.state::<AppEmojis>() else { return Ok(()) };
+        let Some(table) = ctx.state::<EmojiIds>() else { return Ok(()) };
         let app = ctx.http().current_user_application().await?.model().await?.id;
         let list = ctx.http().get_application_emojis(app).await?.model().await?;
         let _ = table.0.set(list.items.into_iter().map(|e| (e.name, e.id)).collect());
@@ -341,13 +419,13 @@ impl LoadEmojis {
 }
 ```
 
-Handlers read the table with `ctx.state::<AppEmojis>()` and pass `&AppEmojis` to the
+Handlers read the table with `ctx.state::<EmojiIds>()` and pass `&EmojiIds` to the
 render function like `&Strings`.
 
 **On buttons** (the style decides the variant):
 
 ```rust
-pub fn confirm_row(order: OrderId, e: &AppEmojis) -> ActionRow {
+pub fn confirm_row(order: OrderId, e: &EmojiIds) -> ActionRow {
     let mut confirm = ConfirmOrder { order }.build();          // defaults(style = Success, ..)
     if let Some(emoji) = e.on(ButtonStyle::Success, "check", "check_white") {
         confirm = confirm.emoji(emoji);                          // white: Success is coloured
@@ -411,7 +489,7 @@ it sits on the same line as its numbers.
 
 ```rust
 /// `filled` of `total` segments, e.g. 4 of 10.
-pub fn emoji_bar(e: &AppEmojis, filled: usize, total: usize) -> String {
+pub fn emoji_bar(e: &EmojiIds, filled: usize, total: usize) -> String {
     (0..total)
         .map(|i| {
             let set = if i < filled { "on" } else { "off" };

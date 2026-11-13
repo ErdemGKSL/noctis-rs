@@ -372,6 +372,19 @@ impl App {
         &self.shared.limits
     }
 
+    /// Every application emoji the App declares, folded once at build from
+    /// the sets of [`AppBuilder::emojis`] (empty without a set).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert!(app.emoji_declarations().is_empty());
+    /// # }
+    /// ```
+    pub fn emoji_declarations(&self) -> &crate::emoji::EmojiDeclarations {
+        &self.shared.emojis
+    }
+
     /// How long after an interaction arrives the auto-defer acknowledges
     /// it when its handler has not answered yet
     /// ([`AppBuilder::ack_deadline`]; 2000 ms when unset, INT-01).
@@ -2045,6 +2058,8 @@ pub struct AppBuilder {
     plugin_types: HashSet<TypeId>,
     /// The Shutdown Tasks (`shutdown_task`), in registration order.
     shutdown_tasks: Vec<ShutdownTask>,
+    /// The emoji sets (`emojis`), one per type, in registration order.
+    emoji_sets: Vec<crate::emoji::EmojiSet>,
     violations: Vec<BuildViolation>,
 }
 
@@ -2154,6 +2169,7 @@ impl AppBuilder {
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             shutdown_tasks: Vec::new(),
+            emoji_sets: Vec::new(),
             violations: Vec::new(),
         }
     }
@@ -2374,6 +2390,39 @@ impl AppBuilder {
     /// ```
     pub fn locales(&mut self, catalog: noctis_i18n::Catalog) -> &mut Self {
         self.catalogs.push(catalog);
+        self
+    }
+
+    /// Registers an application emoji set: a fieldless enum with
+    /// `#[derive(AppEmojis)]` (FR-82). Call it once per set; registering
+    /// the same set again changes nothing.
+    ///
+    /// `build` folds every set once into the App's
+    /// [`emoji_declarations`](App::emoji_declarations): a name two sets
+    /// declare is a [`BuildViolation::DuplicateEmoji`] (EMO-03), more names
+    /// than [`Limits::application_emojis`] (2000, `_white` variants
+    /// included) a [`BuildViolation::TooManyEmojis`] (EMO-01). An App with
+    /// no set makes no emoji request.
+    ///
+    /// ```
+    /// use noctis_core::emoji::{AppEmojis, EmojiDecl};
+    ///
+    /// // What `#[derive(AppEmojis)]` implements; derive it instead.
+    /// #[derive(Clone, Copy)]
+    /// enum Icons { }
+    /// impl AppEmojis for Icons {
+    ///     const DECLARATIONS: &'static [EmojiDecl] = &[];
+    ///     fn declaration(self) -> &'static EmojiDecl { match self {} }
+    /// }
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.emojis::<Icons>();
+    /// ```
+    pub fn emojis<T: crate::emoji::AppEmojis>(&mut self) -> &mut Self {
+        let set = crate::emoji::EmojiSet::of::<T>();
+        if !self.emoji_sets.iter().any(|s| s.id == set.id) {
+            self.emoji_sets.push(set);
+        }
         self
     }
 
@@ -3217,7 +3266,10 @@ impl AppBuilder {
     /// the value sent for its owner catalog's default locale, CMD-04, sorted
     /// by key), then every [`BuildViolation::CommandLocalization`] (sorted by
     /// key, locale and rule; skipped when the catalogs do not merge), then
-    /// every [`BuildViolation::MissingCacheIntent`] (GW-05), then
+    /// every [`BuildViolation::MissingCacheIntent`] (GW-05), then the
+    /// emoji sets' [`BuildViolation::InvalidEmoji`] and
+    /// [`BuildViolation::DuplicateEmoji`] (EMO-03, in fold order) and
+    /// [`BuildViolation::TooManyEmojis`] (EMO-01), then
     /// every [`BuildViolation::DuplicateLocaleKey`], then the
     /// crypto provider and the runtime.
     ///
@@ -3382,6 +3434,8 @@ impl AppBuilder {
                 .map(|(resource, intent)| BuildViolation::MissingCacheIntent { resource, intent }),
         );
         self.register_templates(&registry);
+        let (emojis, emoji_violations) = crate::emoji::fold(&self.emoji_sets, &self.limits);
+        self.violations.extend(emoji_violations);
         let payload_keys = self.key_ring(&registry);
         self.violations.extend(duplicate_keys);
         if ensure_crypto_provider().is_err() {
@@ -3438,6 +3492,7 @@ impl AppBuilder {
                 states: config.states,
                 edge,
                 limits: config.limits,
+                emojis: Arc::new(emojis),
                 registry: Arc::clone(&registry),
                 ack_deadline: config.ack_deadline,
                 refs,
@@ -3623,6 +3678,14 @@ impl fmt::Debug for AppBuilder {
                     .shutdown_tasks
                     .iter()
                     .map(|t| t.name)
+                    .collect::<Vec<_>>(),
+            )
+            .field(
+                "emoji_sets",
+                &self
+                    .emoji_sets
+                    .iter()
+                    .map(|s| s.type_name)
                     .collect::<Vec<_>>(),
             )
             .field("violations", &self.violations)

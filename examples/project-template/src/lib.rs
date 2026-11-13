@@ -13,6 +13,7 @@
 
 pub mod adapters;
 pub mod bootstrap;
+pub mod emoji;
 pub mod modules;
 pub mod observability;
 pub mod strings;
@@ -37,6 +38,9 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     builder
         .app_id("noctis-template")
         .locales(strings::catalog())
+        // The application emojis this bot declares (`src/emoji.rs`, files in
+        // `assets/emoji/`); a name two sets declare fails `build()` with `[EMO-03]`.
+        .emojis::<emoji::Icons>()
         // Theme tokens and keyframes for Templates; the same file the macros validate against.
         // `.theme` comes from `AppBuilderImageExt` (image feature, in the prelude) and
         // installs the ImagePlugin, which puts the Renderer on this App (AD-24).

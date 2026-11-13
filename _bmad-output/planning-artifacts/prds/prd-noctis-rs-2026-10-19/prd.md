@@ -18,7 +18,7 @@ the epic and story authors who come next, and it builds on these inputs:
   (`tescord-features.md`), Discord Components V2 (`discord-components-v2.md`),
   twilight-rs (`twilight-rs.md`) and takumi (`takumi-image-generation.md`).
 
-Features are grouped, and their FRs are numbered globally (FR-1 … FR-81) so later
+Features are grouped, and their FRs are numbered globally (FR-1 … FR-82) so later
 documents can refer to them. FR-52 onwards were added in revision and sit inside
 the feature they belong to, so ids are unique and gap-free but not in reading
 order. Terms in §3 are used verbatim. Inline `[ASSUMPTION]` tags are collected in
@@ -1274,6 +1274,23 @@ Lifecycle Hooks and Modules in any file and never keeps a central registration l
 - `#[noctis::module]` on a `fn() -> Module` declares a Module that `discover()` mounts.
 - The result does not depend on link order, Boot Flags and App restrictions apply as
   for `Module::add`, and a struct registered both ways is a build error.
+
+#### FR-82: Application emojis declared in code (added 2026-11-13)
+A bot author declares the application's emojis as a typed set in code; Noctis checks
+them at `cargo check`, uploads them at Publish and resolves them by that type from
+every context (maintainer decision §13; Epic 20).
+**Consequences (testable):**
+- `#[derive(AppEmojis)]` on a fieldless enum declares one emoji per variant (name in
+  `snake_case` or `#[emoji(name)]`, image `<dir>/<name>.png|gif|jpg` embedded with
+  `include_bytes!`, `#[emoji(white)]` for the `<name>_white` variant,
+  `#[emoji(render)]` for art drawn by the set's `art` function at Publish); a bad or
+  repeated name (EMO-03), a missing or unsupported file (EMO-04) and a file over
+  256 KiB (EMO-02) fail `cargo check`.
+- `AppBuilder::emojis::<T>()` registers a set; `App::build` folds every set once, and
+  a name two sets declare (EMO-03) or more than 2000 names (EMO-01) is a
+  `BuildViolation`. An App with no set makes no emoji request.
+- Publish is the only process that creates emojis (Story 20.5); every process lists
+  them read-only and looks them up by the declared variant with no I/O (Story 20.4).
 
 ## 5. Cross-Cutting NFRs
 

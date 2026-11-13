@@ -666,7 +666,7 @@ mod tests {
             .map(|r| r.id)
             .collect();
         assert_eq!(got, want);
-        assert_eq!(got.len(), 135);
+        assert_eq!(got.len(), 139);
     }
 
     const CAT: &[&str] = &["CMD-01", "CMD-02", "VC-02"];

@@ -1,0 +1,6 @@
+error: [EMO-03] emoji `check_white` is declared twice in this set (also by `Check`)
+         = help: an application emoji name is unique: rename one with #[emoji(name = "..")]
+ --> tests/ui/emo/EMO-03_white_collides.rs:8:5
+  |
+8 |     CheckWhite,
+  |     ^^^^^^^^^^

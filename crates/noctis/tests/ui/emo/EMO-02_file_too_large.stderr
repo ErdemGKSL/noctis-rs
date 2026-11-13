@@ -1,0 +1,8 @@
+error: [EMO-02] big: limit at most 262144, actual 262145
+         = note: bytes per emoji image (256 KiB)
+         = help: shrink the image: a flat 128x128 PNG is about 1 KB
+         = note: file `../../fixtures/emoji/big.png`
+ --> tests/ui/emo/EMO-02_file_too_large.rs:7:5
+  |
+7 |     Big,
+  |     ^^^

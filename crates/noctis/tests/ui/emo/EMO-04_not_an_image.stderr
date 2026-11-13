@@ -1,0 +1,7 @@
+error: [EMO-04] fake: limit a PNG, JPEG or GIF image, actual `a file starting 6e 6f 74 20 61 6e 20 69`
+         = help: export the emoji as PNG (or GIF for an animated one)
+         = note: file `../../fixtures/emoji/fake.png`
+ --> tests/ui/emo/EMO-04_not_an_image.rs:6:5
+  |
+6 |     Fake,
+  |     ^^^^

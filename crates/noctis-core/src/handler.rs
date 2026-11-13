@@ -219,6 +219,9 @@ pub(crate) struct AppShared {
     pub(crate) edge: crate::edge::Edge,
     /// The Limits every Responder validates against (`AppBuilder::limits`).
     pub(crate) limits: noctis_rules::Limits,
+    /// The declared application emojis, folded once at build
+    /// (`AppBuilder::emojis`; empty without a set).
+    pub(crate) emojis: Arc<crate::emoji::EmojiDeclarations>,
     /// The folded Registry (the Dispatcher resolves Commands in it).
     pub(crate) registry: Arc<Registry>,
     /// When the auto-defer acknowledges a pending interaction, after

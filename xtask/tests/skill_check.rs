@@ -253,7 +253,7 @@ fn real_repo_passes() {
     );
     assert!(stderr(&out).contains(" component entries checked, "));
     assert!(
-        stderr(&out).ends_with(" example files linted, 6 recipes in sync, 135 rule ids indexed)\n"),
+        stderr(&out).ends_with(" example files linted, 6 recipes in sync, 139 rule ids indexed)\n"),
         "{}",
         stderr(&out)
     );

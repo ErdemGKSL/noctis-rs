@@ -1,0 +1,5 @@
+error: `#[emoji(render)]` needs the set's art function: add #[emojis(art = path::to::fn)] (a `fn(Self, EmojiTone) -> EmojiArt`) to the enum
+ --> tests/types/emoji_render_without_art.rs:6:13
+  |
+6 |     #[emoji(render)]
+  |             ^^^^^^

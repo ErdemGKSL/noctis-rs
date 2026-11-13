@@ -47,6 +47,13 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   background tasks), with the same errors, metrics and Render Error Sink. One call
   can cap its own output with `RenderOptions::max_bytes(n)` (for a 256 KiB emoji or a
   thumbnail) without lowering the App's `size_target`.
+- **Application emojis.** Declare a bot's emojis as a fieldless enum with
+  `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
+  variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile
+  time, `#[emoji(white)]` adds the `<name>_white` variant and `#[emoji(render)]` draws
+  one from a Template. A bad or repeated name, a missing or unsupported file and a file
+  over 256 KiB fail `cargo check` (EMO-02..04); a name two sets declare and more than
+  2000 names fail `App::build` (EMO-03, EMO-01).
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,

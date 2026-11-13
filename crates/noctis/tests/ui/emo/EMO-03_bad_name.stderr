@@ -1,0 +1,13 @@
+error: [EMO-03] st-online: limit only A-Z, a-z, 0-9 and _, actual `-`
+         = help: an emoji name is 2 to 32 of A-Z, a-z, 0-9 and _
+ --> tests/ui/emo/EMO-03_bad_name.rs:6:20
+  |
+6 |     #[emoji(name = "st-online")]
+  |                    ^^^^^^^^^^^
+
+error: [EMO-03] x: limit between 2 and 32, actual 1
+         = help: an emoji name is 2 to 32 of A-Z, a-z, 0-9 and _
+ --> tests/ui/emo/EMO-03_bad_name.rs:8:5
+  |
+8 |     X,
+  |     ^

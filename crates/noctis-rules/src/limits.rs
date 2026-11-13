@@ -136,6 +136,8 @@ limits! {
     attachment_description_len = 1024, "ATT-06", "characters in attachment alt text.";
     webhook_name_len = 80, "WH-04", "characters in a webhook name.";
     webhook_thread_name_len = 100, "WH-05", "characters in a webhook `thread_name`.";
+    application_emojis = 2000, "EMO-01", "emojis per application (declared and uploaded).";
+    emoji_bytes = 262_144, "EMO-02", "bytes per emoji image (256 KiB).";
 }
 
 impl Limits {
@@ -163,7 +165,7 @@ mod tests {
     fn defaults_match_the_catalog() {
         let l = Limits::default();
         assert_eq!(l.mode, LimitMode::Strict);
-        let expected: [(usize, usize); 59] = [
+        let expected: [(usize, usize); 61] = [
             (l.command_name_len, 32),
             (l.command_description_len, 100),
             (l.command_size, 8000),
@@ -223,6 +225,8 @@ mod tests {
             (l.attachment_description_len, 1024),
             (l.webhook_name_len, 80),
             (l.webhook_thread_name_len, 100),
+            (l.application_emojis, 2000),
+            (l.emoji_bytes, 262_144),
         ];
         for (i, (actual, want)) in expected.into_iter().enumerate() {
             assert_eq!(actual, want, "field {} ({})", i, FIELDS[i].0);
@@ -263,10 +267,10 @@ mod tests {
     }
 
     #[test]
-    fn field_table_has_59_unique_fields_with_catalog_ids() {
-        assert_eq!(FIELDS.len(), 59);
+    fn field_table_has_61_unique_fields_with_catalog_ids() {
+        assert_eq!(FIELDS.len(), 61);
         let names: HashSet<_> = FIELDS.iter().map(|(name, _, _)| name).collect();
-        assert_eq!(names.len(), 59);
+        assert_eq!(names.len(), 61);
         for (name, rule, _) in FIELDS {
             assert!(RuleId::ALL.contains(rule), "{name}: {rule}");
         }

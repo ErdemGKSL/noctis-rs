@@ -1696,6 +1696,26 @@ list in CI.
   - An ephemeral answer over the message transport goes to the author's DM, else a
     channel reply deleted after the plugin's `ephemeral_ttl`.
 
+### AD-33 — Application emojis are declared data, written only by Publish (added 2026-11-13)
+- **Binds:** `noctis-rules`, `noctis-macros`, `noctis-core`, facade, `noctis-testkit`,
+  Project Template, Usage Skill; FR-82, FR-13; EMO-01..04; maintainer decision §13.
+- **Prevents:** hand-kept name → id tables, emoji uploads racing across a Cluster, a
+  missing emoji failing a render function, and per-start writes to Discord.
+- **Rule:**
+  - A declared set (`#[derive(AppEmojis)]`) is data, as AD-7 requires: names, images
+    (embedded bytes or a `fn(EmojiTone) -> EmojiArt` art pointer) and white variants
+    are `const` declarations checked at `cargo check` (AD-4); `AppBuilder::emojis`
+    records the set and `App::build` folds every set once into the App's
+    `EmojiDeclarations` (EMO-01, EMO-03 across sets), like the Registry.
+  - Publish is the only writer: it creates missing declared emojis through the App's
+    one HTTP client and rate limiter; no other process creates, renames or deletes an
+    emoji, and an App with no set sends no emoji request at all.
+  - The name → (id, animated) table is per App (several Apps in one process each own
+    one); lookups by the declared variant read it with no I/O and never fail a
+    render function (a missing emoji is `None` or an empty token).
+  - `noctis-core` never depends on `noctis-image`: drawn art reaches the Renderer
+    port as a Template.
+
 ## Consistency Conventions
 
 | Concern | Convention |

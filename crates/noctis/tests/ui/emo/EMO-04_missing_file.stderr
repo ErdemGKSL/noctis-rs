@@ -1,0 +1,14 @@
+error: [EMO-04] emoji `trash`: no image file: looked for `../../fixtures/emoji/trash.png|gif|jpg`
+         = help: add the file (PNG, JPEG or GIF) or point #[emoji(file = "..")] at it
+ --> tests/ui/emo/EMO-04_missing_file.rs:7:5
+  |
+7 |     Trash,
+  |     ^^^^^
+
+error: [EMO-04] emoji `st_online_white`: no image file: looked for `../../fixtures/emoji/st_online_white.png|gif|jpg`
+         = help: add the file (PNG, JPEG or GIF) or point #[emoji(file = "..")] at it
+ --> tests/ui/emo/EMO-04_missing_file.rs:8:5
+  |
+8 | /     #[emoji(white)]
+9 | |     StOnline,
+  | |____________^

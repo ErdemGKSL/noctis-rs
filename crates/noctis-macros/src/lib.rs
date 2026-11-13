@@ -34,6 +34,7 @@ mod components;
 mod defaults;
 mod discover;
 mod duration;
+mod emoji;
 mod event;
 mod flags;
 mod guard;
@@ -384,6 +385,21 @@ pub fn module(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn event(_: TokenStream, item: TokenStream) -> TokenStream {
     withdrawn::attribute(withdrawn::Attr::Event, &item.into()).into()
+}
+
+/// `#[derive(AppEmojis)]` on a fieldless enum: a declared set of
+/// application emojis (FR-82). Each variant is one emoji named in
+/// `snake_case` (`#[emoji(name = "..")]`) whose image is
+/// `<dir>/<name>.png|gif|jpg` (`#[emojis(dir = "..")]`, default
+/// `assets/emoji`, relative to `CARGO_MANIFEST_DIR`; `#[emoji(file = "..")]`
+/// relative to `dir`), embedded with `include_bytes!`; `#[emoji(white)]`
+/// adds `<name>_white`; `#[emoji(render)]` draws it at Publish with the
+/// set's `#[emojis(art = path)]` function. Names (EMO-03), formats
+/// (EMO-04) and sizes (EMO-02) are checked at expansion.
+#[proc_macro_derive(AppEmojis, attributes(emojis, emoji))]
+pub fn derive_app_emojis(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    emoji::derive(&input).into()
 }
 
 /// The withdrawn `#[derive(Options)]`.

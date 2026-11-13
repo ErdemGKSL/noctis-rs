@@ -875,6 +875,71 @@ pub enum BuildViolation {
         /// The signed Route's id.
         route: &'static str,
     },
+    /// One emoji name is declared by two sets registered with
+    /// [`AppBuilder::emojis`](crate::AppBuilder::emojis) (EMO-03); the
+    /// first declaration is kept.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateEmoji {
+    ///     name: "check",
+    ///     first_set: "bot::Icons",
+    ///     second_set: "bot::shop::ShopIcons",
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "[EMO-03] emoji `check` is declared by two sets: `bot::Icons` and \
+    ///      `bot::shop::ShopIcons`: an application emoji name is unique; rename one with \
+    ///      #[emoji(name = \"..\")]"
+    /// );
+    /// ```
+    #[error(
+        "[EMO-03] emoji `{name}` is declared by two sets: `{first_set}` and `{second_set}`: an \
+         application emoji name is unique; rename one with #[emoji(name = \"..\")]"
+    )]
+    DuplicateEmoji {
+        /// The shared name.
+        name: &'static str,
+        /// The type name of the set whose declaration is kept.
+        first_set: &'static str,
+        /// The type name of the other set.
+        second_set: &'static str,
+    },
+    /// A registered emoji set declares a name that breaks EMO-03; only a
+    /// hand-written [`AppEmojis`](crate::emoji::AppEmojis) impl can, since
+    /// `#[derive(AppEmojis)]` rejects it at `cargo check`.
+    #[error("{violation}\n  = note: declared by emoji set `{set}`")]
+    InvalidEmoji {
+        /// The set's type name.
+        set: &'static str,
+        /// The EMO-03 violation.
+        violation: noctis_rules::Violation,
+    },
+    /// The registered emoji sets declare more names (`_white` variants
+    /// included) than an application can own (EMO-01,
+    /// `Limits::application_emojis`).
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::TooManyEmojis { count: 2001, limit: 2000 };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "[EMO-01] the emoji sets declare 2001 emojis, over the limit of 2000 per \
+    ///      application: remove some, or drop #[emoji(white)] where no button needs it"
+    /// );
+    /// ```
+    #[error(
+        "[EMO-01] the emoji sets declare {count} emojis, over the limit of {limit} per \
+         application: remove some, or drop #[emoji(white)] where no button needs it"
+    )]
+    TooManyEmojis {
+        /// The declared names.
+        count: usize,
+        /// `Limits::application_emojis`.
+        limit: usize,
+    },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {

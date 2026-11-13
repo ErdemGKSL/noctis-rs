@@ -1,0 +1,10 @@
+error[E0308]: mismatched types
+ --> tests/types/emoji_art_wrong_signature.rs:8:16
+  |
+7 | #[derive(AppEmojis, Clone, Copy)]
+  |          --------- expected due to this
+8 | #[emojis(art = art)]
+  |                ^^^ incorrect number of function parameters
+  |
+  = note: expected fn pointer `fn(Icons, EmojiTone) -> noctis::emoji::EmojiArt`
+                found fn item `fn(Icons) -> noctis::emoji::EmojiArt {art}`
