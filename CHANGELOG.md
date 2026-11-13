@@ -55,6 +55,10 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   insets (`left_px`/`left_pct` and the other three sides), `rounded_px`,
   `border_px`, `translate_px`, `rotate_deg`, `scale` and `z_index`; a setter beats a
   class of the same property, and the transforms compose as translate, rotate, scale.
+  Rings, gauges and pie charts are one node each: `noctis::image::shape::Arc`
+  (a value over an optional track, `thickness_pct`, `start_deg`, `sweep_deg` for a
+  270° gauge, `round_caps`) and `shape::Pie` (slices proportional to their values,
+  clockwise from 12 o'clock), drawn with CSS gradients, no SVG; at most 64 slices.
 - **Application emojis.** Declare a bot's emojis as a fieldless enum with
   `#[derive(AppEmojis)]` and register it with `AppBuilder::emojis::<Icons>()`: each
   variant is one `snake_case` name whose PNG, JPEG or GIF file is embedded at compile

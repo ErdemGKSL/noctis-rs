@@ -106,6 +106,22 @@ template!(Edge {}, "edge", Size::new(4, 1), Format::Png, |_| {
     ])
 });
 
+// Story 20.8: a shape in a flex box (see `shapes`).
+template!(
+    Shaped { case: shapes::Case },
+    "shaped",
+    Size::new(100, 100),
+    Format::Png,
+    |t| shapes::shape_view(&t.case)
+);
+template!(
+    ShapedWide { case: shapes::Case },
+    "shaped.wide",
+    Size::new(100, 60),
+    Format::Png,
+    |t| shapes::shape_view(&t.case)
+);
+
 // Story 20.7: each typed setter against a class of the same property;
 // `styled: false` draws the class alone (the control).
 template!(
@@ -363,6 +379,8 @@ fn renderer_budget(
             TemplateDescriptor::of::<Bordered>(),
             TemplateDescriptor::of::<Stacked>(),
             TemplateDescriptor::of::<Scaled>(),
+            TemplateDescriptor::of::<Shaped>(),
+            TemplateDescriptor::of::<ShapedWide>(),
         ])
         .unwrap();
     renderer
@@ -1665,3 +1683,4 @@ mod emoji;
 mod plays;
 mod remote;
 mod setters;
+mod shapes;

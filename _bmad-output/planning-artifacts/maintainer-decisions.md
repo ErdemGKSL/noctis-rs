@@ -757,3 +757,24 @@ Planning decisions (2026-11-13, Epic 20):
   initial `border-style` is `none`). The pixel tests live in `noctis-image`'s
   renderer tests (each setter against a class of the same property, with the class
   alone as the control); the facade snapshot suite gains `style_setters.png`.
+- (decision, Story 20.8) The pixel proof passed: takumi-core 0.31.0's raster backend
+  draws inline `conic-gradient(from Ndeg, c a b, ..)` with degree stops clockwise from
+  12 o'clock and `mask-image: radial-gradient(circle closest-side, ..)` as CSS
+  specifies (`renderer/tests/shapes.rs`), so no shape is cut. `cqmin` resolves against
+  the viewport, not the parent, in this takumi, so a shape draws in an inner square box
+  (`aspect-ratio: 1; width: 100%; max-height: 100%` in a centred flex box,
+  `border-radius: 50%`), which makes the circle the box's smaller side and lets round
+  caps be placed in plain percentages. A shape fills its box through the classes
+  `flex items-center justify-center w-full h-full` placed before its own classes (a
+  later class wins in takumi), so `.classes(tw!("size-24"))` or `absolute inset-0`
+  sizes it.
+- (decision, Story 20.8) Shapes are a node kind (`Kind::Shape`), not elements: they have
+  no children. `Pie::new` takes values `Into<f64>`; `Arc::thickness_pct` is percent of
+  the radius (default 20, 100 a filled sector). The hole's edge is a 1 %-of-radius ramp
+  in the mask (anti-aliased); the outer edge is the box's `border-radius`. Round caps
+  are drawn for the value only (none for a value of 0) and the track's ends stay
+  square, as the story says "two circles". The 64-slice cap is `shape::MAX_SLICES`,
+  checked when the tree is lowered (counting drawn slices, so skipped values do not
+  count); an `Arc` has at most two. The render key is unchanged (shape values reach it
+  as Template data); `noctis-rules` gains nothing, as the cap is a Noctis engine
+  limit, not a Discord rule.

@@ -5,7 +5,7 @@ Working Templates for the pictures a bot UI needs. Every block compiles against 
 from `noctis-theme.css`) and the `default-font` feature. Entry and sizes: `images.md`;
 placing them in a message: `images-ui.md`; exact engine rules: `images-engine.md`.
 
-Covers: the toolbox (§1), bars (§2), gauges (§3), thumbnails (§4), lists and cards (§5),
+Covers: the toolbox (§1), bars (§2), gauges and pies (§3), thumbnails (§4), lists and cards (§5),
 charts (§6), banners and dividers (§7), boards (§8), steps and countdowns (§9), motion
 (§10), text, emoji and fonts inside images (§11).
 
@@ -22,23 +22,26 @@ and that the Template is registered: add `module = "<feature>"` to its `#[templa
 
 ## 1. The toolbox
 
-There is no canvas API, no path drawing and no `<svg>`. A picture is a tree of boxes,
-text and images, laid out with flexbox or grid and painted in tree order. That is
-enough for almost everything, with these moves:
+There is no canvas API, no free path drawing and no `<svg>`. A picture is a tree of
+boxes, text, images and two typed shapes (`shape::Arc`, `shape::Pie`), laid out with
+flexbox or grid and painted in tree order. That is enough for almost everything, with
+these moves:
 
 | To get | Do |
 | --- | --- |
 | A value as a length | a track `div` with a fill child: `style={Style::new().width_pct(v * 100.0)}` (or `height_pct` in an `items-end` row) |
 | A value as a colour | `Style::new().bg_rgb(0xRRGGBB)`, `.color_rgb(..)`, `.border_color_rgb(..)` computed from the data |
 | A value as intensity | one colour with `Style::new().opacity(v)` over a dark cell |
-| A value as an angle | a square wrapper rotated with `Style::new().rotate_deg(a)`; its child sits at the top centre, so it travels on a circle (§3) |
+| A value as an arc | `{Arc::new(v, tint).track(0x1E_293B)}` (`noctis::image::shape::Arc`): a ring, or a 270° gauge with `.start_deg(225.0).sweep_deg(270.0)`, `.thickness_pct(..)`, `.round_caps(true)` (§3.1) |
+| Shares of a whole | `{Pie::new([(value, rgb), ..])}` (`shape::Pie`): slices clockwise from 12 o'clock, `.start_deg(..)` turns it (§3.2) |
+| A value as an angle | a square wrapper rotated with `Style::new().rotate_deg(a)`; its child sits at the top centre, so it travels on a circle (§3.3) |
 | N of M | `for i in 0..m { .. }` with a class chosen per item: `tw={if i < n { tw!("..") } else { tw!("..") }}` |
 | Equal parts | `flex-1` children in a `flex gap-*` row, or `grid grid-cols-N` |
 | A value as a position | a `relative` track with an `absolute` marker: `style={Style::new().left_pct(v * 100.0).translate_px(-8, 0)}` (half the marker's width back, so it centres on the value) |
 | One thing over another | `relative` parent, `absolute` child with `inset-0`, `top-*`, `left-*`, `right-*`, `bottom-*` (literal or `top-[140px]`) or, when the offset is data, `Style::new().left_px(x).top_px(y)` (`_pct` for percent); a later sibling paints over an earlier one unless `Style::new().z_index(n)` lifts it |
 | A size, radius or border from data | `Style::new().scale(f)` (about the centre, no relayout), `.rounded_px(r)`, `.border_px(w)` |
 | A clipped shape | `overflow-hidden` plus `rounded-*` on the parent |
-| A circle, pill, ring | `rounded-full`; a ring is `rounded-full border-[12px]` with no background |
+| A circle, pill, ring | `rounded-full`; a plain ring is `rounded-full border-[12px]` with no background, a ring with a value is an `Arc` |
 | Overlap | negative margins: `-ml-6` |
 | A reusable part | a function `fn row(r: &Row) -> Node { view! { .. } }` called as `{row(r)}` |
 | Long text that must not break the layout | `truncate` on a `flex-1` span (one line, ellipsis) or `line-clamp-2` |
@@ -262,36 +265,38 @@ feature.
 
 ## 3. Gauges
 
-### 3.1 Ring gauge
+### 3.1 Ring gauge and 270° gauge
 
-Forty ticks on a circle; the lit share is the value. Each tick is a small bar at the
-top centre of a square wrapper, and the wrapper is rotated.
+One `Arc` node: the value's share of the sweep over a track, with a transparent hole
+where the label sits. A shape fills its box (`w-full h-full`) and draws a circle of the
+box's smaller side, so size it with its parent (`size-48`) or with
+`.classes(tw!("size-48"))`.
 
 ```rust
+use noctis::image::shape::Arc;
+
 #[derive(Template, Serialize, Deserialize, Debug)]
 #[template(id = "ui.ring", version = 1, size = (256, 256), format = Png)]
 pub struct RingGauge {
-    pub value: f32,        // 0.0..=1.0
+    pub value: f32,        // 0.0..=1.0 (clamped by Arc)
     pub label: String,     // "72%"
     pub caption: String,   // "CPU"
     pub tint: u32,
+    pub gauge: bool,       // a 270° gauge with round caps instead of a full ring
 }
-
-const TICKS: u16 = 40;
 
 impl TemplateView for RingGauge {
     fn view(&self, _frame: Frame) -> Node {
-        let lit = (self.value.clamp(0.0, 1.0) * f32::from(TICKS)).round() as u16;
+        let arc = Arc::new(self.value, self.tint).track(0x1E_293B).thickness_pct(18.0);
+        let arc = if self.gauge {
+            arc.start_deg(225.0).sweep_deg(270.0).round_caps(true)
+        } else {
+            arc
+        };
         view! {
-            <div tw="relative flex items-center justify-center w-full h-full bg-surface rounded-3xl">
-                for i in 0..TICKS {
-                    <div tw="absolute inset-4 flex justify-center"
-                         style={Style::new().rotate_deg(f32::from(i) * 360.0 / f32::from(TICKS))}>
-                        <div tw="w-2 h-7 rounded-full"
-                             style={Style::new().bg_rgb(if i < lit { self.tint } else { 0x1E_293B })} />
-                    </div>
-                }
-                <div tw="flex flex-col items-center">
+            <div tw="relative flex items-center justify-center w-full h-full p-4 bg-surface rounded-3xl">
+                {arc}
+                <div tw="absolute flex flex-col items-center">
                     <span tw="text-6xl font-bold text-white">{&self.label}</span>
                     <span tw="text-xl text-muted">{&self.caption}</span>
                 </div>
@@ -301,12 +306,61 @@ impl TemplateView for RingGauge {
 }
 ```
 
-At 256 × 256 it is a Thumbnail next to the text that explains it; at 512 × 512 with
-larger text classes it stands alone. More ticks (60, `w-1`) look finer; fewer and
-thicker (12, `w-4 h-8`) look like a battery. The label repeats the value, so the
-Thumbnail's alt text is the same sentence ("CPU at 72 %").
+- `thickness_pct` is the ring's width in percent of its radius (default 20; 100 is a
+  filled sector). `start_deg` and `sweep_deg` are degrees clockwise from 12 o'clock
+  (defaults 0 and 360); a 270° gauge starts at 225° and leaves the bottom open.
+- `round_caps(true)` draws two circles at the value's ends (none for a value of 0); the
+  track's ends stay square.
+- Several values on one dial are stacked `Arc`s in one `relative` box, each
+  `.classes(tw!("absolute inset-0"))` (or nested boxes with `p-*` for concentric rings).
+- The label repeats the value, so the Thumbnail's alt text is the same sentence ("CPU at
+  72 %"). Quantize the value in the handler (`(v * 100.0).round() / 100.0`) so near-equal
+  data hits the render cache.
 
-### 3.2 Dial with a needle
+### 3.2 Pie and donut
+
+`Pie` draws slices proportional to their values, clockwise from 12 o'clock. A donut is
+the same pie with a smaller `surface`-coloured circle on top, or several `Arc`s.
+
+```rust
+use noctis::image::shape::Pie;
+
+#[derive(Template, Serialize, Deserialize, Debug)]
+#[template(id = "ui.pie", version = 1, size = (480, 240), format = Png)]
+pub struct Shares {
+    pub parts: Vec<(String, u32, u32)>,   // (label, value, 0xRRGGBB); 2 to 8 parts
+}
+
+impl TemplateView for Shares {
+    fn view(&self, _frame: Frame) -> Node {
+        let pie = Pie::new(self.parts.iter().map(|(_, value, rgb)| (*value, *rgb)));
+        view! {
+            <div tw="flex items-center gap-8 w-full h-full p-6 bg-surface rounded-3xl">
+                <div tw="relative flex items-center justify-center size-48">
+                    {pie}
+                    <div tw="absolute size-24 rounded-full bg-surface" />
+                </div>
+                <div tw="flex flex-col gap-2">
+                    for (label, _, rgb) in &self.parts {
+                        <div tw="flex items-center gap-2">
+                            <div tw="size-3 rounded-sm" style={Style::new().bg_rgb(*rgb)} />
+                            <span tw="text-lg text-white">{label}</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+}
+```
+
+Values are any number type (`u32`, `f32`, `f64`, ..). Zero, negative, NaN and infinite
+values are skipped, and a pie with no positive value draws nothing, so an empty
+dataset needs no special case. A pie draws at most 64 slices (`shape::MAX_SLICES`); more
+fail the render with `RenderError::Unsupported`, so group the tail into "Other" in the
+handler.
+
+### 3.3 Dial with a needle
 
 A half circle of ticks coloured by zone and a needle whose angle is the value: latency,
 load, risk, "how full".
@@ -640,8 +694,7 @@ values in the handler (five steps) so that near-equal data hits the render cache
 
 ### 6.3 What not to chart
 
-Pie and donut charts need arcs: use a ring gauge (one share) or a segmented bar whose
-segments have `width_pct` shares (several). Line and area charts need paths: use
+Pie and donut charts are `Pie` and `Arc` (§3). Line and area charts need paths: use
 columns. If a real plot is required, draw it with a plotting crate and attach the
 bytes with `Attachment::new(bytes, "png")`; it then needs no Template.
 

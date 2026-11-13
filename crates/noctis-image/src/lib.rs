@@ -82,7 +82,7 @@ pub use check::{ClassCheck, ClassCheckMode};
 #[cfg(feature = "render")]
 pub use fonts::Font;
 #[cfg(feature = "render")]
-pub use node::{Classes, ImageSrc, IntoNodes, Node, Style, Tag, div, img, span, text};
+pub use node::{Classes, ImageSrc, IntoNodes, Node, Style, Tag, div, img, shape, span, text};
 #[cfg(feature = "render")]
 pub use plugin::{AppBuilderImageExt, ImageConfig, ImagePlugin};
 #[cfg(feature = "render")]

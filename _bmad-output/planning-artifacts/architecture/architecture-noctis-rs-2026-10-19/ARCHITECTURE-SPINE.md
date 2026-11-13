@@ -763,7 +763,9 @@ list in CI.
     `Runtime::for_test()` (the testkit), so tests fail. Dynamic values use typed
     style setters (`Style`), lowered to inline declarations that beat a class of
     the same property; transforms compose translate, rotate, scale (takumi's CSS
-    Transforms 2 order).
+    Transforms 2 order). Shapes (`noctis_image::shape::{Arc, Pie}`) are a
+    node kind lowered to a `conic-gradient` background and a `radial-gradient` mask
+    on a round, square box, with absolutely placed caps; `svg-source` stays off.
   - CI job `tw-crosscheck` compares the grammar with takumi's own parser. The oracle
     is `takumi-core`'s public `TailwindValues` (`FromStr`), which silently drops
     tokens it doesn't recognize: a class is recognized when parsing it alone yields

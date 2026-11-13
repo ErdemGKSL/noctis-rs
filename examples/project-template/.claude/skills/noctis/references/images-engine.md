@@ -120,9 +120,33 @@ view! {
 - Children: elements, string literals, `{expr}`, `if cond { .. }` with `else if` /
   `else`, and `for pat in expr { .. }`. `{expr}` takes any `IntoNodes`: `Node`,
   `Vec<Node>`, `&str`, `String`, `&String`, `Cow<'static, str>`, integers, `f32`/`f64`
-  (as text) and `Option<T>` (`None` adds nothing). Text children are always text:
-  `"<b>"` renders the characters, never markup.
+  (as text), a shape (`Arc`, `Pie`, §3.1) and `Option<T>` (`None` adds nothing). Text
+  children are always text: `"<b>"` renders the characters, never markup.
 - **User text enters only as a text child** (FR-32), never as classes or styles.
+
+### 3.1 Shapes: `Arc` and `Pie`
+
+`noctis::image::shape` has two typed shape nodes, drawn as one node each (no SVG, no
+free paths). Both are children like any node (`{Pie::new(..)}`), fill their box
+(`w-full h-full` unless `.classes(tw!(..))` sizes them; `.style(Style)` works too) and
+draw a circle of the box's smaller side, centred. Angles are degrees clockwise from
+12 o'clock; a NaN or infinite argument leaves a setter's value unchanged.
+
+- `Pie::new([(value, 0xRRGGBB), ..])`: slices proportional to the values (any type
+  `Into<f64>`), clockwise from `.start_deg(f32)` (default 0). Zero, negative, NaN and
+  infinite values are skipped; a pie with no positive value draws nothing.
+- `Arc::new(value, 0xRRGGBB)`: a ring segment of `value` (clamped to `0..=1`, NaN is 0)
+  of its sweep, with a transparent centre. `.track(0xRRGGBB)` draws the whole sweep
+  behind it, `.thickness_pct(f32)` is the ring's width in percent of the radius
+  (`0..=100`, default 20; 100 is a filled sector), `.start_deg(f32)` (default 0),
+  `.sweep_deg(f32)` (`0..=360`, default 360; a 270° gauge is
+  `.start_deg(225.0).sweep_deg(270.0)`), `.round_caps(true)` adds two circles at the
+  value's ends (none for 0; the track's ends stay square). A label goes in the hole
+  with a `relative` parent and an `absolute` child.
+- At most `shape::MAX_SLICES` (64) slices per shape; more fail the render with
+  `RenderError::Unsupported` naming the shape and the cap.
+- Shapes are built from Template data, so they change the render key through that
+  data like any other value.
 
 The builder API builds the same tree: `div(classes)`, `span(classes)`,
 `text(content, classes)`, `Node::element(Tag::P)`, `Node::text(..)`, then
@@ -603,7 +627,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     version skew);
   - `Unsupported { id, why }`: an animation with `fps` 0 or a duration under 1 ms, or
     GIF/APNG output without `image-gif` (a hand-built `RenderJob`; the derive already
-    refuses both at compile time);
+    refuses both at compile time), or a shape with more than 64 slices (§3.1);
   - `OverCap { id, cap, limit, actual }`: the job is over one of the App's per-job
     caps (below) or its animation over the format's fps cap; `cap` is a `RenderCap`
     (`JobPixels`, `FramePixels`, `Frames`, `Duration`, `Fps`, `RemoteImages`;

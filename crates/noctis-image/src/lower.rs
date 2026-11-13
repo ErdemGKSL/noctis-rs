@@ -9,11 +9,18 @@
 //! (non-`!important`) Tailwind layer, so a `Style` value wins over a class
 //! of the same property.
 //!
+//! A shape node ([`crate::shape`]) becomes a centred container (classes
+//! `flex items-center justify-center w-full h-full` before the node's own)
+//! holding one round, square box whose inline style draws the shape: a
+//! `conic-gradient` background, a `radial-gradient` mask for an arc's hole,
+//! and absolutely placed circles for round caps.
+//!
 //! A text node holding Discord custom emoji tokens (IMG-04) becomes an
 //! inline container carrying the node's classes and style, whose children
 //! are inline text runs and `1.375em` inline images of the job's resolved
 //! emoji; the markup itself is never drawn.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::str::FromStr;
 
@@ -25,6 +32,7 @@ use takumi::prelude::{ImageData, ImageSourceInput};
 
 use crate::assets::StaticImages;
 use crate::emoji::{self, Piece};
+use crate::node::shape::{MAX_SLICES, Shape};
 use crate::node::{Dimension, ImageSrc, Kind, Offset};
 use crate::remote::{RemoteImage, Resolved};
 use crate::{Classes, Node, Style};
@@ -53,6 +61,8 @@ pub(crate) fn lower(
 ) -> Result<takumi::prelude::Node, RenderError> {
     // The declarations that go before the node's own style.
     let mut base_css = "";
+    // The classes that go before the node's own.
+    let mut shape_prefix = "";
     let lowered = match node.kind() {
         Kind::Element { children, .. } => takumi::prelude::Node::container(
             children
@@ -92,8 +102,12 @@ pub(crate) fn lower(
                 height: None,
             })
         }
+        Kind::Shape(shape) => {
+            shape_prefix = SHAPE_CLASSES;
+            lower_shape(shape, template)?
+        }
     };
-    let lowered = match tailwind(node.class_list())? {
+    let lowered = match tailwind(shape_prefix, node.class_list())? {
         Some(values) => lowered.with_tw(values),
         None => lowered,
     };
@@ -137,13 +151,55 @@ fn inline_text(
     Ok(takumi::prelude::Node::container(children))
 }
 
-/// The Tailwind values of `classes`; `None` when they are blank.
-fn tailwind(classes: &Classes) -> Result<Option<TailwindValues>, RenderError> {
-    let text = classes.as_str();
-    if text.trim().is_empty() {
-        return Ok(None);
+/// A shape's box: centred, filling its parent unless its classes size it.
+const SHAPE_CLASSES: &str = "flex items-center justify-center w-full h-full";
+
+/// The children of a shape node: one round, square box drawing the shape,
+/// holding its round caps.
+///
+/// # Errors
+///
+/// [`RenderError::Unsupported`] for a shape with more than
+/// [`MAX_SLICES`] slices; [`RenderError::Failed`] when takumi rejects its
+/// CSS.
+fn lower_shape(shape: &Shape, template: &str) -> Result<takumi::prelude::Node, RenderError> {
+    let slices = shape.slice_count();
+    if slices > MAX_SLICES {
+        return Err(RenderError::Unsupported {
+            id: template.to_owned(),
+            why: format!(
+                "shape `{}` draws {slices} slices, more than the cap of {MAX_SLICES}",
+                shape.name()
+            )
+            .into(),
+        });
     }
-    TailwindValues::from_str(text)
+    let (css, caps) = shape.css();
+    let caps = caps
+        .iter()
+        .map(|cap| {
+            takumi::prelude::Style::from_str(cap)
+                .map(|style| takumi::prelude::Node::container(Vec::new()).with_style(style))
+                .map_err(RenderError::failed)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let style = takumi::prelude::Style::from_str(&css).map_err(RenderError::failed)?;
+    Ok(takumi::prelude::Node::container(vec![
+        takumi::prelude::Node::container(caps).with_style(style),
+    ]))
+}
+
+/// The Tailwind values of `prefix` followed by `classes`; `None` when both
+/// are blank.
+fn tailwind(prefix: &str, classes: &Classes) -> Result<Option<TailwindValues>, RenderError> {
+    let own = classes.as_str();
+    let text = match (prefix.is_empty(), own.trim().is_empty()) {
+        (true, true) => return Ok(None),
+        (true, false) => Cow::Borrowed(own),
+        (false, true) => Cow::Borrowed(prefix),
+        (false, false) => Cow::Owned(format!("{prefix} {own}")),
+    };
+    TailwindValues::from_str(&text)
         .map(Some)
         .map_err(RenderError::failed)
 }

@@ -2496,6 +2496,14 @@ pub mod image {
     //!   dynamic values), [`IntoNodes`] and [`div`], [`span`], [`text`]. User
     //!   data enters a tree only as text: no constructor turns a string into
     //!   markup or classes.
+    //! - Shapes ([`shape`]): [`shape::Pie`] (slices proportional to their
+    //!   values) and [`shape::Arc`] (a ring segment over an optional track,
+    //!   for rings and 270° gauges, with optional round caps) are children
+    //!   like any node (`{Pie::new([(3, 0x5865F2), (1, 0x57F287)])}`), fill
+    //!   their box (`w-full h-full` unless their `classes` size them) and
+    //!   draw a circle of its smaller side, clockwise from 12 o'clock. A
+    //!   shape with more than [`shape::MAX_SLICES`] (64) slices fails its
+    //!   render with `RenderError::Unsupported`.
     //! - The Theme: [`Theme`], parsed from `noctis-theme.css` ([`ThemeError`],
     //!   [`ThemeErrorKind`], `[TW-02]`); [`theme!`] embeds it. Its tokens are
     //!   read through [`ThemeTokens`] by [`ThemeNamespace`].
@@ -2665,6 +2673,7 @@ pub mod image {
     pub use noctis_macros::view;
 
     pub use noctis_core::{RenderOptions, RenderReport};
+    pub use noctis_image::shape;
     pub use noctis_image::tw::{
         InvalidClasses, Suggestion, Theme, ThemeError, ThemeErrorKind, ThemeNamespace, ThemeTokens,
         UnknownClass,

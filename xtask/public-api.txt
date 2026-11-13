@@ -3649,6 +3649,10 @@ pub fn noctis::image::InvalidClasses::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl core::fmt::Display for noctis::image::InvalidClasses
 pub fn noctis::image::InvalidClasses::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::InvalidClasses
+impl core::convert::From<noctis::image::shape::Arc> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Arc) -> Self
+impl core::convert::From<noctis::image::shape::Pie> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Pie) -> Self
 pub struct noctis::image::Node
 impl noctis::image::Node
 pub fn noctis::image::Node::child(self, impl noctis::image::IntoNodes) -> Self
@@ -3662,6 +3666,10 @@ impl core::clone::Clone for noctis::image::Node
 pub fn noctis::image::Node::clone(&self) -> Self
 impl core::cmp::PartialEq for noctis::image::Node
 pub fn noctis::image::Node::eq(&self, &Self) -> bool
+impl core::convert::From<noctis::image::shape::Arc> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Arc) -> Self
+impl core::convert::From<noctis::image::shape::Pie> for noctis::image::Node
+pub fn noctis::image::Node::from(noctis::image::shape::Pie) -> Self
 impl core::fmt::Debug for noctis::image::Node
 pub fn noctis::image::Node::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::Node
@@ -4177,6 +4185,38 @@ pub fn noctis::image::UnknownClass::fmt(&self, &mut core::fmt::Formatter<'_>) ->
 impl core::marker::StructuralPartialEq for noctis::image::UnknownClass
 pub fn noctis::image::div(noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::img(impl core::convert::Into<noctis::image::ImageSrc>, noctis::image::Classes) -> noctis::image::Node
+pub mod noctis::image::shape
+pub struct noctis::image::shape::Arc
+impl noctis::image::shape::Arc
+pub fn noctis::image::shape::Arc::classes(self, noctis::image::Classes) -> Self
+pub const fn noctis::image::shape::Arc::new(f32, u32) -> Self
+pub const fn noctis::image::shape::Arc::round_caps(self, bool) -> Self
+pub const fn noctis::image::shape::Arc::start_deg(self, f32) -> Self
+pub const fn noctis::image::shape::Arc::style(self, noctis::image::Style) -> Self
+pub const fn noctis::image::shape::Arc::sweep_deg(self, f32) -> Self
+pub const fn noctis::image::shape::Arc::thickness_pct(self, f32) -> Self
+pub const fn noctis::image::shape::Arc::track(self, u32) -> Self
+impl core::clone::Clone for noctis::image::shape::Arc
+pub fn noctis::image::shape::Arc::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::shape::Arc
+pub fn noctis::image::shape::Arc::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::shape::Arc
+pub fn noctis::image::shape::Arc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::shape::Arc
+pub struct noctis::image::shape::Pie
+impl noctis::image::shape::Pie
+pub fn noctis::image::shape::Pie::classes(self, noctis::image::Classes) -> Self
+pub fn noctis::image::shape::Pie::new<I, V>(I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (V, u32)>, V: core::convert::Into<f64>
+pub const fn noctis::image::shape::Pie::start_deg(self, f32) -> Self
+pub const fn noctis::image::shape::Pie::style(self, noctis::image::Style) -> Self
+impl core::clone::Clone for noctis::image::shape::Pie
+pub fn noctis::image::shape::Pie::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::shape::Pie
+pub fn noctis::image::shape::Pie::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::shape::Pie
+pub fn noctis::image::shape::Pie::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::shape::Pie
+pub const noctis::image::shape::MAX_SLICES: usize
 pub fn noctis::image::span(noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::image::Classes) -> noctis::image::Node
 pub proc macro noctis::image::theme!()

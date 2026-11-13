@@ -24,6 +24,7 @@
 
 mod classes;
 mod into_nodes;
+pub mod shape;
 mod style;
 #[cfg(test)]
 mod tests;
@@ -37,7 +38,10 @@ use crate::{RemoteImage, StaticImage};
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
 pub use style::Style;
+use style::rgb24;
 pub(crate) use style::{Dimension, Offset};
+
+use shape::Shape;
 
 use into_nodes::sealed::Sealed as _;
 
@@ -60,7 +64,8 @@ pub enum Tag {
     H3,
 }
 
-/// One node of a view tree: an element, a text node or an image.
+/// One node of a view tree: an element, a text node, an image or a
+/// [`shape`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     kind: Kind,
@@ -73,6 +78,7 @@ pub(crate) enum Kind {
     Element { tag: Tag, children: Vec<Node> },
     Text(Cow<'static, str>),
     Image(ImageSrc),
+    Shape(Shape),
 }
 
 /// What an image node draws: a static image the App registered with
@@ -146,6 +152,15 @@ impl Node {
         }
     }
 
+    /// A shape node (see [`shape`]).
+    pub(crate) fn shape(shape: Shape) -> Self {
+        Self {
+            kind: Kind::Shape(shape),
+            classes: Classes::default(),
+            style: Style::new(),
+        }
+    }
+
     /// Sets the classes; a later call replaces them. Applies to text and
     /// image nodes too.
     #[must_use]
@@ -162,8 +177,8 @@ impl Node {
         self
     }
 
-    /// Appends `child` (0..n nodes, see [`IntoNodes`]). A no-op on a text
-    /// or image node.
+    /// Appends `child` (0..n nodes, see [`IntoNodes`]). A no-op on a text,
+    /// image or shape node.
     #[must_use]
     pub fn child(mut self, child: impl IntoNodes) -> Self {
         if let Kind::Element { children, .. } = &mut self.kind {
@@ -172,8 +187,8 @@ impl Node {
         self
     }
 
-    /// Appends every item of `children`, in order. A no-op on a text or
-    /// image node.
+    /// Appends every item of `children`, in order. A no-op on a text,
+    /// image or shape node.
     #[must_use]
     pub fn children<I>(mut self, children: I) -> Self
     where
@@ -215,7 +230,7 @@ impl Node {
     pub(crate) fn child_nodes(&self) -> &[Node] {
         match &self.kind {
             Kind::Element { children, .. } => children,
-            Kind::Text(_) | Kind::Image(_) => &[],
+            Kind::Text(_) | Kind::Image(_) | Kind::Shape(_) => &[],
         }
     }
 

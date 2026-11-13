@@ -99,7 +99,7 @@ macro_rules! inset_setters {
 }
 
 /// The low 24 bits of `rgb` (`0xRRGGBB`).
-const fn rgb24(rgb: u32) -> u32 {
+pub(super) const fn rgb24(rgb: u32) -> u32 {
     rgb & 0x00FF_FFFF
 }
 

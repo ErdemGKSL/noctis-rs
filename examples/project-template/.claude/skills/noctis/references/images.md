@@ -8,7 +8,7 @@ the topic file the task needs:
 
 | File | Read when you… |
 | --- | --- |
-| `images-cookbook.md` | draw something: progress bars (still, animated, segmented), stat sheets, ring gauges and dials, badges and status avatars, leaderboards, charts, sparklines, heatmaps, banners and dividers, game boards, step indicators, countdowns, loading states, avatar stacks |
+| `images-cookbook.md` | draw something: progress bars (still, animated, segmented), stat sheets, ring and 270° gauges (`Arc`), pie and donut charts (`Pie`) and dials, badges and status avatars, leaderboards, charts, sparklines, heatmaps, banners and dividers, game boards, step indicators, countdowns, loading states, avatar stacks |
 | `images-ui.md` | put images into a message: which surface, screen layouts, re-rendering on a click, paginated image pages, animation in a UI, attachment and size limits, performance, caching, when not to use an image, troubleshooting |
 | `images-emoji.md` | need icons inside text, buttons or select options: application emojis, drawing and uploading them, the emoji methodology (white on coloured buttons), emoji progress bars |
 | `images-engine.md` | need the exact rule: every `#[template(..)]` key, `view!` and `tw!` syntax, the class grammar, `Style`, the Theme file, fonts, static and remote images, emoji in images, render errors, pool, caps, size budget, cache, pixel snapshots |
@@ -210,7 +210,8 @@ message keeps its file without an upload.
    `style={Style::new().width_pct(p)}`, not `format!("w-[{p}%]")`. `Style` sets width,
    height, gap, background, text and border colour, opacity, insets (`left`, `top`,
    `right`, `bottom`), corner radius, border width, translation, rotation, scale and
-   z-index; every technique in the cookbook is built from those setters.
+   z-index; every technique in the cookbook is built from those setters and the two
+   shapes, `shape::Arc` (rings, gauges) and `shape::Pie` (`images-engine.md` §3.1).
 3. **User text is a text child only** (`{&self.name}`), never a class, never a style.
 4. **Localized text is data.** Format labels in the handler from `Strings` and pass
    them as `String` fields; a Template never reads locale files.
