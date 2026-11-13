@@ -323,8 +323,9 @@ async fn missing_names_are_re_listed_until_present() {
     task.abort();
 }
 
-/// A Publish of this process re-lists (a dry run does not); an App without
-/// a set lists nothing; without a token `reload` is an error.
+/// A Publish of this process re-lists after its sync (a dry run only
+/// lists for the plan and keeps the table); an App without a set lists
+/// nothing; without a token `reload` is an error.
 #[tokio::test(flavor = "multi_thread")]
 async fn publish_re_lists_and_edges() {
     let (http, remote) = fake(vec![], 0).await;
@@ -334,10 +335,17 @@ async fn publish_re_lists_and_edges() {
         .dry_run(true)
         .await
         .unwrap();
-    assert_eq!(count(&http, &format!("GET {EMOJIS}")), 0);
-    remote.set(vec![emoji(401, "check", false)]);
-    let _ = app.publish(PublishScope::Global).await.unwrap();
     assert_eq!(count(&http, &format!("GET {EMOJIS}")), 1);
+    assert!(!app.emojis().is_loaded());
+    remote.set(vec![
+        emoji(401, "check", false),
+        emoji(402, "check_white", false),
+        emoji(403, "cross", false),
+        emoji(404, "spin", true),
+    ]);
+    let _ = app.publish(PublishScope::Global).await.unwrap();
+    // The sync's list, then the re-list.
+    assert_eq!(count(&http, &format!("GET {EMOJIS}")), 3);
     assert_eq!(app.emojis().id("check"), Some(Id::new(401)));
 
     let (http, _) = fake(vec![], 0).await;

@@ -2956,6 +2956,7 @@ name = "noctis-core"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "blake3",
  "brotli-decompressor",
  "bytes",
  "criterion",

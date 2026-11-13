@@ -20,7 +20,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `ae6e46d2df516135a8cc047c2d5931e008687e377aa21a6980ff423a526d68d0` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `d0e59d9296b1dc410960d2324d81e927a695125c1c39bd8a311c991ded8ad0fe` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -509,7 +509,7 @@ Read only what the task touches.
 | `references/images.md` | start any image work: the mental model, which surface (single-item Media Gallery as a full-width canvas, gallery grid, Thumbnail, File, emoji), canvas sizes, text or image, a complete first example (a progress strip under text) |
 | `references/images-cookbook.md` | draw something: progress bars (still, segmented, animated fill, GIF), stat sheets, ring gauges and dials, level badges, status avatars, sparklines, leaderboards, avatar stacks, column charts, heatmaps, banners, drawn dividers, game boards, step indicators, countdowns, loading states; text, emoji and avatars inside images |
 | `references/images-ui.md` | compose images into a V2 screen: layouts, component and attachment cost, the load → render → View flow, re-rendering on a click and kept attachments, paginated image pages, animation in a UI, dark and light clients, limits, performance and caching, rendering outside an interaction, when not to use an image, snapshot strategy, image troubleshooting |
-| `references/images-emoji.md` | use application emojis: Discord's limits (2000 per app, 256 KiB, 128×128; EMO-01..04), the emoji methodology (vector style, transparent, white on coloured buttons), drawing glyphs with the engine, declaring the set with `#[derive(AppEmojis)]` and `.emojis::<Icons>()`, uploading through `ctx.http()`, typed lookups with `ctx.emojis()` (`get`, `on(style, ..)`, `text`) and what a missing emoji does, emoji progress bars, animated emojis |
+| `references/images-emoji.md` | use application emojis: Discord's limits (2000 per app, 256 KiB, 128×128; EMO-01..04), the emoji methodology (vector style, transparent, white on coloured buttons), drawing glyphs with the engine, declaring the set with `#[derive(AppEmojis)]` and `.emojis::<Icons>()`, uploading by Publish (`EmojiSync`, `report.emojis()`), typed lookups with `ctx.emojis()` (`get`, `on(style, ..)`, `text`) and what a missing emoji does, emoji progress bars, animated emojis |
 | `references/images-engine.md` | need the exact engine rule: `#[template(..)]` keys, `view!`/`tw!` syntax, the Tailwind v4 class grammar, `Style`, theme, fonts, static and remote images, emoji in images, animation, render errors, pool, caps, size budget, cache, unstable items |
 | `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing (`app_id`, `Shared::new`), `ctx.kv()` (`Kv`) and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |

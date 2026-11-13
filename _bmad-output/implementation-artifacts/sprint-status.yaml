@@ -211,7 +211,7 @@ development_status:
   20-2-per-call-render-size-budget: done
   20-3-application-emoji-rules-and-declared-sets: done
   20-4-the-emoji-table-and-typed-lookup: done
-  20-5-emoji-sync-on-publish: backlog
+  20-5-emoji-sync-on-publish: done
   20-6-animation-play-count-and-holds: backlog
   20-7-more-typed-style-setters: backlog
   20-8-arcs-rings-and-pies: backlog

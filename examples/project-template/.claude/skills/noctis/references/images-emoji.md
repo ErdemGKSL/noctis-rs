@@ -12,8 +12,8 @@ emoji progress bars (§7), animated emojis (§8), emoji or attachment (§9).
 
 **Declare the set in code** with `#[derive(AppEmojis)]` (§5.0): names, files, formats
 and sizes are checked at `cargo check`. The App lists the application's emojis at start
-and `ctx.emojis()` looks them up by the typed variant (§6). Uploading still goes through
-the twilight client that `ctx.http()` returns (§5.2).
+and `ctx.emojis()` looks them up by the typed variant (§6). Publish uploads the missing
+ones (§5.1): no upload code, no Developer Portal step.
 
 ## 1. What Discord guarantees
 
@@ -80,8 +80,8 @@ Follow this checklist unless the user of the bot project says otherwise.
 8. **Coloured variants use one palette**: the bot's theme colours (the `--color-*`
    tokens of `noctis-theme.css`), each with enough contrast on both dark and light
    clients; avoid pure white, near-black and pale tints for the coloured variant.
-9. **Upload once, reference by name.** Keep the PNGs in the repository
-   (`assets/emoji/<name>.png`), upload them to the application once per environment,
+9. **Declare once, reference by name.** Keep the PNGs in the repository
+   (`assets/emoji/<name>.png`), let Publish upload them to each application,
    and look them up with `ctx.emojis()` (§6), never by a hard-coded id: the ids differ
    between a test bot and the production bot.
 
@@ -211,7 +211,8 @@ async fn emoji_glyphs() -> anyhow::Result<()> {
 }
 ```
 
-Upload those PNGs in the Developer Portal, or let the bot upload its own renders (§5).
+Commit those PNGs and declare them (§5.0), or declare the variant `#[emoji(render)]` and
+let Publish render and upload it (§5.1).
 
 ## 5. Declaring and uploading
 
@@ -261,7 +262,7 @@ builder.emojis::<Icons>();
 - **Reading the set**: `Icons::Check.declaration()` gives `name()`, `white_name()`,
   `image()` (`EmojiImage::File { bytes, format }` or `EmojiImage::Render(f)`), and
   `Icons::DECLARATIONS` lists them all; `app.emoji_declarations()` lists every name the
-  App declares. Upload them with §5.1 or §5.2.
+  App declares. Publish uploads them (§5.1).
 
 The items, all in `noctis::emoji` (`AppEmojis`, `EmojiArt` and `EmojiTone` are also in
 the prelude):
@@ -288,82 +289,75 @@ To check names or files built at run time (an admin uploading a picture), use
 returning the `EmojiFormat`) and `validate_emoji_set(names, &limits)` (EMO-03
 uniqueness and EMO-01); each returns the `Violation` with its rule id.
 
-### 5.1 By hand
+### 5.1 Publish uploads them
 
-Developer Portal → the application → Emojis: upload each PNG and name it. Good for a
-handful of icons and for artwork that does not come from code. Repeat for every
-application (test bot, production bot).
+Every Publish uploads the declared set: `cargo run --release -- --publish` (or
+`--publish-guild [<id>]`, `NOCTIS_PUBLISHER=true` on one process, `app.publish(..)`).
+After the Commands it lists the application's emojis and creates every declared name
+that is missing, one request at a time through the App's HTTP client and rate limiter.
+There is no upload Command to write and no Developer Portal step, and a new
+application (test bot, production bot) gets the whole set from its first Publish.
 
-### 5.2 From the bot
+- **Only the publishing process writes.** Every other process only lists (§6); none
+  creates, renames or deletes an emoji. `--publish-clear` leaves emojis alone.
+- **Files** upload as they are (PNG, JPEG or GIF; a GIF is animated). **Drawn icons**
+  (`#[emoji(render)]`) are rendered through the App's Renderer from the set's `art`
+  function as PNG, or GIF when the Template animates, capped at 256 KiB
+  (`RenderOptions::max_bytes(262_144)`, so it degrades fps, size, quality to fit).
+  An animation that fits only as a still frame is an error, not an upload. Without
+  a Renderer (`.theme(..)` / `.image(..)`) such a set fails the Publish with
+  `PublishError::EmojiNeedsRenderer { name }` before any request. The art Templates
+  are registered with the Renderer at `build()`; no `Module::template` is needed.
+- **Never touched**: emojis the code does not declare (uploaded by hand) stay.
+- **Changed art** is detected by a blake3 digest of the uploaded bytes, kept in the
+  App's `Kv` (Discord returns no hash and re-encodes the image). By default a changed
+  emoji is reported as `changed` and kept. An emoji with no stored digest (uploaded by
+  hand, or the store was empty) is adopted as unchanged, so with the in-memory default
+  store a change is only seen while one process publishes repeatedly; give the App a
+  durable `CacheStore` adapter for it to survive restarts.
+- **Opt-ins**, on the builder:
 
-`ctx.http()` is the App's twilight client; it has the four application-emoji requests
-(`get_application_emojis`, `add_application_emoji`, `update_application_emoji`,
-`delete_application_emoji`). An owner-only Command that uploads what is missing:
+  ```rust
+  use noctis::emoji::EmojiSync;
 
-```toml
-# Cargo.toml: the data URI needs base64
-base64 = "0.22"
+  builder.emoji_sync(
+      EmojiSync::new()
+          .replace_changed(true)     // delete and re-create a changed emoji
+          .delete_undeclared(true),  // delete emojis no set declares
+  );
+  ```
+
+  `EmojiSync` is `Copy` and `Default` (= `new()`, both off); `replaces_changed()` and
+  `deletes_undeclared()` read it back. Replacing gives the emoji a **new id**: messages already sent keep the old
+  `<:name:id>` token, which then shows as plain `:name:` text. Prefer a new name
+  (a new variant) for a redesigned icon when old messages matter.
+- **Checks before the first write**: the creates would take the application over 2000
+  emojis → `PublishError::TooManyEmojis { count, max }` (`[EMO-01]`). A 400 on a
+  create is `PublishError::EmojiRejected { name, status, code }`, naming `[EMO-02]`
+  (over 256 KiB) and `[EMO-04]` (not a valid PNG, JPEG or GIF) as the likely rules.
+- **A failed sync is safe to repeat**: the commands are already published, and the next
+  Publish's list skips the names created before the failure.
+- **`--dry-run`** sends only the list and prints the plan.
+- **The report**: `report.emojis()` is `Option<&EmojiReport>` (`None` without a set
+  and for a clear) with `created()`, `unchanged()`, `changed()`, `replaced()`,
+  `deleted()` (names, `&[String]`), `wrote()` and `has_writes()`; the CLI prints it
+  under `== emojis ==`, and `PublishCompleted` hooks see it.
+- After its own Publish the process re-lists, so `ctx.emojis()` knows the new ids at
+  once; other processes re-list on their own within 60 s while a name is missing (§6).
+
+```text
+== emojis ==
++ create emoji `check_white`
+~ changed emoji `logo` (kept: EmojiSync::replace_changed is off)
+3 emoji(s) unchanged
+written
 ```
 
-```rust
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+### 5.2 By hand
 
-const MAX_EMOJI_BYTES: usize = 256 * 1024;      // Discord: 256 KiB per emoji
-
-/// The set this bot ships: (name, glyph, tint).
-const EMOJI_SET: &[(&str, Glyph, u32)] = &[
-    ("check", Glyph::Check, 0x23_A55A),
-    ("check_white", Glyph::Check, 0xFF_FFFF),
-    ("st_online", Glyph::Dot, 0x23_A55A),
-    ("st_offline", Glyph::Ring, 0x80_848E),
-    ("bar_on_a", Glyph::BarStart, 0x58_65F2),
-    ("bar_on_b", Glyph::BarMid, 0x58_65F2),
-    ("bar_on_c", Glyph::BarEnd, 0x58_65F2),
-    ("bar_off_a", Glyph::BarStart, 0x4E_5058),
-    ("bar_off_b", Glyph::BarMid, 0x4E_5058),
-    ("bar_off_c", Glyph::BarEnd, 0x4E_5058),
-];
-
-#[derive(SlashCommand, Debug)]
-#[command("emoji sync", permissions = ADMINISTRATOR, contexts = [Guild], response = ephemeral, module = "emoji")]
-pub struct EmojiSync;
-
-impl EmojiSync {
-    #[handler]
-    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
-        let app = ctx.http().current_user_application().await?.model().await?.id;
-        let existing = ctx.http().get_application_emojis(app).await?.model().await?.items;
-        for &(name, glyph, tint) in EMOJI_SET {
-            if existing.iter().any(|e| e.name == name) {
-                continue;                                   // uploaded earlier: keep its id
-            }
-            let png = ctx.render(EmojiGlyph { glyph, tint }).await?;
-            if png.bytes().len() > MAX_EMOJI_BYTES {
-                return Err(HandlerError::user(keys::EMOJI_TOO_LARGE));
-            }
-            let image = format!("data:image/png;base64,{}", STANDARD.encode(png.bytes()));
-            ctx.http().add_application_emoji(app, name, &image).await?;
-        }
-        ctx.reply_text(keys::EMOJI_SYNCED).await
-    }
-}
-```
-
-- Publish it as a guild-scoped Command of your own server (`guilds = [<id literal>]`
-  in `#[command(..)]`, then no `contexts`), so it is not offered anywhere else.
-- Each upload is one request under Discord's rate limits. A run that fails half way
-  can simply be repeated: the loop skips what exists.
-- A changed picture needs a new upload: delete the old emoji
-  (`delete_application_emoji(app, id)`) or, better, upload under a new name and keep
-  the old one for messages already sent. `update_application_emoji` only renames.
-- The files of a declared set (§5.0) upload the same way: iterate `Icons::DECLARATIONS`
-  and, for `EmojiImage::File { bytes, format }`, build the data URI from `bytes` with
-  `format.mime()` (`image/png`, `image/gif`, `image/jpeg`); upload `white_image()`
-  under `white_name()` too.
-- After a sync, call `ctx.emojis().reload().await` (§6) so this process knows the new
-  ids at once; other processes re-list on their own within 60 s while a name is
-  missing.
+Developer Portal → the application → Emojis: upload a PNG and name it. Use it only for
+artwork that is not in code; look such an emoji up by its id or a `"<:name:id>"`
+literal, because `ctx.emojis()` knows declared names only.
 
 ## 6. Using them from code
 
@@ -394,7 +388,7 @@ ctx.respond(render_order(order, &s, ctx.emojis())).await
 | `emojis.id("check")` | `Option<Id<EmojiMarker>>` by declared name | `RemoteImage::custom_emoji(id, ..)` |
 | `emojis.missing()` | the declared names the last list did not find | a status or admin screen |
 | `emojis.is_loaded()` | whether a list has succeeded | the same |
-| `emojis.reload().await` | `Result<(), EmojiListError>`: list now | after your own upload (§5.2) |
+| `emojis.reload().await` | `Result<(), EmojiListError>`: list now | after an upload by hand (§5.2); a Publish re-lists itself |
 | `emojis.declarations()` | the `EmojiDeclarations` | listing the set |
 
 No lookup does I/O or allocates more than the value it returns; `Emojis` is a cheap
@@ -540,11 +534,12 @@ An animated emoji is uploaded as an animated image and written `<a:name:id>`
 (`Emoji::custom(id, name, true)`, and `format!("<a:{name}:{id}>")` in text).
 
 - Draw it as an animated Template at 128 × 128 with `animation(duration_ms = 1000,
-  fps = 15, format = Gif)` (the `image-gif` feature) and upload the bytes with
-  `data:image/gif;base64,…`; flat colours, one-bit transparency, so use hard edges and
-  no soft shadows (`images-cookbook.md` §10).
-- Check the size before uploading: the limit is 256 KiB, far below the render budget's
-  2 MiB default. Fewer frames or flatter shapes if it is over.
+  fps = 15)` (the `image-gif` feature) and declare it `#[emoji(render)]`: Publish
+  renders it as GIF within 256 KiB (§5.1); flat colours, one-bit transparency, so use
+  hard edges and no soft shadows (`images-cookbook.md` §10).
+- The limit is 256 KiB, far below the render budget's 2 MiB default; an animation
+  that fits only as a still frame fails the Publish (`PublishError::EmojiArt`). Fewer
+  frames or flatter shapes if it does.
 - Use them sparingly: a spinner on a "working" line, a pulse on a live status. A
   message full of moving glyphs is unreadable, and clients can be set not to animate
   emoji (client behaviour).

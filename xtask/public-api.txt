@@ -127,6 +127,7 @@ pub fn noctis::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) 
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::discover(&mut self) -> &mut Self
 pub fn noctis::AppBuilder::emoji_reload_interval(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::AppBuilder::emoji_sync(&mut self, noctis::emoji::EmojiSync) -> &mut Self
 pub fn noctis::AppBuilder::emojis<T: noctis::emoji::AppEmojis>(&mut self) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -2839,16 +2840,30 @@ pub fn noctis::emoji::EmojiListError::clone(&self) -> Self
 impl core::cmp::Eq for noctis::emoji::EmojiListError
 impl core::cmp::PartialEq for noctis::emoji::EmojiListError
 pub fn noctis::emoji::EmojiListError::eq(&self, &Self) -> bool
-impl core::convert::From<noctis::publish::PublishError> for noctis::emoji::EmojiListError
-pub fn noctis::emoji::EmojiListError::from(noctis::publish::PublishError) -> Self
 impl core::error::Error for noctis::emoji::EmojiListError
 impl core::fmt::Debug for noctis::emoji::EmojiListError
 pub fn noctis::emoji::EmojiListError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::emoji::EmojiListError
 pub fn noctis::emoji::EmojiListError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::emoji::EmojiListError
-impl core::convert::From<noctis::publish::PublishError> for noctis::emoji::EmojiListError
-pub fn noctis::emoji::EmojiListError::from(noctis::publish::PublishError) -> Self
+pub struct noctis::emoji::EmojiSync
+impl noctis::emoji::EmojiSync
+pub const fn noctis::emoji::EmojiSync::delete_undeclared(self, bool) -> Self
+pub const fn noctis::emoji::EmojiSync::deletes_undeclared(&self) -> bool
+pub const fn noctis::emoji::EmojiSync::new() -> Self
+pub const fn noctis::emoji::EmojiSync::replace_changed(self, bool) -> Self
+pub const fn noctis::emoji::EmojiSync::replaces_changed(&self) -> bool
+impl core::clone::Clone for noctis::emoji::EmojiSync
+pub fn noctis::emoji::EmojiSync::clone(&self) -> Self
+impl core::cmp::Eq for noctis::emoji::EmojiSync
+impl core::cmp::PartialEq for noctis::emoji::EmojiSync
+pub fn noctis::emoji::EmojiSync::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::emoji::EmojiSync
+pub fn noctis::emoji::EmojiSync::default() -> Self
+impl core::fmt::Debug for noctis::emoji::EmojiSync
+pub fn noctis::emoji::EmojiSync::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::emoji::EmojiSync
+impl core::marker::StructuralPartialEq for noctis::emoji::EmojiSync
 pub struct noctis::emoji::EmojiText(_)
 impl noctis::emoji::EmojiText
 pub const fn noctis::emoji::EmojiText::is_missing(&self) -> bool
@@ -5401,6 +5416,7 @@ pub fn noctis::prelude::AppBuilder::discord_cache(&mut self, noctis::DiscordCach
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discover(&mut self) -> &mut Self
 pub fn noctis::prelude::AppBuilder::emoji_reload_interval(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::prelude::AppBuilder::emoji_sync(&mut self, noctis::emoji::EmojiSync) -> &mut Self
 pub fn noctis::prelude::AppBuilder::emojis<T: noctis::emoji::AppEmojis>(&mut self) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -6233,6 +6249,27 @@ pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
 pub proc macro noctis::prelude::webhook_name!()
 pub mod noctis::publish
+pub struct noctis::publish::EmojiReport
+impl noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::changed(&self) -> &[alloc::string::String]
+pub fn noctis::publish::EmojiReport::created(&self) -> &[alloc::string::String]
+pub fn noctis::publish::EmojiReport::deleted(&self) -> &[alloc::string::String]
+pub fn noctis::publish::EmojiReport::has_writes(&self) -> bool
+pub fn noctis::publish::EmojiReport::replaced(&self) -> &[alloc::string::String]
+pub fn noctis::publish::EmojiReport::unchanged(&self) -> &[alloc::string::String]
+pub fn noctis::publish::EmojiReport::wrote(&self) -> bool
+impl core::clone::Clone for noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::clone(&self) -> Self
+impl core::cmp::Eq for noctis::publish::EmojiReport
+impl core::cmp::PartialEq for noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::default() -> Self
+impl core::fmt::Debug for noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::publish::EmojiReport
+pub fn noctis::publish::EmojiReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::publish::EmojiReport
 pub struct noctis::publish::Publish<'a>
 impl<'a> noctis::publish::Publish<'a>
 pub fn noctis::publish::Publish<'a>::clear(self, bool) -> Self
@@ -6244,6 +6281,15 @@ pub type noctis::publish::Publish<'a>::IntoFuture = core::pin::Pin<alloc::boxed:
 pub type noctis::publish::Publish<'a>::Output = core::result::Result<noctis::publish::PublishReport, noctis::publish::PublishError>
 pub fn noctis::publish::Publish<'a>::into_future(self) -> Self::IntoFuture
 #[non_exhaustive] pub enum noctis::publish::PublishError
+pub noctis::publish::PublishError::EmojiArt
+pub noctis::publish::PublishError::EmojiArt::name: &'static str
+pub noctis::publish::PublishError::EmojiArt::reason: alloc::string::String
+pub noctis::publish::PublishError::EmojiNeedsRenderer
+pub noctis::publish::PublishError::EmojiNeedsRenderer::name: &'static str
+pub noctis::publish::PublishError::EmojiRejected
+pub noctis::publish::PublishError::EmojiRejected::code: core::option::Option<u32>
+pub noctis::publish::PublishError::EmojiRejected::name: &'static str
+pub noctis::publish::PublishError::EmojiRejected::status: u16
 pub noctis::publish::PublishError::IntegrationTypeNotEnabled
 pub noctis::publish::PublishError::IntegrationTypeNotEnabled::command: alloc::string::String
 pub noctis::publish::PublishError::IntegrationTypeNotEnabled::integration_type: noctis::IntegrationType
@@ -6266,6 +6312,9 @@ pub noctis::publish::PublishError::TooManyCommands::count: usize
 pub noctis::publish::PublishError::TooManyCommands::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
 pub noctis::publish::PublishError::TooManyCommands::kind: &'static str
 pub noctis::publish::PublishError::TooManyCommands::max: usize
+pub noctis::publish::PublishError::TooManyEmojis
+pub noctis::publish::PublishError::TooManyEmojis::count: usize
+pub noctis::publish::PublishError::TooManyEmojis::max: usize
 pub noctis::publish::PublishError::Transport
 pub noctis::publish::PublishError::Transport::route: alloc::string::String
 impl core::clone::Clone for noctis::publish::PublishError
@@ -6282,6 +6331,7 @@ impl core::marker::StructuralPartialEq for noctis::publish::PublishError
 pub struct noctis::publish::PublishReport
 impl noctis::publish::PublishReport
 pub fn noctis::publish::PublishReport::creates(&self) -> usize
+pub fn noctis::publish::PublishReport::emojis(&self) -> core::option::Option<&noctis::publish::EmojiReport>
 pub fn noctis::publish::PublishReport::is_dry_run(&self) -> bool
 pub fn noctis::publish::PublishReport::targets(&self) -> &[noctis::publish::TargetReport]
 pub fn noctis::publish::PublishReport::wrote(&self) -> bool

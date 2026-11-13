@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 105 of 107" src="https://img.shields.io/badge/stories-105%20%2F%20107-3B2F8F">
+  <img alt="Stories done: 116 of 125" src="https://img.shields.io/badge/stories-116%20%2F%20125-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,12 +25,16 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–13 and 15–17 are done
+> **Noctis is under active development and not yet published.** Epics 1–13 and 15–19 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
 > Components V2 and modal model, a running sharded bot, slash commands and Publish,
 > routed components, Refs and modals, Responder ergonomics and the testing kit,
 > attachments and webhooks, generated images and GIFs, localization, clusters and scale,
-> module operations, opt-in extras, event pipeline throughput, voice and music bots).
+> module operations, opt-in extras, event pipeline throughput, voice and music bots,
+> registrations defined anywhere, prefix commands that emulate slash Commands).
+> Epic 20 (application emojis and image engine additions) is in progress (5 of 12 stories
+> done): emojis declared in code, looked up by a typed name and uploaded by Publish, and
+> renders from events, hooks and background tasks with a per-call size budget.
 > Epic 14 (launch readiness) is in progress (7 of 9 stories done): the release pipeline is
 > ready and CI runs again; the last two stories (repository settings and release secrets,
 > then publishing 0.1.0) wait on the maintainer ([release runbook](docs/guides/release.md)).
@@ -75,7 +79,8 @@ Noctis provides all of that as one layer with sensible defaults:
 | **Commands** | `"settings logs channel"` becomes command, group and subcommand. Patterns like `"config (set\|get) (prefix\|welcome)"` are supported, with typed option structs, autocomplete, context menus, localized names, and Publish only when something changed |
 | **Interaction routing** | O(1) dispatch by Route, typed Payloads with a compile-time length proof, Refs (11-char, ≥64-bit random keys) for large state, expiry handling, middleware with typed extensions, automatic defer before the 3 s deadline |
 | **Components V2 UI kit** | Typed builders for every V2 and modal component with placement checked by the type system, compile-time and runtime limit validation, cost and "how many rows fit" budget helpers, Route-built components with length-proven `custom_id`s, an ergonomic Responder (`ctx.respond`, `ctx.update`, `ctx.reply_text`), attachment tracking. No widget layer: tabs, pagination and step flows are short recipes you own |
-| **Images and GIFs** | `view!` / `tw!` templates with Tailwind v4 classes validated at compile time, a bounded render pool, render cache with request de-duplication, font and asset registry |
+| **Images and GIFs** | `view!` / `tw!` templates with Tailwind v4 classes validated at compile time, a bounded render pool, render cache with request de-duplication, font and asset registry, renders from any context with a per-call size budget |
+| **Application emojis** | Emoji sets declared in code (`#[derive(AppEmojis)]`, files checked at compile time or drawn from a Template), uploaded by Publish, and looked up by a typed name (`ctx.emojis().on(style, Icons::Check)`) |
 | **Adapters** | RefStore, SessionStore, RateLimitStore, RenderCache, AssetStore, LocaleSource, CacheStore, ModuleStateStore, IdentifyQueue. In-memory defaults ship, and a conformance test suite checks your own implementations |
 | **Localization** | Locale files compiled into typed accessors, word-by-word command name translation, User and Guild Locale on every context |
 | **Modules** | Composable feature modules, enabled or disabled at runtime (globally or per guild), plus rate limits and lifecycle hooks |
@@ -240,7 +245,7 @@ has the migration notes.
 ## Roadmap
 
 Noctis is planned and built with the [BMad Method](https://docs.bmad-method.org/). The
-work is split into 17 epics and 107 stories
+work is split into 20 epics and 125 stories
 ([`epics.md`](_bmad-output/planning-artifacts/epics.md)). Each story is planned, implemented,
 checked by the local gates and reviewed in four independent layers before it is marked
 done. Live per-story status is in
@@ -273,6 +278,9 @@ done. Live per-story status is in
 | 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ✅ Done |
 | 16 | Event pipeline throughput | P1 | ✅ Done |
 | 17 | Voice and music bots | P1 | ✅ Done |
+| 18 | Registrations defined anywhere | P1 | ✅ Done |
+| 19 | Prefix commands emulate slash Commands | P2 | ✅ Done |
+| 20 | Application emojis and image engine additions | P1 | 🔨 In progress (5 / 12) |
 
 **What already works**
 
@@ -355,6 +363,18 @@ done. Live per-story status is in
     reference-card render benchmark.
   - A Renderer seam: `AppBuilder::renderer(..)` takes a custom Renderer
     (types under `noctis::image::unstable`), with the Upload Budget checked at the render boundary.
+  - `render` on `EventCtx`, `HookCtx` and the built `App` (background tasks), and a
+    per-call size cap, `RenderOptions::max_bytes(..)`.
+- **Application emojis.**
+  - `#[derive(AppEmojis)]` sets: names, files, formats and the 256 KiB cap checked at
+    `cargo check` (EMO-02..04), the 2000-emoji limit and duplicate names at `App::build`,
+    white variants for coloured buttons, and icons drawn from a Template.
+  - A start-up emoji table with typed lookups (`get`, `white`, `on(ButtonStyle, ..)`,
+    `text`) on every context; a missing emoji is `None`, never an error, and is
+    re-listed until it appears.
+  - Publish uploads the missing names (rendered art as PNG or GIF within 256 KiB),
+    reports changed art by a stored digest, replaces or deletes only when opted in
+    (`EmojiSync`), and shows the plan in a dry run.
 - **Localization.**
   - `i18n!` compiles YAML locale files into typed `Strings` accessors, with
     compile-time checks; App and Module catalogs merge at `App::build`.
@@ -387,7 +407,10 @@ done. Live per-story status is in
     (`apps = [..]`, `Module::apps`) and a `GuildAccessList` port.
   - Runtime presence updates and on-demand Request Guild Members, within the gateway
     command budget.
-  - Prefix commands through `PrefixPlugin` (feature `prefix`), reusing slash Commands.
+  - Prefix commands through `PrefixPlugin::new("!")` (feature `prefix`): every slash
+    Command also answers `!<path> <args>` through the same handler and typed options,
+    with its permissions, `nsfw`, channel types, contexts and ephemeral responses
+    emulated; `command_type = "slash" | "prefix" | "all"` picks the surfaces.
 - **Event pipeline throughput.**
   - A criterion bench of the event pipeline
     (throughput, latency percentiles, push cost) with a recorded baseline, and an

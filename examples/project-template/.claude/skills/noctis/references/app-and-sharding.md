@@ -321,7 +321,7 @@ explicitly). Built-in parser, no clap:
 | `--publish` | publish globally (and each `guilds = [..]` Command to its guilds), print the report, exit |
 | `--publish-guild [<id>]` | publish **every** Command into one guild (dev mirror; instant), print, exit. No id: `.dev_guild(..)` / `NOCTIS_DEV_GUILD`, else `CliError::MissingDevGuild` |
 | `--publish-clear [--guild <id>]` | publish an empty list globally (or to that guild): deletes this App's commands there |
-| `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff and the create count, write nothing |
+| `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff, the create count and the emoji plan, write nothing (the emojis are only listed) |
 | `--features a,b` / `all` / `none` | Boot Flags. `App::from_env()` reads it from the process command line before `build()` (it wins over `NOCTIS_FEATURES`); `run` only checks that it equals `app.boot_flags()`, else `CliError::BootFlagsMismatch`, and logs the selection at info level (`boot flags selected`). Combines with every mode, `--dry-run` and `--no-resume` |
 | `--no-resume` | run the bot with fresh sessions: `.resume_sessions(false)` for this run (`info` log `session resume disabled (--no-resume)`): each shard deletes its stored entry before it identifies, the shutdown closes with 1000 and deletes it. With a publish flag it is `CliError::NoResumeWithPublish` |
 
@@ -388,7 +388,12 @@ day per guild). One Publish:
    app has not enabled under Installation in the Developer Portal);
 6. per target: `GET …/commands?with_localizations=true`, canonical diff, then one
    bulk-overwrite `PUT` only when the diff is not empty and this is not a dry run. The
-   first HTTP error stops the rest.
+   first HTTP error stops the rest;
+7. syncs the application emojis the App declares (`.emojis::<Icons>()`; not for
+   `clear`; `images-emoji.md` §5): `GET /applications/{id}/emojis`, then one create per
+   declared name that is missing, one request at a time. A drawn emoji
+   (`#[emoji(render)]`) needs a Renderer: without one the Publish fails with
+   `PublishError::EmojiNeedsRenderer` before step 4.
 
 Targets: `PublishScope::Global` writes the global commands, then each guild of a
 `guilds = [..]` Command gets only its own Commands. `PublishScope::Guild(id)` (the
@@ -418,6 +423,9 @@ for target in report.targets() {          // TargetReport
 }
 println!("{report}");                      // what the CLI modes print
 assert_eq!(report.creates(), 1);           // over every target; report.wrote(), report.is_dry_run()
+if let Some(emojis) = report.emojis() {    // EmojiReport; None without emoji sets and for a clear
+    println!("created {:?}, changed {:?}", emojis.created(), emojis.changed());
+}
 ```
 
 `Publish` also has `.clear(true)`. `diff()` holds one line per change, creates first,
@@ -435,7 +443,12 @@ code, e.g. `PUT /applications/7/commands`, 400, `Some(50035)`), `Transport { rou
 `InvalidResponse { route, reason }`, `IntegrationTypeNotEnabled { command,
 integration_type }` (`[META-04] …`), `NameClash { guild, kind, name }` (`[REG-03] …`),
 `TooManyCommands { guild, kind, count, max }` (`[REG-02] …`); `kind` is `chat_input`,
-`user` or `message`. Each write logs one `info` (target `noctis::publish`, fields
+`user` or `message`. The emoji sync adds `EmojiNeedsRenderer { name }`, `EmojiArt {
+name, reason }` (a drawn emoji's art failed to render, or an animation fit 256 KiB only
+as a still frame), `TooManyEmojis { count, max }` (`[EMO-01] …`, before the first emoji
+write) and `EmojiRejected { name, status, code }` (a 400 on create: likely `[EMO-02]`
+or `[EMO-04]`); a failed sync leaves the commands published and is safe to repeat.
+Each write logs one `info` (target `noctis::publish`, fields
 `scope`, `creates`, `diff`); an unchanged target logs `commands unchanged; nothing
 written`.
 
@@ -850,7 +863,7 @@ responder (`lifecycle hooks take (self, ctx: HookCtx, event: <lifecycle event>)`
 | Event (`NAME`) | Fires | Data |
 | --- | --- | --- |
 | `AppStarted` (`APP_STARTED`) | once per run, after the locale overlays and the startup Module-state load, before the startup Publish | `publisher: bool` |
-| `PublishCompleted` (`PUBLISH_COMPLETED`) | every `App::publish(..)` that resolves `Ok`: the startup Publish, the CLI `--publish*` modes, your own calls; dry runs and clears included | `scope: PublishScope`, `clear: bool`, `report: PublishReport` (`report.targets()[i].diff()`, `report.is_dry_run()`) |
+| `PublishCompleted` (`PUBLISH_COMPLETED`) | every `App::publish(..)` that resolves `Ok`: the startup Publish, the CLI `--publish*` modes, your own calls; dry runs and clears included | `scope: PublishScope`, `clear: bool`, `report: PublishReport` (`report.targets()[i].diff()`, `report.is_dry_run()`, `report.emojis()`) |
 | `PublishFailed` (`PUBLISH_FAILED`) | every `App::publish(..)` that resolves `Err` | `scope`, `dry_run: bool`, `clear: bool`, `error: PublishError` |
 | `ShardReady` (`SHARD_READY`) | a shard received READY | `shard: u32` |
 | `ShardResumed` (`SHARD_RESUMED`) | a shard received RESUMED | `shard` |

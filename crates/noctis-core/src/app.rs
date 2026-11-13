@@ -2093,6 +2093,8 @@ pub struct AppBuilder {
     /// The re-list interval while declared emojis are missing
     /// (`emoji_reload_interval`).
     emoji_reload_interval: Duration,
+    /// What Publish replaces and deletes (`emoji_sync`).
+    emoji_sync: crate::emoji::EmojiSync,
     violations: Vec<BuildViolation>,
 }
 
@@ -2204,6 +2206,7 @@ impl AppBuilder {
             shutdown_tasks: Vec::new(),
             emoji_sets: Vec::new(),
             emoji_reload_interval: crate::emoji::DEFAULT_RELOAD_INTERVAL,
+            emoji_sync: crate::emoji::EmojiSync::new(),
             violations: Vec::new(),
         }
     }
@@ -2475,6 +2478,26 @@ impl AppBuilder {
     /// ```
     pub fn emoji_reload_interval(&mut self, interval: Duration) -> &mut Self {
         self.emoji_reload_interval = interval;
+        self
+    }
+
+    /// How Publish syncs the declared emojis (FR-82). Every Publish
+    /// (`--publish`, `--publish-guild`, `NOCTIS_PUBLISHER=true`,
+    /// `app.publish(..)`; not `--publish-clear`) creates the declared names
+    /// the application lacks; by default it replaces and deletes nothing.
+    /// [`EmojiSync::replace_changed`](crate::emoji::EmojiSync::replace_changed)
+    /// re-creates an emoji whose art changed (its id changes);
+    /// [`EmojiSync::delete_undeclared`](crate::emoji::EmojiSync::delete_undeclared)
+    /// deletes the emojis no set declares.
+    ///
+    /// ```
+    /// use noctis_core::emoji::EmojiSync;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.emoji_sync(EmojiSync::new().replace_changed(true));
+    /// ```
+    pub fn emoji_sync(&mut self, sync: crate::emoji::EmojiSync) -> &mut Self {
+        self.emoji_sync = sync;
         self
     }
 
@@ -3485,9 +3508,9 @@ impl AppBuilder {
                 .into_iter()
                 .map(|(resource, intent)| BuildViolation::MissingCacheIntent { resource, intent }),
         );
-        self.register_templates(&registry);
         let (emojis, emoji_violations) = crate::emoji::fold(&self.emoji_sets, &self.limits);
         self.violations.extend(emoji_violations);
+        self.register_templates(&registry, &emojis);
         let payload_keys = self.key_ring(&registry);
         self.violations.extend(duplicate_keys);
         if ensure_crypto_provider().is_err() {
@@ -3521,6 +3544,7 @@ impl AppBuilder {
             Arc::clone(&http),
             config.token.is_some(),
             config.emoji_reload_interval,
+            config.emoji_sync,
         );
         let mut ports = Ports::resolve(config.ports, &app_id);
         let discord_cache = discord_cache_feed(&mut ports, config.discord_cache);
@@ -3596,9 +3620,6 @@ impl AppBuilder {
         })
     }
 
-    /// Hands the folded Templates to the Renderer (a rejection is a
-    /// [`BuildViolation::TemplateRejected`]); without a Renderer, warns
-    /// when Templates are registered.
     /// Merges the discovered registrations into the trees when the App
     /// discovers ([`discover`](Self::discover)); otherwise logs how many
     /// were left out.
@@ -3620,8 +3641,23 @@ impl AppBuilder {
         }
     }
 
-    fn register_templates(&mut self, registry: &Registry) {
-        let templates = registry.templates();
+    /// Hands the folded Templates and the Templates of the drawn emojis
+    /// (`#[emoji(render)]`, an id the Modules already register is kept
+    /// once) to the Renderer (a rejection is a
+    /// [`BuildViolation::TemplateRejected`]); without a Renderer, warns
+    /// when Templates are registered.
+    fn register_templates(
+        &mut self,
+        registry: &Registry,
+        emojis: &crate::emoji::EmojiDeclarations,
+    ) {
+        let mut templates = registry.templates().to_vec();
+        for art in emojis.art_templates() {
+            if templates.iter().all(|t| t.id != art.id) {
+                templates.push(art);
+            }
+        }
+        let templates = templates.as_slice();
         match &self.renderer {
             Some(renderer) => {
                 if let Err(error) = renderer.register(templates) {

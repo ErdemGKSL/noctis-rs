@@ -696,3 +696,36 @@ Planning decisions (2026-11-13, Epic 20):
   Modules tab: the toggle buttons (`on`, the style computed once), a new multi-select
   `dash.on` of enabled modules (options with `get`), and a status dot (`text`) in each
   row.
+- (decision, Story 20.5) The emoji sync runs inside `Publish` after every command
+  target, for both scopes (`--publish` and `--publish-guild`), never for a clear. A
+  missing Renderer for a `#[emoji(render)]` declaration is checked first, before
+  `GET /applications/@me`, so such a Publish sends nothing. Every image (files and
+  rendered art) and every digest is prepared before the first emoji write, so a render
+  failure, the EMO-01 guard (listed - deleted + created > `Limits::application_emojis`)
+  and a still fallback of an animated art all fail with nothing written. Writes go
+  deletes, then replacements (delete, then create), then creates; the commands stay
+  published when the sync fails, and a repeat finds what was created by listing.
+- (decision, Story 20.5) The digest is `blake3` of the uploaded bytes, stored with the
+  emoji id under `noctis:emoji:<name>` in the App's `Kv` (the `CacheStore` port; no new
+  port). A stored digest for another id counts as none, so an emoji deleted and
+  re-uploaded by hand is adopted. Adopted digests are written only by a non-dry-run
+  Publish. Rendered art is therefore rendered on every Publish (the render cache
+  absorbs repeats).
+- (decision, Story 20.5) Rendered art forces `Format::Png` for a still and
+  `AnimatedFormat::Gif` for an animation (whatever the Template declares), with the job
+  budget `Limits::emoji_bytes` (not folded with the Upload Budget, which is larger);
+  a Renderer answering any other format is `PublishError::EmojiArt` naming EMO-04.
+  The art Templates are registered with the Renderer at `App::build` next to the
+  Modules' Templates (one per id; an id a Module already registers is kept once).
+- (decision, Story 20.5) A 400 on create is `PublishError::EmojiRejected` (other
+  statuses stay `Rejected`); a create answer without an id only skips storing the
+  digest. A clear does not re-list the emoji table. `EmojiListError`'s public
+  `From<PublishError>` became a private helper. `PublishReport` boxes its
+  `EmojiReport` (the report travels in the `PublishCompleted` hook event, which
+  clippy's `result_large_err` bounds). Base64 for the data URI is a small private
+  encoder, not a new dependency; `blake3` was already in the graph through
+  `noctis-ports`.
+- (decision, Story 20.5) The "owner-only upload Command" of the Project Template
+  existed only as the Usage Skill's `images-emoji.md` §5.2 example, not in the
+  template code; that example is replaced by the Publish sync (§5.1) and a short
+  "by hand" note.

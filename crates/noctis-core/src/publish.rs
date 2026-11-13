@@ -11,7 +11,10 @@
 //! target),
 //! then per target reads the remote commands, diffs both canonical forms
 //! and sends one bulk-overwrite `PUT` only when the diff is not empty (and
-//! this is not a dry run). It runs in the `noctis.publish` span.
+//! this is not a dry run). After the Commands it syncs the declared
+//! application emojis (FR-82; not for a clear): it lists them and creates
+//! every declared name that is missing ([`EmojiReport`]). It runs in the
+//! `noctis.publish` span.
 //!
 //! ```no_run
 //! use noctis_core::publish::PublishScope;
@@ -25,7 +28,10 @@
 //! ```
 
 mod diff;
+mod emoji;
 pub(crate) mod json;
+
+pub use emoji::EmojiReport;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -178,6 +184,56 @@ pub enum PublishError {
         /// The limit.
         max: usize,
     },
+    /// An emoji is drawn by a Template (`#[emoji(render)]`) and the App has
+    /// no Renderer; nothing was sent.
+    #[error(
+        "emoji `{name}` is drawn by a Template (#[emoji(render)]) but the App has no Renderer: \
+         call `.theme(..)` or `.image(..)` on the builder; nothing was sent"
+    )]
+    EmojiNeedsRenderer {
+        /// The first drawn emoji.
+        name: &'static str,
+    },
+    /// The art of a drawn emoji could not be rendered (or only as a still
+    /// frame of an animation); no emoji was written.
+    #[error(
+        "could not render the art of emoji `{name}`: {reason}; no emoji was written (the \
+         commands were published)"
+    )]
+    EmojiArt {
+        /// The emoji.
+        name: &'static str,
+        /// What went wrong.
+        reason: String,
+    },
+    /// The creates would take the application over its emoji limit
+    /// (EMO-01); no emoji was written.
+    #[error(
+        "[EMO-01] the emoji sync would leave the application with {count} emojis (at most \
+         {max}): delete emojis in the Developer Portal, enable \
+         EmojiSync::delete_undeclared, or declare fewer; no emoji was written"
+    )]
+    TooManyEmojis {
+        /// The emojis after the sync.
+        count: usize,
+        /// The limit.
+        max: usize,
+    },
+    /// Discord answered 400 to an emoji create.
+    #[error(
+        "Discord rejected emoji `{name}` with HTTP {status}{}: likely [EMO-02] (over 256 KiB) \
+         or [EMO-04] (not a valid PNG, JPEG or GIF); a repeated Publish skips the emojis \
+         already created",
+        CodeSuffix(*code)
+    )]
+    EmojiRejected {
+        /// The emoji.
+        name: &'static str,
+        /// The HTTP status.
+        status: u16,
+        /// Discord's JSON error code, when the body has one.
+        code: Option<u32>,
+    },
 }
 
 /// ` (code N)` or nothing.
@@ -264,6 +320,8 @@ impl TargetReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishReport {
     targets: Vec<TargetReport>,
+    /// Boxed: the report travels in the `PublishCompleted` hook event.
+    emojis: Option<Box<EmojiReport>>,
     dry_run: bool,
 }
 
@@ -278,9 +336,16 @@ impl PublishReport {
         self.targets.iter().map(TargetReport::creates).sum()
     }
 
-    /// Whether any `PUT` was sent.
+    /// Whether any command `PUT` was sent.
     pub fn wrote(&self) -> bool {
         self.targets.iter().any(TargetReport::wrote)
+    }
+
+    /// The emoji sync, or its plan in a dry run: created, unchanged,
+    /// changed, replaced and deleted names. `None` when the App declares no
+    /// emoji, and for a clear.
+    pub fn emojis(&self) -> Option<&EmojiReport> {
+        self.emojis.as_deref()
     }
 
     /// Whether this was a dry run (nothing written).
@@ -302,6 +367,18 @@ impl fmt::Display for PublishReport {
             let outcome = if target.wrote {
                 "written"
             } else if !target.changed() {
+                "unchanged; nothing written"
+            } else {
+                "dry run; nothing written"
+            };
+            writeln!(f, "{outcome}")?;
+        }
+        if let Some(emojis) = &self.emojis {
+            writeln!(f, "== emojis ==")?;
+            writeln!(f, "{emojis}")?;
+            let outcome = if emojis.wrote() {
+                "written"
+            } else if !emojis.has_writes() {
                 "unchanged; nothing written"
             } else {
                 "dry run; nothing written"
@@ -378,10 +455,12 @@ impl<'a> IntoFuture for Publish<'a> {
         let (app, scope, dry_run, clear) = (self.app, self.scope, self.dry_run, self.clear);
         Box::pin(async move {
             let result = execute(self).instrument(span).await;
-            // FR-82: a written Publish re-lists the application emojis, so
-            // this process sees what its own Publish uploaded.
+            // FR-82: a Publish that synced re-lists the application emojis,
+            // so this process sees what its own Publish uploaded (a clear
+            // leaves them alone).
             if result.is_ok()
                 && !dry_run
+                && !clear
                 && app.emojis().has_declarations()
                 && let Err(error) = app.emojis().reload().await
             {
@@ -443,6 +522,9 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
     if !app.has_token() {
         return Err(PublishError::MissingToken);
     }
+    if !clear {
+        emoji::check_renderer(app)?;
+    }
     // FR-45: the guild targets leave out disabled Modules' guild-scoped
     // Commands, read from a fresh snapshot.
     let modules = app.modules();
@@ -474,8 +556,17 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
     for target in targets {
         reports.push(write_target(http, &application, target, dry_run).await?);
     }
+    // FR-82: the declared emojis, after the Commands; a clear leaves them.
+    let emojis = if clear {
+        None
+    } else {
+        emoji::sync(app, application.id, dry_run)
+            .await?
+            .map(Box::new)
+    };
     Ok(PublishReport {
         targets: reports,
+        emojis,
         dry_run,
     })
 }

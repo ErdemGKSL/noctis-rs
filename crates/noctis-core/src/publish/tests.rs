@@ -546,6 +546,7 @@ fn report_display_and_counts() {
     };
     let report = PublishReport {
         targets: vec![target],
+        emojis: None,
         dry_run: true,
     };
     assert_eq!(report.creates(), 1);

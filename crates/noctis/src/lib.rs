@@ -1558,8 +1558,11 @@ pub mod publish {
     //! the JSON from the Registry alone, runs every check before any write
     //! (META-04; REG-03 and REG-02 on the `Guild` dev mirror), then per
     //! target diffs the canonical forms and sends one bulk-overwrite `PUT`
-    //! only when they differ. A dry run writes nothing. Publish never runs
-    //! on shard READY; it runs in the `noctis.publish` span.
+    //! only when they differ. After the Commands it syncs the declared
+    //! application emojis ([`EmojiReport`], [`crate::emoji::EmojiSync`]):
+    //! it lists them and creates every declared name that is missing. A dry
+    //! run writes nothing (it lists and reports the plan). Publish never
+    //! runs on shard READY; it runs in the `noctis.publish` span.
     //!
     //! ```no_run
     //! use noctis::publish::PublishScope;
@@ -1573,7 +1576,7 @@ pub mod publish {
     //! ```
 
     pub use noctis_core::publish::{
-        Publish, PublishError, PublishReport, PublishScope, TargetReport,
+        EmojiReport, Publish, PublishError, PublishReport, PublishScope, TargetReport,
     };
 }
 
@@ -2143,6 +2146,17 @@ pub mod emoji {
     //! (`[EMO-03]`), more than 2000 names `BuildViolation::TooManyEmojis`
     //! (`[EMO-01]`). An App without a set makes no emoji request.
     //!
+    //! Publish uploads them (`--publish`, `--publish-guild`,
+    //! `NOCTIS_PUBLISHER=true`, `app.publish(..)`; never `--publish-clear`):
+    //! after the Commands it lists the application's emojis and creates
+    //! every declared name that is missing, drawing `#[emoji(render)]` art
+    //! through the App's Renderer (PNG, or GIF when animated, at most
+    //! 256 KiB). Only the publishing process writes; nothing else ever
+    //! creates, renames or deletes an emoji. Changed art is found by a
+    //! digest kept in the App's `Kv` and, by default, only reported;
+    //! [`EmojiSync`] (`AppBuilder::emoji_sync`) opts in to replacing changed
+    //! emojis and deleting undeclared ones.
+    //!
     //! At start the App lists the application's emojis once and builds the
     //! name → id table before any handler runs; `ctx.emojis()` (every
     //! context) and [`App::emojis`](crate::App::emojis) return its
@@ -2186,7 +2200,7 @@ pub mod emoji {
 
     pub use noctis_core::emoji::{
         AppEmojis, DeclaredEmoji, EmojiArt, EmojiDecl, EmojiDeclarations, EmojiFormat, EmojiImage,
-        EmojiListError, EmojiText, EmojiTone, Emojis,
+        EmojiListError, EmojiSync, EmojiText, EmojiTone, Emojis,
     };
     pub use noctis_macros::AppEmojis;
 }

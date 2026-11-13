@@ -191,6 +191,16 @@ Publish never runs on READY. In a Cluster, exactly one process publishes:
 Two publishers race each other's bulk overwrites and waste Discord's daily create
 quota (REG-05).
 
+The publisher also uploads the application emojis the code declares
+(`.emojis::<Icons>()`): after the Commands it lists them and creates every declared name
+that is missing, drawing `#[emoji(render)]` art through its Renderer. The other
+processes only list them (at start, and every 60 s while a declared name is missing),
+so they pick up the publisher's uploads without a restart and never create, rename or
+delete an emoji. Replacing changed art and deleting undeclared emojis are opt-in
+(`.emoji_sync(EmojiSync::new().replace_changed(true).delete_undeclared(true))`, set on
+the publisher); changed art is found by a digest in the App's `Kv`, so give the
+publisher a durable `CacheStore` adapter if a change must be seen across restarts.
+
 ## Voice
 
 A guild's voice call lives in the process whose Shard Range owns the guild's shard:

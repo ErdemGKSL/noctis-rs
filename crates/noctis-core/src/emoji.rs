@@ -184,7 +184,6 @@ impl EmojiDecl {
 /// ```
 pub struct EmojiArt {
     pub(crate) descriptor: TemplateDescriptor,
-    #[expect(dead_code, reason = "rendered by the Publish emoji sync (Story 20.5)")]
     pub(crate) job: Result<RenderJob, ValueError>,
 }
 
@@ -212,6 +211,71 @@ impl fmt::Debug for EmojiArt {
         f.debug_struct("EmojiArt")
             .field("template", &self.template_id())
             .finish_non_exhaustive()
+    }
+}
+
+/// How Publish treats the application emojis it finds
+/// ([`AppBuilder::emoji_sync`](crate::AppBuilder::emoji_sync)).
+///
+/// Publish always creates every declared name the application lacks and
+/// never touches anything else by default: an emoji whose declared art
+/// changed is reported as `changed` and kept, an emoji the code does not
+/// declare is left alone.
+///
+/// ```
+/// use noctis_core::emoji::EmojiSync;
+///
+/// let sync = EmojiSync::new().replace_changed(true);
+/// assert!(sync.replaces_changed());
+/// assert!(!sync.deletes_undeclared());
+/// assert_eq!(EmojiSync::default(), EmojiSync::new());
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EmojiSync {
+    replace_changed: bool,
+    delete_undeclared: bool,
+}
+
+impl EmojiSync {
+    /// The default policy: create the missing names, replace and delete
+    /// nothing.
+    pub const fn new() -> Self {
+        Self {
+            replace_changed: false,
+            delete_undeclared: false,
+        }
+    }
+
+    /// Deletes and re-creates an emoji whose declared art changed (found by
+    /// the digest Publish keeps in the App's `Kv`). The emoji gets a new
+    /// id, so messages already sent show its old `<:name:id>` token as
+    /// plain text.
+    #[must_use]
+    pub const fn replace_changed(self, replace: bool) -> Self {
+        Self {
+            replace_changed: replace,
+            ..self
+        }
+    }
+
+    /// Deletes the application's emojis that no registered set declares.
+    /// Off by default: emojis uploaded by hand are kept.
+    #[must_use]
+    pub const fn delete_undeclared(self, delete: bool) -> Self {
+        Self {
+            delete_undeclared: delete,
+            ..self
+        }
+    }
+
+    /// Whether changed emojis are replaced.
+    pub const fn replaces_changed(&self) -> bool {
+        self.replace_changed
+    }
+
+    /// Whether undeclared emojis are deleted.
+    pub const fn deletes_undeclared(&self) -> bool {
+        self.delete_undeclared
     }
 }
 
@@ -275,6 +339,28 @@ impl EmojiDeclarations {
     /// The declared emoji named `name`.
     pub fn get(&self, name: &str) -> Option<&DeclaredEmoji> {
         self.emojis.iter().find(|e| e.name == name)
+    }
+
+    /// The first declared emoji drawn by a Template (`#[emoji(render)]`).
+    pub(crate) fn first_rendered(&self) -> Option<&DeclaredEmoji> {
+        self.emojis
+            .iter()
+            .find(|e| matches!(e.image, EmojiImage::Render(_)))
+    }
+
+    /// The Templates of every drawn emoji, one per Template id, in fold
+    /// order: `App::build` registers them with the Renderer.
+    pub(crate) fn art_templates(&self) -> Vec<TemplateDescriptor> {
+        let mut templates: Vec<TemplateDescriptor> = Vec::new();
+        for emoji in &self.emojis {
+            if let EmojiImage::Render(art) = emoji.image {
+                let descriptor = art(emoji.tone).descriptor;
+                if templates.iter().all(|t| t.id != descriptor.id) {
+                    templates.push(descriptor);
+                }
+            }
+        }
+        templates
     }
 }
 
@@ -395,8 +481,9 @@ pub enum EmojiListError {
     },
 }
 
-impl From<PublishError> for EmojiListError {
-    fn from(error: PublishError) -> Self {
+impl EmojiListError {
+    /// The list error of a failed request (`send` answers only these).
+    fn from_publish(error: PublishError) -> Self {
         match error {
             PublishError::MissingToken => Self::MissingToken,
             PublishError::Rejected {
@@ -422,8 +509,8 @@ impl From<PublishError> for EmojiListError {
 
 /// One listed application emoji: its id and whether it is animated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Listed {
-    id: Id<EmojiMarker>,
+pub(crate) struct Listed {
+    pub(crate) id: Id<EmojiMarker>,
     animated: bool,
 }
 
@@ -453,6 +540,8 @@ struct EmojiTable {
     loaded: AtomicBool,
     /// Serializes lists.
     listing: tokio::sync::Mutex<()>,
+    /// What Publish replaces and deletes (the default when unset).
+    sync: OnceLock<EmojiSync>,
     /// The missing names the last `warn` named.
     warned: Mutex<Option<Vec<&'static str>>>,
     interval: Duration,
@@ -509,8 +598,10 @@ impl Emojis {
         http: Arc<twilight_http::Client>,
         has_token: bool,
         interval: Duration,
+        sync: EmojiSync,
     ) -> Self {
-        Self::with_source(declarations, Source::Discord { http, has_token }, interval)
+        let table = Self::with_source(declarations, Source::Discord { http, has_token }, interval);
+        table.with_sync(sync)
     }
 
     fn with_source(declarations: EmojiDeclarations, source: Source, interval: Duration) -> Self {
@@ -522,6 +613,7 @@ impl Emojis {
             fixed: AtomicBool::new(false),
             loaded: AtomicBool::new(false),
             listing: tokio::sync::Mutex::new(()),
+            sync: OnceLock::new(),
             warned: Mutex::new(None),
             interval,
         }))
@@ -629,7 +721,9 @@ impl Emojis {
             id
         } else {
             let label = "GET /applications/@me";
-            let body = send(http, &Route::GetCurrentUserApplicationInfo, label, None).await?;
+            let body = send(http, &Route::GetCurrentUserApplicationInfo, label, None)
+                .await
+                .map_err(EmojiListError::from_publish)?;
             let id = parse_application(&body)
                 .map_err(|reason| EmojiListError::InvalidResponse {
                     route: label.to_owned(),
@@ -647,7 +741,8 @@ impl Emojis {
             &label,
             None,
         )
-        .await?;
+        .await
+        .map_err(EmojiListError::from_publish)?;
         let listed = parse_emoji_list(&body).map_err(|reason| EmojiListError::InvalidResponse {
             route: label,
             reason,
@@ -730,6 +825,22 @@ impl Emojis {
     fn named(&self, name: &'static str) -> Option<noctis_ui::Emoji> {
         self.listed(name)
             .map(|l| noctis_ui::Emoji::custom(l.id, name, l.animated))
+    }
+
+    /// The App's sync policy.
+    pub(crate) fn sync_policy(&self) -> EmojiSync {
+        self.0.sync.get().copied().unwrap_or_default()
+    }
+
+    fn with_sync(self, sync: EmojiSync) -> Self {
+        let _ = self.0.sync.set(sync);
+        self
+    }
+
+    /// Remembers the application id a Publish read, so a later list skips
+    /// `GET /applications/@me`.
+    pub(crate) fn note_application(&self, id: u64) {
+        let _ = self.0.application.set(id);
     }
 
     /// Whether the App declares any emoji (and so lists at start).
@@ -818,7 +929,7 @@ impl fmt::Display for EmojiText {
 
 /// The `name` → (id, animated) of a `GET /applications/{id}/emojis` body
 /// (`{"items": [..]}`); items without a name or id are skipped.
-fn parse_emoji_list(body: &[u8]) -> Result<HashMap<String, Listed>, &'static str> {
+pub(crate) fn parse_emoji_list(body: &[u8]) -> Result<HashMap<String, Listed>, &'static str> {
     let value: serde_json::Value = serde_json::from_slice(body).map_err(|_| "not JSON")?;
     let items = value
         .get("items")

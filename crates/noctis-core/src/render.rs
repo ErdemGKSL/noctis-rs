@@ -337,6 +337,57 @@ macro_rules! scope_render_methods {
 
 pub(crate) use scope_render_methods;
 
+/// Renders the art of one drawn application emoji for Publish (FR-82):
+/// as PNG, or as GIF when the Template animates (EMO-04), within
+/// `Limits::emoji_bytes` (EMO-02), in the `noctis.render` span with the
+/// render metrics. A still fallback of an animation is an error, not an
+/// upload. A failure is counted and reported like any render's, and its
+/// message is returned.
+pub(crate) async fn render_emoji(
+    app: &Arc<AppShared>,
+    art: crate::emoji::EmojiArt,
+) -> Result<RenderReport, String> {
+    let template = art.descriptor.id;
+    let Some(renderer) = app.renderer.as_ref() else {
+        return Err(RenderError::NoRenderer.to_string());
+    };
+    let span = tracing::info_span!("noctis.render", app = %app.app, template);
+    async {
+        let result = match art.job {
+            Ok(mut job) => {
+                let budget = u64::try_from(app.limits.emoji_bytes).unwrap_or(u64::MAX);
+                job.upload_budget = budget;
+                job.format = noctis_ports::Format::Png;
+                if let Some(spec) = &mut job.animation {
+                    spec.format = noctis_ports::AnimatedFormat::Gif;
+                }
+                let animated = job.animation.is_some();
+                match job.animation.map(|spec| spec.check_fps(template)) {
+                    Some(Err(error)) => Err(error),
+                    _ => render_job(&app.app, renderer.as_ref(), template, job).await,
+                }
+                .map(|report| (report, animated))
+            }
+            Err(error) => Err(RenderError::failed(error)),
+        };
+        match result {
+            Ok((report, true)) if report.settings_used.frames <= 1 => Err(format!(
+                "the animation fits {} bytes only as a still frame; an animated emoji \
+                 must stay animated: shorten it, lower its fps or simplify it",
+                app.limits.emoji_bytes
+            )),
+            Ok((report, _)) => Ok(report),
+            Err(error) => {
+                let message = crate::app::error_chain(&error);
+                let _ = fail(&RenderSite::app(app), app, error);
+                Err(message)
+            }
+        }
+    }
+    .instrument(span)
+    .await
+}
+
 /// Renders `job`, checks the output against the job's Upload Budget and
 /// wraps it, measuring the accepted render.
 ///

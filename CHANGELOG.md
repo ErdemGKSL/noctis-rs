@@ -61,7 +61,15 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   `Option`. Missing names are logged, a failed list is retried with backoff, and the
   table is re-listed while names are missing (`AppBuilder::emoji_reload_interval`) and
   after every Publish. `TestApp` resolves every declared emoji to a stable fake id
-  (`fake_emoji_id`), and `TestApp::app_emojis(..)` tests the degraded path.
+  (`fake_emoji_id`), and `TestApp::app_emojis(..)` tests the degraded path. Publish
+  uploads the set: after the Commands it lists the application's emojis and creates
+  every declared name that is missing (one request at a time), rendering
+  `#[emoji(render)]` art through the App's Renderer as PNG or GIF within 256 KiB; it
+  never touches an undeclared emoji unless `EmojiSync::delete_undeclared`, reports
+  changed art (a digest in the App's `Kv`) and re-creates it only with
+  `EmojiSync::replace_changed` (`AppBuilder::emoji_sync`), checks the 2000 limit before
+  the first write (EMO-01), prints the plan in a dry run, and returns the diff as
+  `PublishReport::emojis()` (`EmojiReport`). `--publish-clear` leaves emojis alone.
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,

@@ -10,6 +10,7 @@ autobenches = false
 
 [dependencies]
 arc-swap.workspace = true
+blake3.workspace = true
 brotli-decompressor.workspace = true
 bytes.workspace = true
 futures-util.workspace = true

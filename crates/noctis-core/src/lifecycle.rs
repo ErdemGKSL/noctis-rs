@@ -440,7 +440,8 @@ pub struct PublishCompleted {
     pub scope: PublishScope,
     /// Whether it was a clear (`--publish-clear`).
     pub clear: bool,
-    /// The report: `report.is_dry_run()`, and each target's `diff()`.
+    /// The report: `report.is_dry_run()`, each target's `diff()` and the
+    /// emoji sync, `report.emojis()`.
     pub report: PublishReport,
 }
 
