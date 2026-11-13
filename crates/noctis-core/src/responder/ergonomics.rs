@@ -523,7 +523,8 @@ macro_rules! ctx_methods {
             /// renders this call as an animation (or another one than the
             /// Template's `ANIMATION`), calling the view once per frame with
             /// `Frame { index, count }`. An fps over the format's cap fails
-            /// before the Renderer is called.
+            /// before the Renderer is called. `.max_bytes(n)` caps this
+            /// call's output at `min(n, Upload Budget, size_target)`.
             ///
             /// ```no_run
             /// use std::time::Duration;

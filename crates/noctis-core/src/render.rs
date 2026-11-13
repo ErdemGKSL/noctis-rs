@@ -35,17 +35,26 @@ use crate::{ErrorOrigin, ErrorReport, HandlerError, HandlerResult, ReportKind};
 /// let spin = AnimationSpec::new(Duration::from_secs(1), 20, AnimatedFormat::DEFAULT);
 /// let options = RenderOptions::new().animation(spin);
 /// assert_ne!(options, RenderOptions::default());
+///
+/// // An application emoji is at most 256 KiB.
+/// let emoji = RenderOptions::new().max_bytes(262_144);
+/// assert_ne!(emoji, RenderOptions::default());
 /// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RenderOptions {
     animation: Option<AnimationSpec>,
+    max_bytes: Option<u64>,
 }
 
 impl RenderOptions {
     /// No options: the Template renders as it declares (its `ANIMATION`,
-    /// if any).
+    /// if any), within the call's Upload Budget and the App's
+    /// `size_target`.
     pub const fn new() -> Self {
-        Self { animation: None }
+        Self {
+            animation: None,
+            max_bytes: None,
+        }
     }
 
     /// Renders this call as `spec`, in place of the Template's own
@@ -56,6 +65,30 @@ impl RenderOptions {
     pub const fn animation(self, spec: AnimationSpec) -> Self {
         Self {
             animation: Some(spec),
+            ..self
+        }
+    }
+
+    /// Caps this call's output at `bytes` (FR-33, ATT-01): the job's budget
+    /// is `min(bytes, the call's Upload Budget, the App's size_target)`, and
+    /// the Renderer degrades fps, then size, then quality, then falls back
+    /// to a still frame until the output fits, exactly as for the App's
+    /// budget. A render that cannot fit fails with
+    /// [`RenderError::OverBudget`]. Use it for a render meant for a 256 KiB
+    /// application emoji or a small thumbnail without lowering the whole
+    /// App's `size_target`.
+    ///
+    /// An animation that only fits as its still fallback comes back with
+    /// `settings_used.frames == 1` and the still format: read
+    /// [`RenderReport`] to refuse it.
+    ///
+    /// `max_bytes(0)` is never "no limit": the render fails with
+    /// [`RenderError::Unsupported`] before the Renderer is called.
+    #[must_use]
+    pub const fn max_bytes(self, bytes: u64) -> Self {
+        Self {
+            max_bytes: Some(bytes),
+            ..self
         }
     }
 }
@@ -149,15 +182,25 @@ pub(crate) async fn render_at<T: Template>(
         let result = match RenderJob::of(&template) {
             Ok(mut job) => {
                 // The render fits what this interaction's upload accepts, or
-                // the App's attachment limit outside one (ATT-01).
+                // the App's attachment limit outside one (ATT-01), and the
+                // call's own cap; the Renderer folds in its `size_target`.
                 let budget = site.upload_budget.unwrap_or(app.limits.attachment_bytes);
-                job.upload_budget = u64::try_from(budget).unwrap_or(u64::MAX);
+                job.upload_budget = job_budget(budget, options.max_bytes);
                 if let Some(spec) = options.animation {
                     job.animation = Some(spec);
                 }
-                match job.animation.map(|spec| spec.check_fps(T::ID)) {
-                    Some(Err(error)) => Err(error),
-                    _ => render_job(&app.app, renderer.as_ref(), T::ID, job).await,
+                if options.max_bytes == Some(0) {
+                    Err(RenderError::Unsupported {
+                        id: T::ID.to_owned(),
+                        why: "RenderOptions::max_bytes(0) leaves no room for any output; \
+                              omit max_bytes for the default budget"
+                            .into(),
+                    })
+                } else {
+                    match job.animation.map(|spec| spec.check_fps(T::ID)) {
+                        Some(Err(error)) => Err(error),
+                        _ => render_job(&app.app, renderer.as_ref(), T::ID, job).await,
+                    }
                 }
             }
             Err(error) => Err(RenderError::failed(error)),
@@ -166,6 +209,13 @@ pub(crate) async fn render_at<T: Template>(
     }
     .instrument(span)
     .await
+}
+
+/// The job's `upload_budget`: the call's Upload Budget, capped by
+/// `RenderOptions::max_bytes` when it is set (FR-33).
+fn job_budget(upload_budget: usize, max_bytes: Option<u64>) -> u64 {
+    let upload = u64::try_from(upload_budget).unwrap_or(u64::MAX);
+    max_bytes.map_or(upload, |cap| cap.min(upload))
 }
 
 /// `render`, `render_with` and `render_report` of a context outside an
@@ -243,7 +293,8 @@ macro_rules! scope_render_methods {
             }
 
             /// [`render`](Self::render) with per-call
-            /// [`RenderOptions`](crate::RenderOptions) (`.animation(spec)`).
+            /// [`RenderOptions`](crate::RenderOptions) (`.animation(spec)`,
+            /// `.max_bytes(n)`).
             ///
             /// # Errors
             ///

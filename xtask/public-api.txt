@@ -3654,6 +3654,7 @@ pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 pub struct noctis::image::RenderOptions
 impl noctis::image::RenderOptions
 pub const fn noctis::image::RenderOptions::animation(self, noctis::image::AnimationSpec) -> Self
+pub const fn noctis::image::RenderOptions::max_bytes(self, u64) -> Self
 pub const fn noctis::image::RenderOptions::new() -> Self
 impl core::clone::Clone for noctis::image::RenderOptions
 pub fn noctis::image::RenderOptions::clone(&self) -> Self

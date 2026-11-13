@@ -208,7 +208,7 @@ development_status:
 
   epic-20: in-progress
   20-1-render-from-events-hooks-and-background-tasks: done
-  20-2-per-call-render-size-budget: backlog
+  20-2-per-call-render-size-budget: done
   20-3-application-emoji-rules-and-declared-sets: backlog
   20-4-the-emoji-table-and-typed-lookup: backlog
   20-5-emoji-sync-on-publish: backlog

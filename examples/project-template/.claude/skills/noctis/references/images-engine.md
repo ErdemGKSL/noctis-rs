@@ -673,7 +673,8 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   (Deny, §4).
 - Per-call options: `ctx.render_with(t, RenderOptions::new().animation(spec))` renders
   this call as the animation `spec` (an `AnimationSpec`), in place of the Template's
-  own `ANIMATION` or its still image; `RenderOptions::new()` (= `default()`) changes
+  own `ANIMATION` or its still image; `.max_bytes(n)` caps this call's output (below,
+  "Size budget"); `RenderOptions::new()` (= `default()`) changes
   nothing, and `ctx.render(t)` is `ctx.render_with(t, RenderOptions::new())`.
   `ctx.render_report(t, options)` returns a `RenderReport` (non-exhaustive) with
   `attachment`, `format` (`OutputFormat`) and `settings_used` (`EncodeSettings`, after
@@ -771,6 +772,36 @@ use noctis::image::RenderOptions;
 let report = app.render_report(card, RenderOptions::new()).await?;  // budget: Limits::attachment_bytes
 assert!(report.attachment.bytes().len() <= 2_097_152);              // default size_target
 println!("{:?} {:?}", report.settings_used, report.format);
+```
+
+#### Per-call budget: `max_bytes`
+
+`RenderOptions::new().max_bytes(n)` caps one call without lowering the App's
+`size_target`: that render's budget is `min(n, Upload Budget, size_target)`, walked
+through the same ladder. Use it for an image with its own limit, such as a 256 KiB
+application emoji or a small thumbnail. It combines with `.animation(spec)` and works
+on every `render_with` / `render_report` (all contexts and `App`).
+
+- A render that cannot fit is `RenderError::OverBudget { budget, smallest }`, with
+  `budget` the effective (smallest) budget.
+- `max_bytes(0)` fails with `RenderError::Unsupported` naming `max_bytes(0)` before the
+  Renderer is called; it never means "no limit" (leave `max_bytes` out for that).
+- A larger `n` than the other two budgets changes nothing (same output, same cache
+  entry). Each effective budget is its own cache entry, so a cached full-size output is
+  never handed to a call with a smaller budget.
+- An animation where only the still fallback fits comes back as a still:
+  `settings_used.frames == 1` and the still `format`. Check the report when the call
+  needs motion (an animated emoji), and refuse it or turn `still_fallback` off.
+
+```rust
+use noctis::image::RenderOptions;
+
+const EMOJI_BYTES: u64 = 262_144; // EMO-02: 256 KiB
+let report = ctx.render_report(Spinner, RenderOptions::new().max_bytes(EMOJI_BYTES)).await?;
+if report.settings_used.frames == 1 {
+    // Only the still frame fit: not an animation any more.
+}
+assert!(report.attachment.bytes().len() as u64 <= EMOJI_BYTES);
 ```
 
 `ctx.render` returns only the `Attachment`; `ctx.render_report(t, RenderOptions::new())`

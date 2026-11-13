@@ -18,8 +18,8 @@ use bytes::Bytes;
 use noctis::image::unstable::{ErasedView, RenderJob};
 use noctis::image::{
     AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Font, Format, Frame, ImageConfig,
-    ImagePlugin, Node, RenderCap, RenderCaps, RenderError, Style, Template, TemplateView, Theme,
-    ThemeErrorKind, div, theme, view,
+    ImagePlugin, Node, RenderCap, RenderCaps, RenderError, RenderOptions, Style, Template,
+    TemplateView, Theme, ThemeErrorKind, div, theme, view,
 };
 use noctis::ports::{EncodeSettings, OutputFormat, Size, ValueError};
 use noctis::{App, AppBuilder, BuildError, BuildViolation, Module, Runtime};
@@ -1022,4 +1022,113 @@ async fn fr_36_an_apps_render_cache_serves_identical_renders() {
                 .unwrap();
         assert_eq!(attachment.name(), format!("{}.png", &hex[..16]));
     }
+}
+
+// ---- the per-call budget (Story 20.2, FR-33) ----
+
+/// `App::render_report` of `template` with `max_bytes(budget)`.
+async fn report_within<T: Template>(
+    app: &App,
+    template: T,
+    budget: u64,
+) -> noctis::HandlerResult<noctis::image::RenderReport> {
+    app.render_report(template, RenderOptions::new().max_bytes(budget))
+        .await
+}
+
+/// The [`RenderError`] inside `err`.
+fn render_err(err: &noctis::HandlerError) -> &RenderError {
+    err.as_error()
+        .downcast_ref::<RenderError>()
+        .expect("a RenderError")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_33_max_bytes_degrades_a_still_through_the_ladder() {
+    let app = app();
+    let full = report_within(&app, Noise, u64::MAX).await.unwrap();
+    assert_eq!(full.settings_used.size, Size::new(64, 64));
+    let budget = full.attachment.bytes().len() as u64 - 1;
+    let small = report_within(&app, Noise, budget).await.unwrap();
+    assert!(small.attachment.bytes().len() as u64 <= budget);
+    let size = small.settings_used.size;
+    assert!(
+        [Size::new(48, 48), Size::new(32, 32)].contains(&size),
+        "{size:?}"
+    );
+    let (w, h, _) = decode_png(small.attachment.bytes());
+    assert_eq!(Size::new(w, h), size);
+    let err = report_within(&app, Noise, 10).await.unwrap_err();
+    assert!(
+        matches!(render_err(&err), RenderError::OverBudget { budget: 10, smallest } if *smallest > 10),
+        "{err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_33_max_bytes_above_the_size_target_changes_nothing() {
+    let app = app_with(ImageConfig::new().threads(1).size_target(1024));
+    let err = report_within(&app, Noise, 1_000_000).await.unwrap_err();
+    assert!(
+        matches!(
+            render_err(&err),
+            RenderError::OverBudget { budget: 1024, .. }
+        ),
+        "{err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_33_max_bytes_zero_is_unsupported() {
+    let err = report_within(&app(), Noise, 0).await.unwrap_err();
+    assert!(
+        matches!(render_err(&err), RenderError::Unsupported { id, why } if id == "noise" && why.contains("max_bytes(0)")),
+        "{err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_33_an_animation_under_max_bytes_reports_its_still_fallback() {
+    // Without the fallback, the smallest animated encoding.
+    let strict = app_with(ImageConfig::new().threads(1).still_fallback(false));
+    let err = report_within(&strict, NoiseReel, 1).await.unwrap_err();
+    let RenderError::OverBudget { smallest, .. } = *render_err(&err) else {
+        panic!("over budget");
+    };
+    // Below every animated encoding: only the still fallback fits.
+    let app = app_with(ImageConfig::new().threads(1));
+    let report = report_within(&app, NoiseReel, smallest - 1).await.unwrap();
+    assert_eq!(report.settings_used.frames, 1);
+    assert_eq!(report.settings_used.fps, None);
+    assert_eq!(report.format, OutputFormat::Png);
+    assert_eq!(&report.attachment.bytes()[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_33_a_cache_hit_never_exceeds_the_calls_own_budget() {
+    let cache = Arc::new(CountingCache::default());
+    let mut builder = builder(&Runtime::for_test(), ImageConfig::new().threads(2));
+    builder.render_cache(Arc::clone(&cache));
+    let app = builder.build().unwrap();
+    let full = report_within(&app, Noise, u64::MAX).await.unwrap();
+    let full_len = full.attachment.bytes().len() as u64;
+    let budget = full_len - 1;
+    // The full-size output is cached; a smaller budget must not receive it.
+    let small = report_within(&app, Noise, budget).await.unwrap();
+    assert!(small.attachment.bytes().len() as u64 <= budget);
+    assert_ne!(small.attachment.name(), full.attachment.name());
+    assert_eq!(
+        cache.puts.lock().unwrap().len(),
+        2,
+        "the smaller budget misses"
+    );
+    // The same small budget is served from the cache.
+    let again = report_within(&app, Noise, budget).await.unwrap();
+    assert_eq!(again.attachment.bytes(), small.attachment.bytes());
+    assert_eq!(cache.puts.lock().unwrap().len(), 2, "a hit stores nothing");
+    // A cap above the App's size_target leaves the effective budget alone,
+    // so the output that already fits is shared.
+    let roomy = report_within(&app, Noise, 4 * 1024 * 1024).await.unwrap();
+    assert_eq!(roomy.attachment.name(), full.attachment.name());
+    assert_eq!(cache.puts.lock().unwrap().len(), 2);
 }

@@ -458,6 +458,79 @@ async fn a_detached_render_gets_the_app_attachment_limit() {
     assert_eq!(*fake.budget.lock().unwrap(), Some(1000));
 }
 
+#[test]
+fn fr_33_max_bytes_takes_the_smaller_budget() {
+    assert_eq!(job_budget(1000, None), 1000);
+    assert_eq!(job_budget(1000, Some(500)), 500);
+    assert_eq!(job_budget(1000, Some(1000)), 1000);
+    assert_eq!(job_budget(1000, Some(5000)), 1000);
+    assert_eq!(job_budget(usize::MAX, Some(u64::MAX)), u64::MAX);
+    assert_eq!(job_budget(usize::MAX, Some(262_144)), 262_144);
+}
+
+/// The budget the fake received for `card()` rendered with `options` on an
+/// App whose attachment limit is 1000 bytes.
+async fn budget_with(options: RenderOptions) -> u64 {
+    let sink = Arc::new(Recording::default());
+    let fake = Fake::new(Answer::Ok);
+    let mut limits = Limits::default();
+    limits.attachment_bytes = 1000;
+    let app = app_with(Some(Arc::clone(&fake)), &sink, limits);
+    render(&parts(&app), card(), options).await.unwrap();
+    fake.budget.lock().unwrap().expect("rendered")
+}
+
+#[tokio::test]
+async fn fr_33_max_bytes_is_folded_into_the_job_budget() {
+    assert_eq!(budget_with(RenderOptions::new()).await, 1000);
+    assert_eq!(budget_with(RenderOptions::new().max_bytes(500)).await, 500);
+    assert_eq!(
+        budget_with(RenderOptions::new().max_bytes(5000)).await,
+        1000
+    );
+    let spec = AnimationSpec::new(Duration::from_secs(1), 10, AnimatedFormat::DEFAULT);
+    let both = RenderOptions::new().max_bytes(300).animation(spec);
+    assert_eq!(both, RenderOptions::new().animation(spec).max_bytes(300));
+    assert_eq!(budget_with(both).await, 300);
+}
+
+#[tokio::test]
+async fn fr_33_an_output_over_max_bytes_is_over_budget_naming_it() {
+    let sink = Arc::new(Recording::default());
+    let over = app(Some(Fake::new(Answer::Sized(600))), &sink);
+    let err = render(&parts(&over), card(), RenderOptions::new().max_bytes(500))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        render_error(&err),
+        RenderError::OverBudget {
+            budget: 500,
+            smallest: 600
+        }
+    ));
+    let at = app(Some(Fake::new(Answer::Sized(500))), &sink);
+    let report = render(&parts(&at), card(), RenderOptions::new().max_bytes(500))
+        .await
+        .unwrap();
+    assert_eq!(report.attachment.bytes().len(), 500);
+}
+
+#[tokio::test]
+async fn fr_33_max_bytes_zero_is_unsupported_before_the_renderer() {
+    let sink = Arc::new(Recording::default());
+    let fake = Fake::new(Answer::Ok);
+    let app = app(Some(Arc::clone(&fake)), &sink);
+    let err = render(&parts(&app), card(), RenderOptions::new().max_bytes(0))
+        .await
+        .unwrap_err();
+    let RenderError::Unsupported { id, why } = render_error(&err) else {
+        panic!("{err}");
+    };
+    assert_eq!(id, "card");
+    assert!(why.contains("max_bytes(0)"), "{why}");
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+}
+
 #[tokio::test]
 async fn over_budget_is_reported_without_a_rejected_reason() {
     let recorder = DebuggingRecorder::new();

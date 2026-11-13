@@ -803,7 +803,8 @@ impl App {
     }
 
     /// [`render`](App::render) with per-call
-    /// [`RenderOptions`](crate::RenderOptions).
+    /// [`RenderOptions`](crate::RenderOptions) (`.animation(spec)`,
+    /// `.max_bytes(n)`).
     ///
     /// # Errors
     ///

@@ -635,3 +635,12 @@ Planning decisions (2026-11-13, Epic 20):
   Error Sink reports from an event render carry the shard, guild, Module and
   Extensions, from a hook only the Module, from `App` none of them; the handler path
   is `None` because neither context knows it.
+- (decision, Story 20.2) `RenderOptions::max_bytes(n)` is folded in core:
+  `RenderJob::upload_budget = min(n, Upload Budget)`, and the takumi Renderer adds
+  `size_target` as before, so the Renderer port and the render cache key are unchanged
+  (the key already holds the effective budget). Each effective budget is therefore its
+  own cache entry: a smaller budget never receives a cached larger output, and a cap
+  above the other two budgets shares the entry. Looking up a fitting output stored
+  under a larger budget was not added (it would need a second lookup per miss).
+  `max_bytes(0)` is `RenderError::Unsupported` for the Template, counted under the
+  `unsupported` rejected reason and reported like any `Unsupported`.

@@ -2440,6 +2440,12 @@ pub mod image {
     //!   another pixel size (`Style::width_px`, `w-[Npx]`, …) fails with
     //!   `RenderError::SizeMismatch`. `ctx.render_report` returns a
     //!   [`RenderReport`] with the encoded `format` and `settings_used`.
+    //! - Per-call budget (FR-33): `RenderOptions::new().max_bytes(n)` caps
+    //!   one render at `min(n, Upload Budget, size_target)` (for a 256 KiB
+    //!   emoji or a small thumbnail) through the same ladder; a render that
+    //!   cannot fit is `RenderError::OverBudget`, `max_bytes(0)` is
+    //!   `RenderError::Unsupported`. An animation that only fits as its
+    //!   still fallback reports `settings_used.frames == 1`.
     //! - Fonts (FR-35, `[IMG-01]`): [`Font`] (`Font::from_static`,
     //!   `Font::from_bytes`; TTF, OTF, TTC or WOFF2), registered with
     //!   `ImageConfig::font` in priority order. Text with no `font-*` family

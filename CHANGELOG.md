@@ -44,7 +44,9 @@ adds the version heading (see [Releasing Noctis](docs/guides/release.md)).
   in a bounded render pool with a render cache, and a font and asset registry.
   Event handlers, Lifecycle Hooks and the built `App` render too (`ctx.render`,
   `render_with` and `render_report` on `EventCtx` and `HookCtx`, `app.render(..)` for
-  background tasks), with the same errors, metrics and Render Error Sink.
+  background tasks), with the same errors, metrics and Render Error Sink. One call
+  can cap its own output with `RenderOptions::max_bytes(n)` (for a 256 KiB emoji or a
+  thumbnail) without lowering the App's `size_target`.
 - **i18n.** Locale files compiled into typed accessors, translated command names, and
   the User and Guild Locale on every context.
 - **Ports and Adapters.** Every storage-like concern is a port (RefStore,

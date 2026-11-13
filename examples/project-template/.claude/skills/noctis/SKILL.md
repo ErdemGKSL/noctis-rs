@@ -20,7 +20,7 @@ description: >-
 
 > **Status: Noctis 0.1.** This skill documents the whole public API of Noctis 0.1; every
 > signature here exists. It is updated in the same commit as any public API change.
-> **API hash:** `7a8f576e94e6f918ce5521e0950c53240474a56df12f0e9a4e1fe4e375b55542` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `4cb14304617938d6d3fa55d62cda4c1319580a42dc7c04af4f8743ee526dda41` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -308,6 +308,8 @@ impl TemplateView for ProfileCard {
 // writes into RenderJob::upload_budget, ImageConfig::size_target (default 2 MiB)), lowering
 // fps, size, quality, then (ImageConfig::still_fallback, default on) a still frame;
 // RenderOutput::settings_used (EncodeSettings, through app.renderer()) says what was encoded.
+// one call's own cap: RenderOptions::new().max_bytes(262_144) -> min(n, upload budget,
+// size_target); max_bytes(0) is RenderError::Unsupported (references/images-engine.md §8).
 // per-job caps, checked before the job is queued: `.image(ImageConfig::new().caps(
 // RenderCaps::new().frames(120)))`; defaults 4 MP per job, 1 MP per frame, 90 frames, 6 s.
 // queue_capacity counts units: a still 1, an animation ceil(frames / 8); a quarter is
